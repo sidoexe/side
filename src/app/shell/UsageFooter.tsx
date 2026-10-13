@@ -54,6 +54,7 @@ import {
   subscribeProviderAccounts,
   type ProviderAccountProvider,
 } from "../../features/providers/model/providerAccounts";
+import { setRemoteAccountSlot } from "../../features/connections/ui/remoteAccountSlot";
 
 const CLOCK_MS = 30_000;
 
@@ -78,10 +79,13 @@ export function UsageFooter({
   projectTerminalOpen = false,
   onSelectAccount,
   onManageAccounts,
+  remote = false,
 }: {
   providers: RateLimitProvider[];
   session?: UsageFooterSession;
   project?: string;
+  /** The session runs on a host: its accounts replace this computer's. */
+  remote?: boolean;
   terminals?: RunningTerminal[];
   terminalOpen?: boolean;
   onToggleTerminal?: (fileId: string) => void;
@@ -122,21 +126,25 @@ export function UsageFooter({
       aria-label={ariaLabel}
       className="flex h-7 shrink-0 items-center gap-1.5 overflow-x-auto border-t border-stroke px-3 text-[11px] text-content/55"
     >
-      <UsageChips
-        providers={providers}
-        session={session}
-        project={project}
-        onSelectAccount={onSelectAccount}
-        onManageAccounts={onManageAccounts}
-        fallback={
-          session ? (
-            <SessionChip
-              key={session.id ?? session.harness}
-              session={session}
-            />
-          ) : null
-        }
-      />
+      {remote && session?.id ? (
+        <RemoteAccountSlot sessionId={session.id} />
+      ) : (
+        <UsageChips
+          providers={providers}
+          session={session}
+          project={project}
+          onSelectAccount={onSelectAccount}
+          onManageAccounts={onManageAccounts}
+          fallback={
+            session ? (
+              <SessionChip
+                key={session.id ?? session.harness}
+                session={session}
+              />
+            ) : null
+          }
+        />
+      )}
       {showTerminals || showTerminalButton ? (
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {showTerminals ? (
@@ -166,6 +174,16 @@ export function UsageFooter({
       ) : null}
     </footer>
   );
+}
+
+/** Room for the host accounts of a remote session, which renders them. */
+function RemoteAccountSlot({ sessionId }: { sessionId: string }) {
+  const ref = useCallback(
+    (element: HTMLDivElement | null) =>
+      setRemoteAccountSlot(element ? { sessionId, element } : undefined),
+    [sessionId],
+  );
+  return <div ref={ref} className="flex min-w-0 items-center gap-1.5" />;
 }
 
 /**

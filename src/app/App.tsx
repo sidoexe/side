@@ -13411,6 +13411,7 @@ function Workspace({
                 <UsageFooter
                   providers={usageProviders}
                   session={usageSession}
+                  remote={!!active && isRemoteProjectPath(active.cwd)}
                   project={active?.cwd ?? projectCwd}
                   onSelectAccount={onSelectProviderAccount}
                   onManageAccounts={() =>

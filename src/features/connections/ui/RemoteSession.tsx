@@ -1525,7 +1525,9 @@ function ConnectedRemoteSession({
             ) : null}
           </div>
         ) : null}
+        <div className="min-h-0 flex-1">{render(overrides)}</div>
         <RemoteAccountPicker
+          sessionId={shell.id}
           accounts={accountsFor(hostAccounts, configuration.harness)}
           value={configuration.account}
           disabled={!online || busy}
@@ -1533,7 +1535,6 @@ function ConnectedRemoteSession({
             updateConfiguration((current) => ({ ...current, account }))
           }
         />
-        <div className="min-h-0 flex-1">{render(overrides)}</div>
       </div>
     </ModelSourceContext.Provider>
   );

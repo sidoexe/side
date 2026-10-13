@@ -13,6 +13,7 @@ import { rememberRemoteProject } from "../model/remoteProjects";
 import { preloadRemoteSession } from "./RemoteSession";
 import { rememberRemoteSession, remoteSessionFor } from "../model/connections";
 import "../model/remoteCommands";
+import { setRemoteAccountSlot } from "./remoteAccountSlot";
 import type {
   HostCommand,
   HostDescriptor,
@@ -295,6 +296,7 @@ beforeEach(() => {
   root = createRoot(container);
 });
 afterEach(() => {
+  setRemoteAccountSlot(undefined);
   act(() => root.unmount());
   container.remove();
   document.body.innerHTML = "";
@@ -1148,16 +1150,17 @@ it("starts on the host's balanced account and switches account between turns", a
     { id: "auto", provider: "codex", label: "Balanced" },
     { id: "work", provider: "codex", label: "Work", usage: { sevenDay: { used: 12 } } },
   ];
+  const footer = accountFooter();
   await render();
-  const picker = () => container.querySelector<HTMLSelectElement>('select[aria-label="Host account"]')!;
-  expect(picker().value).toBe("auto");
-  expect(picker().textContent).toContain("Work · 7d 12%");
+  const picker = () => footer.querySelector<HTMLButtonElement>('button[aria-label^="Host account"]')!;
+  expect(picker().getAttribute("aria-label")).toBe("Host account: Balanced");
   await send("Fix the tests");
   expect(commands[0]).toMatchObject({ type: "create", providerAccountId: "auto" });
-  await act(async () => {
-    picker().value = "work";
-    picker().dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await act(async () => picker().click());
+  const work = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')]
+    .find((item) => item.textContent?.includes("Work"))!;
+  expect(work.textContent).toContain("12% 7d");
+  await act(async () => work.click());
   await settle();
   expect(commands.find((command) => command.type === "configure")).toMatchObject({
     providerAccountId: "work",
@@ -1165,11 +1168,20 @@ it("starts on the host's balanced account and switches account between turns", a
 });
 
 it("hides the account picker on a host without accounts", async () => {
+  const footer = accountFooter();
   await render();
-  expect(container.querySelector('select[aria-label="Host account"]')).toBeNull();
+  expect(footer.childElementCount).toBe(0);
   await send("Hi");
   expect(commands[0]).not.toHaveProperty("providerAccountId");
 });
+
+/** The app footer's room for this tab's host accounts. */
+function accountFooter() {
+  const element = document.createElement("div");
+  document.body.append(element);
+  setRemoteAccountSlot({ sessionId: "shell", element });
+  return element;
+}
 
 async function limitedSession(resetsAt: number) {
   await render();
