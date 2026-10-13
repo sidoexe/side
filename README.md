@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/monocode.png" alt="MonoCode" width="88" />
+  <img src="public/side.png" alt="MonoCode" width="88" />
 </p>
 
 <h1 align="center">MonoCode</h1>

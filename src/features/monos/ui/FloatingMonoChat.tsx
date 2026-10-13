@@ -242,7 +242,7 @@ export function FloatingMonoChat({ onShown }: { onShown: () => void }) {
               />
             ) : (
               <img
-                src="/monocode.png"
+                src="/side.png"
                 alt=""
                 className="size-18 object-contain"
               />
