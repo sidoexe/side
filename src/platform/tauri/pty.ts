@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
 
 type DataPayload = { id: string; data: string };
 type ExitPayload = { id: string; code: number | null };
@@ -127,12 +128,29 @@ function release() {
   }, 500);
 }
 
+type RemotePtySpawner = (
+  id: string,
+  cwd: string,
+  cols: number,
+  rows: number,
+) => Promise<void>;
+let remoteSpawner: RemotePtySpawner | undefined;
+
+/** Set once by the connections feature, which knows the connected machines. */
+export function setRemotePtySpawner(spawner: RemotePtySpawner) {
+  remoteSpawner = spawner;
+}
+
 export async function spawnPty(
   id: string,
   cwd: string,
   cols: number,
   rows: number,
 ): Promise<void> {
+  if (cwd.startsWith(REMOTE_PATH_PREFIX)) {
+    if (!remoteSpawner) throw new Error("Connect this project’s machine to open a terminal.");
+    return remoteSpawner(id, cwd, cols, rows);
+  }
   await invoke("pty_spawn", { id, cwd, cols, rows });
 }
 

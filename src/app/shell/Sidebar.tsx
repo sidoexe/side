@@ -1839,7 +1839,7 @@ function SidebarComponent({
                   cwd={explorer.current.cwd}
                   rootLabel={explorer.current.rootLabel}
                   onOpenFile={onOpenFile}
-                  onOpenTerminal={remoteProject ? undefined : onOpenTerminal}
+                  onOpenTerminal={onOpenTerminal}
                   onFileMoved={onFileMoved}
                   onFileDeleted={onFileDeleted}
                   onSearch={onOpenFilesSearch}

@@ -200,6 +200,24 @@ fn connection_refused(error: &ureq::Transport) -> bool {
     false
 }
 
+/// The SSH target a saved machine was connected through, if any.
+pub(crate) fn machine_ssh_target(
+    app: &AppHandle,
+    machine_id: &str,
+) -> Result<Option<SshTarget>, String> {
+    let state = app.state::<RemoteConnections>();
+    let _guard = state
+        .store
+        .lock()
+        .map_err(|_| "Connection store is locked")?;
+    let machines = read(&store_path(app)?)?;
+    let machine = machines
+        .into_iter()
+        .find(|machine| machine.id == machine_id)
+        .ok_or("Unknown machine")?;
+    Ok(machine.ssh)
+}
+
 fn store_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(app
         .path()

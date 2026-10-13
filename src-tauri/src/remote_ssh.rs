@@ -163,6 +163,39 @@ impl Job {
     }
 }
 
+/// Whether the target is this computer itself, such as an alias to localhost.
+pub fn is_loopback(target: &SshTarget) -> bool {
+    let host = target.target.rsplit('@').next().unwrap_or("");
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    host.eq_ignore_ascii_case("localhost") || host == "::1" || host.starts_with("127.")
+}
+
+/// `ssh` and its arguments for an interactive shell in `cwd` on the target,
+/// using the user's own SSH config, keys and agent like the host tunnel.
+pub fn terminal_command(target: &SshTarget, cwd: &str, windows: bool) -> (String, Vec<String>) {
+    let remote = if windows {
+        format!(
+            "powershell -NoLogo -NoExit -Command \"Set-Location -LiteralPath '{}'\"",
+            cwd.replace('\'', "''")
+        )
+    } else {
+        format!(
+            "cd -- '{}' 2>/dev/null; exec \"${{SHELL:-/bin/sh}}\" -l",
+            cwd.replace('\'', "'\\''")
+        )
+    };
+    let mut args = vec![
+        "-t".to_string(),
+        "-o".to_string(),
+        "ServerAliveInterval=15".to_string(),
+    ];
+    if let Some(port) = target.port {
+        args.extend(["-p".to_string(), port.to_string()]);
+    }
+    args.extend(["--".to_string(), target.target.clone(), remote]);
+    ("ssh".to_string(), args)
+}
+
 fn command(target: &SshTarget, interactive: bool) -> Command {
     let mut command = Command::new("ssh");
     command.args([
@@ -658,6 +691,44 @@ pub fn device_name() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn target(value: &str, port: Option<u16>) -> SshTarget {
+        SshTarget {
+            target: value.into(),
+            port,
+            remote_port: 3774,
+        }
+    }
+
+    #[test]
+    fn recognizes_this_computer_behind_an_ssh_alias() {
+        assert!(is_loopback(&target("me@localhost", None)));
+        assert!(is_loopback(&target("127.0.0.1", None)));
+        assert!(is_loopback(&target("me@[::1]", None)));
+        assert!(!is_loopback(&target("me@macbook.tail.ts.net", None)));
+        assert!(!is_loopback(&target("localhost-mirror", None)));
+    }
+
+    #[test]
+    fn opens_a_terminal_in_the_quoted_folder() {
+        let (program, args) =
+            terminal_command(&target("me@air", Some(2222)), "/Users/me/it's here", false);
+        assert_eq!(program, "ssh");
+        assert_eq!(
+            &args[..5],
+            ["-t", "-o", "ServerAliveInterval=15", "-p", "2222"]
+        );
+        assert_eq!(args[5..7], ["--".to_string(), "me@air".to_string()]);
+        assert_eq!(
+            args[7],
+            "cd -- '/Users/me/it'\\''s here' 2>/dev/null; exec \"${SHELL:-/bin/sh}\" -l"
+        );
+        let (_, windows) = terminal_command(&target("me@pc", None), "C:\\Users\\o'neil", true);
+        assert_eq!(
+            windows.last().unwrap(),
+            "powershell -NoLogo -NoExit -Command \"Set-Location -LiteralPath 'C:\\Users\\o''neil'\""
+        );
+    }
 
     #[test]
     fn stale_requests_cannot_invalidate_a_newer_tunnel() {

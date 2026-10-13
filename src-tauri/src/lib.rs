@@ -493,6 +493,7 @@ pub fn run() {
             rate_limits::fetch_opencode_go_usage,
             devin_usage::fetch_devin_usage,
             pty::pty_spawn,
+            pty::pty_spawn_remote,
             pty::pty_write,
             pty::pty_resize,
             pty::pty_status,

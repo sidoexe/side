@@ -22,6 +22,7 @@ import { consumeInstalledUpdate } from "./app/model/updateNotice";
 import { initializeProviderBinaryPaths } from "./features/providers/model/providerBinaryPaths";
 // Lets file commands reach a connected machine for `remote://` paths.
 import "./features/connections/model/remoteCommands";
+import "./features/connections/model/remoteTerminals";
 import "./styles/index.css";
 
 performance.mark("monocode:bootstrap");

@@ -10,6 +10,7 @@ import {
   subscribePty,
   writePty,
 } from "../../../platform/tauri/pty";
+import { remoteTerminalCwd } from "../../connections/model/remoteProjects";
 import { isOscColorQuery, oscColorReply } from "../model/terminalChrome";
 import {
   isMacTerminalClearShortcut,
@@ -252,7 +253,9 @@ export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
             const scanned = scanOscCwd(text, oscBuffer);
             oscBuffer = scanned.rest;
             if (scanned.cwd) {
-              const patch: TerminalMetaPatch = { cwd: scanned.cwd };
+              // A shell on a connected machine reports that machine's paths.
+              const reported = remoteTerminalCwd(cwd, scanned.cwd);
+              const patch: TerminalMetaPatch = { cwd: reported };
               if (!runningProcessRef.current) {
                 patch.title = defaultTerminalTitle(scanned.cwd);
               }

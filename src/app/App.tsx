@@ -406,7 +406,6 @@ import {
   forgetProject,
   lastProjectPath,
   loadRecents,
-  isLocalProject,
   isRemoteProjectPath,
   looksLikeProject,
   normalizeProjectPath,
@@ -2970,7 +2969,7 @@ function Workspace({
     (cwd: string) => {
       const workdir = cwd || projectCwdRef.current;
       const projectPath = projectCwdRef.current;
-      if (!isLocalProject(projectPath)) return false;
+      if (!looksLikeProject(projectPath)) return false;
       setProjectTerminals((prev) => {
         const existing = findProjectTerminal(prev, projectPath);
         const file = newTerminalFile(
@@ -3001,7 +3000,7 @@ function Workspace({
   const onOpenTerminal = useCallback(
     (cwd: string, asWorkspaceTab = false, occupySessionId?: string) => {
       const workdir = cwd || terminalCwd;
-      if (!isLocalProject(projectCwdRef.current) || !isLocalProject(workdir))
+      if (!looksLikeProject(projectCwdRef.current) || !looksLikeProject(workdir))
         return;
       if (openProjectTerminal(workdir)) return;
 
@@ -3064,7 +3063,7 @@ function Workspace({
   );
 
   const onToggleProjectTerminal = useCallback(() => {
-    if (!isLocalProject(projectCwd)) return;
+    if (!looksLikeProject(projectCwd)) return;
     leaveCoveringMono();
     const dock = findProjectTerminal(projectTerminalsRef.current, projectCwd);
     if (!dock) {
@@ -13425,12 +13424,12 @@ function Workspace({
                   terminalOpen={!monoCovers && runningTerminalOpen}
                   onToggleTerminal={onToggleRunningTerminal}
                   onNewTerminal={
-                    !monoCovers && isLocalProject(projectCwd)
+                    !monoCovers && looksLikeProject(projectCwd)
                       ? onNewTerminal
                       : undefined
                   }
                   onToggleProjectTerminal={
-                    !monoCovers && isLocalProject(projectCwd)
+                    !monoCovers && looksLikeProject(projectCwd)
                       ? onToggleProjectTerminal
                       : undefined
                   }

@@ -141,19 +141,65 @@ pub fn pty_spawn(
         close_fd(prev.master_fd);
     }
 
+    spawn(app, host, id, workdir, default_shell(), cols, rows)
+}
+
+/// A terminal in a folder of a connected machine: `ssh -t` through the same
+/// SSH target as its host tunnel, so the shell streams like a local one. A
+/// machine reached through an alias to this computer gets a plain local shell.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn pty_spawn_remote(
+    app: AppHandle,
+    host: State<PtyHost>,
+    id: String,
+    machine_id: String,
+    cwd: String,
+    windows: bool,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    let target = crate::remote::machine_ssh_target(&app, &machine_id)?
+        .ok_or("Terminals need a machine connected through SSH.")?;
+    if let Some(prev) = host.remove(&id) {
+        terminate(prev.pid);
+        #[cfg(unix)]
+        close_fd(prev.master_fd);
+    }
+    if crate::remote_ssh::is_loopback(&target) {
+        let workdir = working_dir(&cwd);
+        let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
+        return spawn(app, host, id, workdir, default_shell(), cols, rows);
+    }
+    let workdir = dirs_home()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| working_dir("~"));
+    let program = crate::remote_ssh::terminal_command(&target, &cwd, windows);
+    spawn(app, host, id, workdir, program, cols, rows)
+}
+
+fn spawn(
+    app: AppHandle,
+    host: State<PtyHost>,
+    id: String,
+    workdir: std::path::PathBuf,
+    program: (String, Vec<String>),
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
     #[cfg(unix)]
     {
-        spawn_unix(app, host, id, workdir, cols.max(2), rows.max(2))
+        spawn_unix(app, host, id, workdir, program, cols.max(2), rows.max(2))
     }
 
     #[cfg(windows)]
     {
-        spawn_windows(app, host, id, workdir, cols.max(2), rows.max(2))
+        spawn_windows(app, host, id, workdir, program, cols.max(2), rows.max(2))
     }
 
     #[cfg(not(any(unix, windows)))]
     {
-        let _ = (app, cwd, cols, rows);
+        let _ = (app, host, id, workdir, program, cols, rows);
         Err("Terminals are not supported on this platform.".into())
     }
 }
@@ -247,6 +293,7 @@ fn spawn_unix(
     host: State<PtyHost>,
     id: String,
     workdir: std::path::PathBuf,
+    (shell, args): (String, Vec<String>),
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
@@ -255,7 +302,6 @@ fn spawn_unix(
     use std::os::unix::process::CommandExt;
     use std::process::Command;
 
-    let (shell, args) = default_shell();
     let (master, slave) = open_pty(cols, rows)?;
 
     let mut cmd = Command::new(&shell);
@@ -376,12 +422,12 @@ fn spawn_windows(
     host: State<PtyHost>,
     id: String,
     workdir: std::path::PathBuf,
+    (shell, args): (String, Vec<String>),
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
     use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
-    let (shell, args) = default_shell();
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {

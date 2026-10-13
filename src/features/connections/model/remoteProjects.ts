@@ -119,3 +119,10 @@ export function remoteProjectsOn(environmentId: string): RemoteProject[] {
     (project) => project.environmentId === environmentId,
   );
 }
+
+/** A folder a shell reported, as a path on the machine its terminal runs on. */
+export function remoteTerminalCwd(terminalCwd: string, reported: string): string {
+  const parsed = parseRemotePath(terminalCwd);
+  if (!parsed || isRemoteProjectPath(reported)) return reported;
+  return remotePath(parsed.environmentId, reported);
+}
