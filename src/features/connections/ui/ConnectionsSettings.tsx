@@ -14,6 +14,7 @@ import {
   type RemoteMachine,
   type SshSetup,
 } from "../model/protocol";
+import { HomeMachineSetting } from "./HomeMachineSetting";
 
 const input =
   "w-full rounded-lg border border-content/15 bg-content/3 px-3 py-2 text-[13px] outline-none focus:border-content/35";
@@ -262,6 +263,7 @@ export function ConnectionsSettings() {
           </button>
         )}
       </div>
+      {machines.length > 0 ? <HomeMachineSetting machines={machines} /> : null}
       {machines.length > 0 ? (
         <div className="divide-y divide-stroke overflow-hidden rounded-xl border border-stroke">
           {machines.map((machine) => (

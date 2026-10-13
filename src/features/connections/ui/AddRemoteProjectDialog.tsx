@@ -16,13 +16,16 @@ import type { HostDirectory, HostProject } from "../model/protocol";
 export function AddRemoteProjectDialog({
   onCancel,
   onOpen,
+  initialMachineId,
 }: {
   onCancel: () => void;
   /** Receives the new project's rail key. */
   onOpen: (key: string) => void;
+  /** Preselected machine, the home machine in host-only mode. */
+  initialMachineId?: string;
 }) {
   const { machines, loaded } = useRemoteMachines();
-  const [machineId, setMachineId] = useState<string>();
+  const [machineId, setMachineId] = useState<string | undefined>(initialMachineId);
   const machine =
     machines.find((entry) => entry.id === machineId) ?? machines[0];
   const [path, setPath] = useState("");

@@ -342,6 +342,60 @@ export class HostEngine {
     return summary;
   }
 
+  /** Takes over a session a desktop recorded in its own store, so every
+   * conversation lives in this host's database. Only finished state is
+   * accepted: in-memory turn flags are dropped and the session starts idle. */
+  importSession(raw: Record<string, unknown>): { imported: boolean } {
+    const project = this.store.project(String(raw.projectId ?? ""));
+    const input = raw.session;
+    if (!input || typeof input !== "object" || Array.isArray(input))
+      throw new Error("Invalid session");
+    const session = input as Session;
+    if (
+      typeof session.id !== "string" ||
+      !/^[A-Za-z0-9_-]{1,256}$/.test(session.id) ||
+      !Array.isArray(session.blocks) ||
+      typeof session.title !== "string" ||
+      typeof session.model !== "string" ||
+      !isRemoteProvider(session.harness)
+    )
+      throw new Error("Invalid session");
+    if (session.ephemeral || session.inboxAsk)
+      throw new Error("Temporary sessions are not imported");
+    const time = (value: unknown) =>
+      typeof value === "number" && Number.isFinite(value) && value > 0
+        ? value
+        : undefined;
+    const updatedAt = time(raw.updatedAt) ?? Date.now();
+    const {
+      busy: _busy,
+      turnReady: _turnReady,
+      backgroundTasks: _backgroundTasks,
+      editingQueuedMessageId: _editing,
+      sendingQueuedMessageId: _sending,
+      usageLimit: _usageLimit,
+      pendingSwitch: _pendingSwitch,
+      ...rest
+    } = session;
+    return this.store.importSession({
+      session: {
+        ...rest,
+        cwd: session.cwd || project.cwd,
+        modelSettings:
+          session.modelSettings && typeof session.modelSettings === "object"
+            ? session.modelSettings
+            : {},
+      },
+      projectId: project.id,
+      revision: 1,
+      status: "idle",
+      createdAt: time(raw.createdAt) ?? updatedAt,
+      updatedAt,
+      archived: raw.archived === true || undefined,
+      pinned: raw.pinned === true || undefined,
+    });
+  }
+
   private flush(id: string): void {
     const live = this.live.get(id);
     if (!live) return;

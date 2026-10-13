@@ -224,6 +224,17 @@ export class HostStore {
     });
   }
 
+  /** Adopts a session recorded elsewhere (a desktop's local store) as is.
+   * Idempotent: a session already on this host is left untouched, so an
+   * import that is retried or repeated from a second desktop is harmless. */
+  importSession(input: HostSession): { imported: boolean } {
+    return this.transaction(() => {
+      if (this.find(input.session.id)) return { imported: false };
+      this.save(input, { type: "session.imported" });
+      return { imported: true };
+    });
+  }
+
   deleteSession(id: string): void {
     this.transaction(() => {
       const current = this.session(id);

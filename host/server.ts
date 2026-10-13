@@ -292,6 +292,7 @@ export function createHostServer(
                 "attachments.read",
                 "sessions.draft",
                 "sessions.plan",
+                "sessions.import",
               ],
             };
             break;
@@ -373,6 +374,9 @@ export function createHostServer(
             result = { deleted: true };
             break;
           }
+          case "sessions.import":
+            result = engine.importSession(params);
+            break;
           case "sessions.sync": {
             const sessionId = String(params.sessionId ?? "");
             result = transfers.respond(

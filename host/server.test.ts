@@ -137,6 +137,45 @@ describe("remote host API", () => {
     expect(s.store.summaries(s.project.id)).toEqual([]);
   });
 
+  it("imports a desktop's local session once, idle, and lists it", async () => {
+    const s = await setup();
+    const session = {
+      id: "local-1",
+      harness: "codex",
+      model: "codex:test",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      title: "From the laptop",
+      cwd: s.project.cwd,
+      busy: true,
+      turnReady: true,
+      blocks: [{ id: "u1", role: "user", text: "hello" }],
+    };
+    const params = { projectId: s.project.id, session, createdAt: 10, updatedAt: 20, pinned: true };
+    const first = await s.call("sessions.import", params);
+    expect(first.value.result).toEqual({ imported: true });
+    const again = await s.call("sessions.import", {
+      ...params,
+      session: { ...session, title: "Overwritten" },
+    });
+    expect(again.value.result).toEqual({ imported: false });
+
+    const stored = s.store.session("local-1");
+    expect(stored).toMatchObject({ status: "idle", revision: 1, createdAt: 10, updatedAt: 20, pinned: true });
+    expect(stored.session.title).toBe("From the laptop");
+    expect(stored.session.busy).toBeUndefined();
+    expect(stored.session.turnReady).toBeUndefined();
+    const listed = await s.call("sessions.list", { projectId: s.project.id });
+    expect(listed.value.result.map((item: { id: string }) => item.id)).toEqual(["local-1"]);
+
+    for (const bad of [
+      { ...params, projectId: "missing" },
+      { ...params, session: { ...session, id: "../escape" } },
+      { ...params, session: { ...session, harness: "nope" } },
+      { ...params, session: { ...session, id: "temp", ephemeral: true } },
+    ]) expect((await s.call("sessions.import", bad)).value.error).toBeTruthy();
+  });
+
   it("uploads an authenticated attachment and sends its host path to the provider", async () => {
     const s = await setup();
     const id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
