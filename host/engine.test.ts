@@ -1002,6 +1002,31 @@ describe("balanced provider accounts", () => {
     const saved = store.session(sessionId);
     expect(saved.session.usageLimit).toBeDefined();
     expect(JSON.stringify(saved.session.blocks)).toMatch(/hit your session limit/);
+    // a reopens in an hour, b in a minute: the conversation waits for b.
+    expect(saved.session.usageLimit?.resetsAt).toBe(accounts.usage().b.blockedUntil);
+  });
+
+  it("carries the conversation to an account picked by hand", async () => {
+    const { store, project, provider, engine, profiles } = await balanced();
+    const { sessionId } = engine.command({
+      type: "create", commandId: "c", projectId: project.id, harness: "claude",
+      model: "claude:test", runtimeMode: "supervised", providerAccountId: "b",
+    });
+    engine.command({ type: "send", commandId: "s", sessionId, text: "Hi" });
+    await vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"));
+    mkdirSync(join(profiles, "b", "projects", "-repo"), { recursive: true });
+    writeFileSync(join(profiles, "b", "projects", "-repo", "conv-1.jsonl"), "{}\n");
+
+    engine.command({
+      type: "configure", commandId: "k", sessionId, model: "claude:test",
+      modelSettings: {}, runtimeMode: "supervised", providerAccountId: "a",
+    });
+
+    expect(existsSync(join(profiles, "a", "projects", "-repo", "conv-1.jsonl"))).toBe(true);
+    expect(provider.bind).toHaveBeenLastCalledWith(sessionId, "conv-1", expect.any(String), "a");
+    const saved = store.session(sessionId);
+    expect(saved.session.providerAccountId).toBe("a");
+    expect(saved.accountInUse).toBe("a");
   });
 
   it("runs a named account as is and rejects unknown ones", async () => {

@@ -681,6 +681,7 @@ export class HostEngine {
               "Wait for the current turn before changing settings",
             );
           this.checkAccount(value.session.harness, command.providerAccountId);
+          const before = boundAccount(value);
           value = {
             ...value,
             session: {
@@ -693,6 +694,8 @@ export class HostEngine {
                 : {}),
             },
           };
+          if (command.providerAccountId && command.providerAccountId !== AUTO_ACCOUNT)
+            value = this.moveToAccount(value, provider, before);
         } else if (command.type === "draft") {
           if (
             value.status === "running" ||
@@ -1338,6 +1341,19 @@ export class HostEngine {
     return chosen;
   }
 
+  /** When the first account of a balanced conversation's pool reopens. */
+  private soonestReset(id: string): number | undefined {
+    const harness = this.live.get(id)?.value.session.harness;
+    if (!harness || !this.accounts) return undefined;
+    const usage = this.accounts.usage();
+    const now = Date.now();
+    const resets = this.accounts
+      .pool(harness)
+      .map((account) => usage[account.id]?.blockedUntil)
+      .filter((until): until is number => typeof until === "number" && until > now);
+    return resets.length ? Math.min(...resets) : undefined;
+  }
+
   /** The account after a limited one, or nothing when all are limited. */
   private nextAccount(
     id: string,
@@ -1352,6 +1368,27 @@ export class HostEngine {
     tried.push(limitedId);
     const next = this.accounts.pick(value.session.harness, tried);
     return next?.free ? next.account.id : undefined;
+  }
+
+  /**
+   * A conversation switched to a named account (or the default one) by hand
+   * continues there: its Claude transcript is copied into that profile, as a
+   * balanced conversation's is when it changes account.
+   */
+  private moveToAccount(
+    value: HostSession,
+    provider: HostProvider,
+    before: string | undefined,
+  ): HostSession {
+    const after = boundAccount(value);
+    const { session } = value;
+    if (after !== before && session.harness === "claude" && session.providerSessionId) {
+      const dir = (id: string | undefined) =>
+        claudeConfigDir(id && this.accounts ? this.accounts.find("claude", id) : undefined);
+      carryClaudeTranscript(dir(before), dir(after), session.providerSessionId);
+      bindProvider(provider, session.id, session.providerSessionId, session.cwd, after);
+    }
+    return { ...value, accountInUse: after ?? DEFAULT_ACCOUNT };
   }
 
   /** Moves a conversation's provider identity onto another account. */
@@ -1425,7 +1462,15 @@ export class HostEngine {
         this.event(id, runId, event);
       },
       release: () => {
-        for (const event of held.splice(0)) this.event(id, runId, event);
+        // Every pooled account refused the turn: the conversation can go on
+        // as soon as the first of them reopens, not when the last one tried does.
+        const soonest = balanced ? this.soonestReset(id) : undefined;
+        for (const event of held.splice(0))
+          this.event(
+            id,
+            runId,
+            event.type === "usage.limited" && soonest ? { ...event, resetsAt: soonest } : event,
+          );
       },
       discard: () => {
         held.length = 0;
