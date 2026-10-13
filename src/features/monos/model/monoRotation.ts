@@ -23,7 +23,8 @@ const VERBATIM_REPLY_CHARS = 3_000;
 const LINE_CHARS = 280;
 const EARLIER_CHARS = 3_000;
 
-export type RotationReason = "context";
+/** `machine`: the provider session behind the chat lives on another desktop. */
+export type RotationReason = "context" | "machine";
 
 /** What the latest rotation started the provider session with. */
 export type MonoRotation = {

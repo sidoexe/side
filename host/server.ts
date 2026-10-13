@@ -672,6 +672,22 @@ export function createHostServer(
           case "employees.saveRoster":
             result = employees().saveRoster(params.roster, params.expectedRevision);
             break;
+          case "employees.sessionUpsert":
+            result = employees().transcripts.upsert(params);
+            break;
+          case "employees.sessionGet":
+            result = employees().transcripts.get(params.sessionId);
+            break;
+          case "employees.sessionPage":
+            result = employees().transcripts.page(params.sessionId, params);
+            break;
+          case "employees.sessionFind":
+            result = employees().transcripts.find(params.sessionId, params.query);
+            break;
+          case "employees.sessionDelete":
+            employees().transcripts.delete(params.sessionId);
+            result = null;
+            break;
           default:
             throw new Error("Unsupported host method");
         }

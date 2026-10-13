@@ -19,6 +19,9 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../monos/model/mono", () => ({
   isMonoSession: (id: string) => id.startsWith("mono"),
 }));
+vi.mock("../../monos/model/employeeStorage", () => ({
+  employeeHome: async () => undefined,
+}));
 const call = vi.mocked(invoke);
 let id = 0;
 

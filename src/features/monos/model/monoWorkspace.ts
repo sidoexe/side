@@ -17,6 +17,7 @@ import { forgetAgentContext } from "./monoFiles";
 import { forgetMonoRotation } from "./monoRotation";
 
 const openingMonos = new Map<string, Promise<Session | undefined>>();
+const HOME_FOLDER = /^(\/Users|\/home)\/[^/]+\/?$/;
 
 /**
  * Load the Mono's conversation without opening or replacing a workspace tab.
@@ -49,7 +50,14 @@ async function loadMonoSession(
   if (!mono) return undefined;
   if (mono.sessionId) {
     const existing = await host.load(mono.sessionId);
-    if (existing) return existing;
+    if (existing) {
+      // A chat another desktop started runs in that computer's home folder,
+      // which may not exist here.
+      const home = await host.home();
+      return HOME_FOLDER.test(existing.cwd) && existing.cwd.replace(/\/$/, "") !== home
+        ? { ...existing, cwd: home }
+        : existing;
+    }
   }
   const home = await host.home();
   // Removed while the home folder was looked up.

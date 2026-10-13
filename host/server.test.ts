@@ -165,6 +165,21 @@ describe("remote host API", () => {
     expect((await s.call("employees.roster", {}, s.second.token)).value.result).toEqual({
       revision: 1, roster: [{ id: "e1" }],
     });
+    const chat = { id: "chat-1", cwd: "/Users/me", harness: "claude", model: "claude:opus",
+      modelSettings: {}, runtimeMode: "auto", title: "Employee" };
+    await s.call("employees.sessionUpsert", {
+      session: { ...chat, blocks: [{ id: "u", role: "user", text: "Hello there" }] },
+      blocksChanged: true,
+    });
+    const opened = (await s.call("employees.sessionGet", { sessionId: "chat-1" }, s.second.token)).value.result;
+    expect(opened.blocks).toEqual([{ id: "u", role: "user", text: "Hello there" }]);
+    expect((await s.call("employees.sessionFind", { sessionId: "chat-1", query: "hello" })).value.result)
+      .toEqual(["u"]);
+    expect((await s.call("employees.sessionPage", { sessionId: "chat-1", beforeBlockId: "u" })).value.result)
+      .toEqual({ blocks: [], before: null, hasNewer: true });
+    await s.call("employees.sessionDelete", { sessionId: "chat-1" });
+    expect((await s.call("employees.sessionGet", { sessionId: "chat-1" })).value.result).toBeNull();
+    s.engine.employees.close();
   });
 
   it("imports a desktop's local session once, idle, and lists it", async () => {

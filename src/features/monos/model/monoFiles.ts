@@ -270,6 +270,21 @@ export function planAgentContext(
   return { soul, memory: soul || handed.memoryHash !== files.memoryHash };
 }
 
+/**
+ * Whether the provider session behind the chat was started on another
+ * desktop. Every turn sent from here records its provider session, so one
+ * this computer never recorded is another desktop's, which this one's
+ * provider CLI cannot resume.
+ */
+export function providerSessionFromElsewhere(
+  sessionId: string,
+  providerSessionId: string | undefined,
+): boolean {
+  if (!providerSessionId) return false;
+  const handed = readHanded()[sessionId];
+  return !handed || (handed.provider != null && handed.provider !== providerSessionId);
+}
+
 /** Record what a turn the provider accepted carried. */
 export function recordAgentContext(
   sessionId: string,

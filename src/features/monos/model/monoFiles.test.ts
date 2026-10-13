@@ -14,6 +14,7 @@ import {
   memoryWithinBudget,
   planAgentContext,
   monoContext,
+  providerSessionFromElsewhere,
   monoTurn,
   recordAgentContext,
   resetMonoDefaults,
@@ -239,4 +240,16 @@ it("puts what the app adds ahead of the user's message, marked as its own", () =
     turn.indexOf("what is this"),
   );
   expect(turn.endsWith("</monocode_context>\n\nwhat is this")).toBe(true);
+});
+
+it("tells a provider session started on another desktop from one started here", () => {
+  const files = { soulHash: "s", memoryHash: "m" };
+  expect(providerSessionFromElsewhere("chat", undefined)).toBe(false);
+  expect(providerSessionFromElsewhere("chat", "native-1")).toBe(true);
+  // Recorded before the first reply named its provider session.
+  recordAgentContext("chat", undefined, files);
+  expect(providerSessionFromElsewhere("chat", "native-1")).toBe(false);
+  recordAgentContext("chat", "native-1", files);
+  expect(providerSessionFromElsewhere("chat", "native-1")).toBe(false);
+  expect(providerSessionFromElsewhere("chat", "native-2")).toBe(true);
 });

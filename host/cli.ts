@@ -310,6 +310,7 @@ Connect another computer using an SSH forward to the loopback port.`);
     );
     cleanup = () => {
       rmSync(statePath, { force: true });
+      engine.employees?.close();
       store.close();
       releaseOwner();
     };

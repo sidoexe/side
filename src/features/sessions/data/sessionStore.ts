@@ -1,5 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isMonoSession } from "../../monos/model/mono";
+import {
+  deleteEmployeeTranscript,
+  findEmployeeTranscript,
+  getEmployeeTranscript,
+  getEmployeeTranscriptPage,
+  saveEmployeeTranscript,
+} from "../../monos/model/employeeTranscripts";
 import { sanitizeMonoSpawnedSessions } from "../../monos/model/monoSpawnedSessions";
 import {
   isWeakToolTitle,
@@ -410,7 +417,7 @@ export async function upsertSession(
       }
       const changed =
         !previous || same !== previous.length || same !== snapshot.length;
-      const summary = await invoke<SessionSummary>("mono_session_upsert", {
+      const summary = await saveEmployeeTranscript<SessionSummary>({
         session: {
           ...payload,
           blocks: changed
@@ -426,6 +433,7 @@ export async function upsertSession(
             : null,
         blocksChanged: changed,
         appendOnly: previous?.length === 0,
+        baseLastBlockId: previous?.[previous.length - 1]?.id ?? null,
       });
       monoSavedBlocks.set(session.id, snapshot);
       return summary;
@@ -575,7 +583,7 @@ export async function getMonoTranscriptPage(
     aroundBlockId?: string;
   } = {},
 ): Promise<MonoTranscriptPage> {
-  const page = await invoke<MonoTranscriptPage>("mono_session_page", {
+  const page = await getEmployeeTranscriptPage<MonoTranscriptPage>({
     sessionId,
     before: options.before ?? null,
     beforeBlockId: options.beforeBlockId ?? null,
@@ -593,16 +601,13 @@ export function findMonoTranscript(
   sessionId: string,
   query: string,
 ): Promise<string[]> {
-  return invoke("mono_session_find", { sessionId, query });
+  return findEmployeeTranscript(sessionId, query);
 }
 
 export async function getSession(sessionId: string): Promise<Session | null> {
-  const record = await invoke<SessionRecord | null>(
-    isMonoSession(sessionId) ? "mono_session_get" : "session_get",
-    {
-      sessionId,
-    },
-  );
+  const record = isMonoSession(sessionId)
+    ? await getEmployeeTranscript<SessionRecord>(sessionId)
+    : await invoke<SessionRecord | null>("session_get", { sessionId });
   if (!record) return null;
   const session = recordToSession(record);
   if (session.monoTranscript) monoSavedBlocks.set(sessionId, session.blocks);
@@ -754,9 +759,10 @@ export async function deleteSession(
       )
       .map(([, pending]) => pending);
     if (pendingWrites.length > 0) await Promise.all(pendingWrites);
-    await enqueueSessionWrite(sessionId, () =>
-      invoke<void>("session_delete", { sessionId, imagePaths }),
-    );
+    await enqueueSessionWrite(sessionId, async () => {
+      if (isMonoSession(sessionId)) await deleteEmployeeTranscript(sessionId);
+      await invoke<void>("session_delete", { sessionId, imagePaths });
+    });
     monoSavedBlocks.delete(sessionId);
     const tombstone = setTimeout(
       () => deletedSessionIds.delete(sessionId),

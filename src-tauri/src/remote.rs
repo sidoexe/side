@@ -399,6 +399,11 @@ fn supported_remote_method(method: &str) -> bool {
             | "employees.import"
             | "employees.roster"
             | "employees.saveRoster"
+            | "employees.sessionUpsert"
+            | "employees.sessionGet"
+            | "employees.sessionPage"
+            | "employees.sessionFind"
+            | "employees.sessionDelete"
     )
 }
 

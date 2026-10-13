@@ -580,6 +580,7 @@ import {
   planAgentContext,
   monoContext,
   monoTurn,
+  providerSessionFromElsewhere,
   readAgentFile,
   recordAgentContext,
   writeAgentFile,
@@ -7337,7 +7338,10 @@ function Workspace({
       // a fresh one, briefed on where the conversation was.
       const monoRotationReason =
         mono && !pendingSwitch && !editedResend
-          ? rotationReason(current)
+          ? (rotationReason(current) ??
+            (providerSessionFromElsewhere(sessionId, current.providerSessionId)
+              ? "machine"
+              : undefined))
           : undefined;
       const monoRotation = monoRotationReason
         ? planRotation(
@@ -7993,7 +7997,11 @@ function Workspace({
             ),
           );
           if (monoRotation) {
-            if (current.harness === "codex" && current.providerSessionId) {
+            if (
+              current.harness === "codex" &&
+              current.providerSessionId &&
+              monoRotationReason !== "machine"
+            ) {
               await migrateMonoCodexSession({
                 sessionId,
                 threadId: current.providerSessionId,

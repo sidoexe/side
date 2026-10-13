@@ -50,6 +50,20 @@ it("loads an existing resident conversation without creating a session", async (
   expect(host.add).not.toHaveBeenCalled();
 });
 
+it("moves a conversation another desktop started into this computer's home folder", async () => {
+  const agent = { ...chat("resident"), cwd: "/Users/someone-else" };
+  const monoId = monoFor("/project", agent.id);
+  const host = {
+    home: vi.fn().mockResolvedValue("/Users/me"),
+    load: vi.fn().mockResolvedValue(agent),
+    create: vi.fn(createSession),
+    add: vi.fn(),
+  };
+  expect((await ensureMonoSession(monoId, host))!.cwd).toBe("/Users/me");
+  host.load.mockResolvedValue({ ...agent, cwd: "/Users/me/" });
+  expect((await ensureMonoSession(monoId, host))!.cwd).toBe("/Users/me/");
+});
+
 it("starts a new Employee's conversation with Auto permissions in the home folder, once", async () => {
   const monoId = createMono(["/project"]).id;
   const host = {

@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { HostEmployeeTranscripts } from "./employee-transcripts";
 
 /**
  * Employees' files on the home machine, so every desktop reads the same soul,
@@ -21,6 +22,7 @@ import { join } from "node:path";
  * ```text
  * <data dir>/employees/
  * ├── roster.json       every employee's look and projects, with a revision
+ * ├── transcripts.db    their conversations (see employee-transcripts.ts)
  * └── <employee id>/
  *     ├── SOUL.md
  *     ├── MEMORY.md
@@ -88,7 +90,19 @@ function resolveFile(dir: string, relative: unknown): string {
 }
 
 export class HostEmployees {
+  private chats?: HostEmployeeTranscripts;
+
   constructor(private readonly root: string) {}
+
+  get transcripts(): HostEmployeeTranscripts {
+    this.chats ??= new HostEmployeeTranscripts(join(this.root, "transcripts.db"));
+    return this.chats;
+  }
+
+  close(): void {
+    this.chats?.close();
+    this.chats = undefined;
+  }
 
   private dir(id: unknown): string {
     if (typeof id !== "string" || !ID.test(id)) throw new Error("Invalid employee ID");
