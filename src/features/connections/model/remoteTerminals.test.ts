@@ -29,6 +29,12 @@ it("opens a terminal on the machine that owns the folder", async () => {
   expect(invoke).toHaveBeenLastCalledWith("pty_spawn", { id: "t2", cwd: "/Users/me/local", cols: 80, rows: 24 });
 });
 
+it("opens a local terminal for a host reached on this computer's loopback", async () => {
+  machines.list = [{ id: "m1", environmentId: "env", endpoint: "http://127.0.0.1:3775", ssh: null }];
+  await spawnRemotePty("t", "remote://env/Users/me/app", 80, 24);
+  expect(invoke).toHaveBeenCalledWith("pty_spawn", { id: "t", cwd: "/Users/me/app", cols: 80, rows: 24 });
+});
+
 it("explains why a machine without SSH cannot open one", async () => {
   machines.list = [{ id: "m1", environmentId: "env", ssh: null }];
   await expect(spawnRemotePty("t", "remote://env/home/me", 80, 24)).rejects.toThrow("SSH");
