@@ -213,15 +213,22 @@ export function knownRemoteMachine(
   return cachedMachines.find((entry) => entry.environmentId === environmentId);
 }
 
+/** Every connected machine, reading the list the first time. */
+export async function loadRemoteMachines(): Promise<RemoteMachine[]> {
+  if (machinesLoaded) return cachedMachines;
+  const value = await invoke<RemoteMachine[]>("remote_machines");
+  cachedMachines = Array.isArray(value) ? value : [];
+  machinesLoaded = true;
+  return cachedMachines;
+}
+
 /** The connected machine for an environment, reading the list when needed. */
 export async function remoteMachineFor(
   environmentId: string,
 ): Promise<RemoteMachine | undefined> {
   const known = knownRemoteMachine(environmentId);
   if (known || machinesLoaded) return known;
-  const value = await invoke<RemoteMachine[]>("remote_machines");
-  cachedMachines = Array.isArray(value) ? value : [];
-  machinesLoaded = true;
+  await loadRemoteMachines();
   return knownRemoteMachine(environmentId);
 }
 

@@ -568,10 +568,12 @@ import {
   monosSnapshot,
   monoState,
   removeMono,
+  replaceMonoProjectPath,
   saveOpenMono,
   subscribeMonos,
   type MonoState,
 } from "../features/monos/model/mono";
+import { startEmployeeRosterSync } from "../features/monos/model/employeeRoster";
 import {
   loadMonoFiles,
   MONO_PROMPT_VERSION,
@@ -1368,9 +1370,12 @@ function Workspace({
     sessionsRef,
     setSessions,
     setRecents,
-    onProjectMoved: (path, key) =>
-      setProjectCwd((current) => (current === path ? key : current)),
+    onProjectMoved: (path, key) => {
+      replaceMonoProjectPath(path, key);
+      setProjectCwd((current) => (current === path ? key : current));
+    },
   });
+  useEffect(() => startEmployeeRosterSync(), []);
   const linkedSessionUpdatesRef = useRef<
     ReadonlyMap<string, LinkedSessionUpdate>
   >(new Map());

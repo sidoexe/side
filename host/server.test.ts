@@ -13,6 +13,7 @@ import type { AddressInfo } from "node:net";
 import { request } from "node:http";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
+import { HostEmployees } from "./employees";
 import { createHostServer } from "./server";
 import { HostChildBackend } from "./child-backend";
 import { configureChildBackend } from "../src/integrations/harness/core/child";
@@ -135,6 +136,35 @@ describe("remote host API", () => {
     req!.end(body.slice(1));
     expect(await response).toBe(401);
     expect(s.store.summaries(s.project.id)).toEqual([]);
+  });
+
+  it("shares employees' files and roster between desktops", async () => {
+    const s = await setup();
+    expect((await s.call("employees.load", { mono: "e1" })).value.error).toBe(
+      "Employees are unavailable on this host",
+    );
+    s.engine.employees = new HostEmployees(join(s.directory, "employees"));
+    const described = await s.call("environment.describe");
+    expect(described.value.result.capabilities).toContain("employees");
+    const loaded = (await s.call("employees.load", { mono: "e1" })).value.result;
+    expect(loaded).toMatchObject({ id: "e1", soul: null, memory: "" });
+    const saved = await s.call("employees.save", {
+      mono: "e1", path: "habits.json", text: "[1]", expectedHash: loaded.soulHash,
+    });
+    // Another desktop's claim over the same version is refused.
+    const other = await s.call("employees.save", {
+      mono: "e1", path: "habits.json", text: "[2]", expectedHash: loaded.soulHash,
+    }, s.second.token);
+    expect(other.value.error).toBe("conflict");
+    expect((await s.call("employees.read", { mono: "e1", path: "habits.json" }, s.second.token))
+      .value.result).toEqual({ text: "[1]", hash: saved.value.result });
+    expect((await s.call("employees.import", { mono: "e1", files: { "SOUL.md": "# Soul" } }))
+      .value.result).toEqual({ written: 1 });
+    const roster = await s.call("employees.saveRoster", { roster: [{ id: "e1" }], expectedRevision: 0 });
+    expect(roster.value.result.revision).toBe(1);
+    expect((await s.call("employees.roster", {}, s.second.token)).value.result).toEqual({
+      revision: 1, roster: [{ id: "e1" }],
+    });
   });
 
   it("imports a desktop's local session once, idle, and lists it", async () => {

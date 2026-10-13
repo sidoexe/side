@@ -1,4 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
+import {
+  loadEmployeeFiles,
+  readEmployeeFile,
+  saveEmployeeFile,
+} from "./employeeStorage";
 import {
   findMono,
   HANDED_KEY,
@@ -9,8 +13,8 @@ import {
 } from "./mono";
 
 /**
- * The Mono's SOUL.md and MEMORY.md, kept in the app's data folder
- * rather than the repo (see `src-tauri/src/mono.rs`).
+ * The Mono's SOUL.md and MEMORY.md, kept in the app's data folder, or on the
+ * home machine's host, rather than the repo (see `employeeStorage.ts`).
  */
 export type MonoFiles = {
   id: string;
@@ -62,15 +66,9 @@ ${own || NO_INSTRUCTIONS}
 `;
 }
 
-/**
- * Which folder the backend reads: the Mono's own, and while it still has one
- * to move, the folder it had as its project's Mono.
- */
-function folder(monoId: string) {
-  return {
-    mono: monoId,
-    legacyProject: findMono(monoId)?.legacyProject ?? null,
-  };
+/** While it still has one to move, the folder it had as its project's Mono. */
+function legacyProject(monoId: string): string | null {
+  return findMono(monoId)?.legacyProject ?? null;
 }
 
 /**
@@ -89,7 +87,7 @@ export function loadMonoFiles(monoId: string): Promise<MonoFiles> {
 const loading = new Map<string, Promise<MonoFiles>>();
 
 async function readMonoFiles(monoId: string): Promise<MonoFiles> {
-  const loaded = await invoke<LoadedFiles>("mono_load", folder(monoId));
+  const loaded: LoadedFiles = await loadEmployeeFiles(monoId, legacyProject(monoId));
   // Once read, its old project folder is its own.
   if (findMono(monoId)?.legacyProject)
     updateMono(monoId, ({ legacyProject: _, ...mono }) => mono);
@@ -97,17 +95,18 @@ async function readMonoFiles(monoId: string): Promise<MonoFiles> {
   const soul = defaultSoul(findMono(monoId)?.instructions);
   try {
     // Over the missing file only, so another window's seed is never replaced.
-    const soulHash = await invoke<string>("mono_save", {
-      ...folder(monoId),
-      path: FILE_PATH.soul,
-      text: soul,
-      expectedHash: loaded.soulHash,
-    });
+    const soulHash = await saveEmployeeFile(
+      monoId,
+      legacyProject(monoId),
+      FILE_PATH.soul,
+      soul,
+      loaded.soulHash,
+    );
     updateMono(monoId, (mono) => ({ ...mono, instructions: "" }));
     return { ...loaded, soul, soulHash };
   } catch (error) {
     if (error !== "conflict") throw error;
-    const seeded = await invoke<LoadedFiles>("mono_load", folder(monoId));
+    const seeded: LoadedFiles = await loadEmployeeFiles(monoId, legacyProject(monoId));
     return { ...seeded, soul: seeded.soul ?? "" };
   }
 }
@@ -152,7 +151,7 @@ export async function readAgentFile(
   monoId: string,
   path: AgentFilePath,
 ): Promise<{ text: string | null; hash: string }> {
-  return invoke("mono_read", { ...folder(monoId), path });
+  return readEmployeeFile(monoId, legacyProject(monoId), path);
 }
 
 /** Saves over `expectedHash`; throws `MonoFileConflict` if it moved. */
@@ -163,12 +162,13 @@ export async function writeAgentFile(
   expectedHash?: string,
 ): Promise<string> {
   try {
-    const hash = await invoke<string>("mono_save", {
-      ...folder(monoId),
+    const hash = await saveEmployeeFile(
+      monoId,
+      legacyProject(monoId),
       path,
       text,
-      expectedHash: expectedHash ?? null,
-    });
+      expectedHash ?? null,
+    );
     window.dispatchEvent(new CustomEvent(FILES_CHANGED));
     return hash;
   } catch (error) {

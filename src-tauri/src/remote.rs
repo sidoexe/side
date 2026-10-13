@@ -393,6 +393,12 @@ fn supported_remote_method(method: &str) -> bool {
             | "git.action"
             | "accounts.list"
             | "sessions.import"
+            | "employees.load"
+            | "employees.read"
+            | "employees.save"
+            | "employees.import"
+            | "employees.roster"
+            | "employees.saveRoster"
     )
 }
 

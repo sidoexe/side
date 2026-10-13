@@ -160,6 +160,10 @@ export function createHostServer(
     },
     engine.checkpoints,
   );
+  const employees = () => {
+    if (!engine.employees) throw new Error("Employees are unavailable on this host");
+    return engine.employees;
+  };
   const models = async (projectId?: unknown) => {
     const cwd =
       typeof projectId === "string"
@@ -311,6 +315,7 @@ export function createHostServer(
                 "sessions.queue",
                 "sessions.editLast",
                 ...(engine.checkpoints ? ["sessions.review"] : []),
+                ...(engine.employees ? ["employees"] : []),
                 "accounts",
               ],
             };
@@ -649,6 +654,24 @@ export function createHostServer(
               )) ?? null;
             break;
           }
+          case "employees.load":
+            result = employees().load(params.mono);
+            break;
+          case "employees.read":
+            result = employees().read(params.mono, params.path);
+            break;
+          case "employees.save":
+            result = employees().save(params.mono, params.path, params.text, params.expectedHash);
+            break;
+          case "employees.import":
+            result = employees().import(params.mono, params.files);
+            break;
+          case "employees.roster":
+            result = employees().roster();
+            break;
+          case "employees.saveRoster":
+            result = employees().saveRoster(params.roster, params.expectedRevision);
+            break;
           default:
             throw new Error("Unsupported host method");
         }

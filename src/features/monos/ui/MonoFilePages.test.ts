@@ -25,6 +25,7 @@ beforeEach(() => {
   beforeSave = undefined;
   saveFailure = undefined;
   invoke.mockReset().mockImplementation(async (command, args) => {
+    if (command === "remote_machines") return [];
     if (command === "mono_read") return { text: memory, hash: String(version) };
     if (command !== "mono_save")
       throw new Error(`Unexpected command: ${command}`);

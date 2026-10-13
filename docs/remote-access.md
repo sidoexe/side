@@ -91,6 +91,12 @@ The limit notice works on host sessions: **Resume** continues the conversation, 
 
 `binaries` overrides where the host finds a provider CLI; otherwise its PATH decides.
 
+## Employees on the home machine
+
+When the home machine's host advertises `employees`, every desktop keeps its employees there instead of in its own data folder: the roster (names, looks, projects) and each employee's `SOUL.md`, `MEMORY.md`, `habits.json` and `memory/` notes, under `~/.monocode-host/employees`. The first time a desktop reaches such a host, it copies its own employees in; the host keeps whatever it already has, so a second desktop adds its employees without overwriting the first one's. Roster changes are pushed as they happen and read back every 15 seconds; when two desktops change it at once, each one's own edits are kept.
+
+Saves of an employee file are checked against the version the writer read, on the host, so a habit is claimed by exactly one desktop even with several open: the others see the claim and skip that run. With no home machine, or a host too old to keep employees, a desktop uses its own data folder as before.
+
 ## Manage the host
 
 ```sh
