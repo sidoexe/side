@@ -9,10 +9,9 @@ import {
 } from "../../../shared/lib/drag";
 import { Composer } from "./Composer";
 
-const { invoke, listen, platform } = vi.hoisted(() => ({
+const { invoke, listen } = vi.hoisted(() => ({
   invoke: vi.fn(),
   listen: vi.fn(),
-  platform: { isWin: false },
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
@@ -20,14 +19,6 @@ vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({
     onDragDropEvent: listen,
   }),
-}));
-vi.mock("../../../platform/tauri/platform", async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import("../../../platform/tauri/platform")
-  >()),
-  get IS_WIN() {
-    return platform.isWin;
-  },
 }));
 vi.mock("./useComposerSkills", () => ({
   useComposerSkills: () => ({
@@ -124,7 +115,6 @@ function explorerDrag(detail: ExplorerFilePointerDragDetail) {
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  platform.isWin = false;
   submit = vi.fn();
   handlers = new Set();
   listen.mockReset();
@@ -262,19 +252,6 @@ describe("Composer image drops", () => {
       finishRegistration?.();
     });
     expect(handlers.size).toBe(0);
-  });
-
-  it("scales Windows native positions even inside the CSS viewport", async () => {
-    platform.isWin = true;
-    vi.stubGlobal("devicePixelRatio", 2);
-    vi.stubGlobal("innerWidth", 1200);
-    vi.stubGlobal("innerHeight", 1000);
-    await render();
-    setDropRect(100, 200, 600, 450);
-
-    await nativeDrop(["C:/project/image.png"], 600, 600);
-
-    expect(attachmentCount()).toBe(1);
   });
 
   it("keeps macOS logical coordinates on a Retina display", async () => {

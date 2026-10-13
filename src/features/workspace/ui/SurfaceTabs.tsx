@@ -25,7 +25,7 @@ import {
   type FilePaneTab,
 } from "../model/layout";
 import { displayPath } from "../../../shared/lib/paths";
-import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import { IS_MAC } from "../../../platform/tauri/platform";
 import { releaseNotesTitle } from "../../../app/model/releaseNotes";
 import { terminalTabLabel } from "../../terminal/model/terminalTab";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
@@ -70,11 +70,7 @@ type SurfaceTabMenu = {
   fileId: string;
 };
 
-const REVEAL_LABEL = IS_MAC
-  ? "Reveal in Finder"
-  : IS_WIN
-    ? "Reveal in File Explorer"
-    : "Open Containing Folder";
+const REVEAL_LABEL = IS_MAC ? "Reveal in Finder" : "Open Containing Folder";
 
 export function surfaceTabMenuItems(
   file: FilePaneTab,

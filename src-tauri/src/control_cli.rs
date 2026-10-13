@@ -124,13 +124,6 @@ const APP_USAGE: &str = include_str!("../../host/app-cli-usage.txt");
 /// shell — where a backslash escapes rather than separates, and so is never
 /// safe bare.
 fn quoted(value: &str) -> String {
-    if !value.starts_with('/') {
-        return if value.contains([' ', '\t', '"']) {
-            format!("\"{}\"", value.replace('"', ""))
-        } else {
-            value.into()
-        };
-    }
     if value
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || "._/-:".contains(c))
@@ -470,11 +463,6 @@ mod tests {
             "/Applications/sIDE.app/Contents/MacOS/monocode"
         );
         assert_eq!(quoted("/Users/a b/sIDE"), "'/Users/a b/sIDE'");
-        assert_eq!(quoted("C:\\Tools\\monocode.exe"), "C:\\Tools\\monocode.exe");
-        assert_eq!(
-            quoted("C:\\Program Files\\sIDE\\monocode.exe"),
-            "\"C:\\Program Files\\sIDE\\monocode.exe\""
-        );
         // A backslash escapes in a POSIX shell, so bare would rewrite the path.
         assert_eq!(quoted("/Users/a\\b/sIDE"), "'/Users/a\\b/sIDE'");
         assert_eq!(quoted("/Users/it's/sIDE"), r"'/Users/it'\''s/sIDE'");

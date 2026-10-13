@@ -27,7 +27,6 @@ vi.mock("../model/fileWatch", () => ({
 vi.mock("../../../platform/tauri/platform", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   IS_MAC: true,
-  IS_WIN: false,
 }));
 
 let container: HTMLDivElement;

@@ -46,7 +46,7 @@ import { copyText } from "../../../platform/tauri/clipboard";
 import { openPathWithDefaultApp, revealPath } from "../../../platform/tauri/fs";
 import { INBOX_MEDIA_PREFIXES, isInboxMediaUrl } from "../../inbox/model/inboxMedia";
 import { isNoteImagePath } from "../../notes";
-import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import { IS_MAC } from "../../../platform/tauri/platform";
 import { InboxMedia } from "../../inbox/ui/InboxMedia";
 import { isLocalMediaPath, LocalMedia } from "./LocalMedia";
 import { rehypeHardBreaks } from "./hardBreaks";
@@ -141,11 +141,7 @@ const RemoteMediaContext = createContext(false);
 const LocalMediaContext = createContext(false);
 const MarkdownFadeContext = createContext(false);
 
-const REVEAL_LABEL = IS_MAC
-  ? "Reveal in Finder"
-  : IS_WIN
-    ? "Reveal in File Explorer"
-    : "Open Containing Folder";
+const REVEAL_LABEL = IS_MAC ? "Reveal in Finder" : "Open Containing Folder";
 
 function fileLinkMenuItems(
   canOpenInMonoCode: boolean,

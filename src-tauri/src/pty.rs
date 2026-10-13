@@ -42,8 +42,6 @@ struct LivePty {
     writer: Mutex<Box<dyn Write + Send>>,
     #[cfg(unix)]
     master_fd: i32,
-    #[cfg(windows)]
-    master: Mutex<Box<dyn portable_pty::MasterPty + Send>>,
     pid: u32,
 }
 
@@ -108,8 +106,6 @@ impl PtyHost {
                 hangup(live.pid);
                 close_fd(live.master_fd);
             }
-            #[cfg(not(unix))]
-            drop(live);
         }
         // Quit and `Drop` both exit the process, so the SIGKILL has to land
         // before this returns. `terminate`'s detached escalate thread never gets
@@ -155,7 +151,6 @@ pub fn pty_spawn_remote(
     id: String,
     machine_id: String,
     cwd: String,
-    windows: bool,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
@@ -174,7 +169,7 @@ pub fn pty_spawn_remote(
     let workdir = dirs_home()
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| working_dir("~"));
-    let program = crate::remote_ssh::terminal_command(&target, &cwd, windows);
+    let program = crate::remote_ssh::terminal_command(&target, &cwd);
     spawn(app, host, id, workdir, program, cols, rows)
 }
 
@@ -190,17 +185,6 @@ fn spawn(
     #[cfg(unix)]
     {
         spawn_unix(app, host, id, workdir, program, cols.max(2), rows.max(2))
-    }
-
-    #[cfg(windows)]
-    {
-        spawn_windows(app, host, id, workdir, program, cols.max(2), rows.max(2))
-    }
-
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = (app, host, id, workdir, program, cols, rows);
-        Err("Terminals are not supported on this platform.".into())
     }
 }
 
@@ -225,23 +209,6 @@ pub fn pty_resize(host: State<PtyHost>, id: String, cols: u16, rows: u16) -> Res
     {
         resize_fd(live.master_fd, cols.max(2), rows.max(2))
     }
-    #[cfg(windows)]
-    {
-        let master = live.master.lock().unwrap_or_else(|e| e.into_inner());
-        master
-            .resize(portable_pty::PtySize {
-                rows: rows.max(2),
-                cols: cols.max(2),
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .map_err(|err| format!("Failed to resize terminal: {err}"))
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = (live, cols, rows);
-        Err("Terminals are not supported on this platform.".into())
-    }
 }
 
 #[derive(Serialize, Clone)]
@@ -261,11 +228,6 @@ pub fn pty_status(host: State<'_, PtyHost>, id: String) -> Result<PtyStatus, Str
     {
         let foreground = foreground_label(live.master_fd, live.pid);
         Ok(PtyStatus { foreground })
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = live;
-        Ok(PtyStatus { foreground: None })
     }
 }
 
@@ -416,97 +378,6 @@ fn spawn_unix(
     Ok(())
 }
 
-#[cfg(windows)]
-fn spawn_windows(
-    app: AppHandle,
-    host: State<PtyHost>,
-    id: String,
-    workdir: std::path::PathBuf,
-    (shell, args): (String, Vec<String>),
-    cols: u16,
-    rows: u16,
-) -> Result<(), String> {
-    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-
-    let pty_system = native_pty_system();
-    let pair = pty_system
-        .openpty(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|err| format!("Failed to open terminal: {err}"))?;
-
-    let mut cmd = CommandBuilder::new(&shell);
-    cmd.args(&args);
-    cmd.cwd(&workdir);
-    cmd.env("TERM", "xterm-256color");
-    cmd.env("COLORTERM", "truecolor");
-    cmd.env("COLORFGBG", "15;0");
-    cmd.env("TERM_PROGRAM", "sIDE");
-    cmd.env("PATH", crate::harness::gui_search_path());
-    if let Some(home) = dirs_home() {
-        cmd.env("HOME", &home);
-        cmd.env("USERPROFILE", &home);
-    }
-    cmd.env("PWD", workdir.to_string_lossy().as_ref());
-
-    let mut child = crate::windows::spawn_pty(pair.slave.as_ref(), cmd)
-        .map_err(|err| format!("Failed to start {shell}: {err}"))?;
-    let pid = child.process_id().unwrap_or(0);
-    let mut reader = pair
-        .master
-        .try_clone_reader()
-        .map_err(|err| format!("Failed to read terminal: {err}"))?;
-    let writer = pair
-        .master
-        .take_writer()
-        .map_err(|err| format!("Failed to write to terminal: {err}"))?;
-
-    let live = Arc::new(LivePty {
-        cwd: workdir.clone(),
-        writer: Mutex::new(Box::new(writer)),
-        master: Mutex::new(pair.master),
-        pid,
-    });
-    host.insert(id.clone(), live);
-
-    let data_app = app.clone();
-    let data_id = id.clone();
-    thread::spawn(move || {
-        let mut buf = vec![0_u8; READ_CHUNK];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    // ponytail: caps bridge traffic at 125 emits/s; use a timed
-                    // drain only if sustained PTY throughput becomes limiting.
-                    thread::sleep(PTY_COALESCE);
-                    emit_pty_data(&data_app, &data_id, &buf[..n]);
-                }
-                Err(_) => break,
-            }
-        }
-    });
-
-    let wait_app = app;
-    let wait_id = id;
-    thread::spawn(move || {
-        let code = child.wait().ok().map(|status| status.exit_code() as i32);
-        let emit = if let Some(host) = wait_app.try_state::<PtyHost>() {
-            host.remove_if_pid(&wait_id, pid).is_some()
-        } else {
-            false
-        };
-        if emit {
-            let _ = wait_app.emit(EXIT_EVENT, PtyExit { id: wait_id, code });
-        }
-    });
-
-    Ok(())
-}
-
 fn working_dir(cwd: &str) -> std::path::PathBuf {
     let path = expand_home(cwd);
     if path.is_dir() {
@@ -516,16 +387,6 @@ fn working_dir(cwd: &str) -> std::path::PathBuf {
 }
 
 fn default_shell() -> (String, Vec<String>) {
-    #[cfg(windows)]
-    {
-        if let Ok(comspec) = std::env::var("COMSPEC") {
-            if !comspec.is_empty() {
-                return (comspec, Vec::new());
-            }
-        }
-        ("powershell.exe".into(), vec!["-NoLogo".into()])
-    }
-    #[cfg(not(windows))]
     {
         let shell = std::env::var("SHELL")
             .ok()
@@ -545,7 +406,6 @@ fn default_shell() -> (String, Vec<String>) {
     }
 }
 
-#[cfg(not(windows))]
 fn login_args(shell: &str) -> &'static [&'static str] {
     match std::path::Path::new(shell)
         .file_stem()
@@ -590,20 +450,6 @@ fn terminate(pid: u32) {
                 libc::kill(-ipid, libc::SIGKILL);
             }
         });
-    }
-    #[cfg(windows)]
-    {
-        let mut cmd = std::process::Command::new("taskkill");
-        crate::hide_window_console(&mut cmd);
-        let _ = cmd
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = pid;
     }
 }
 

@@ -948,10 +948,6 @@ fn write_secret_file(path: &Path, value: &str) -> Result<(), String> {
             .map_err(|error| error.to_string())?;
         Ok(())
     }
-    #[cfg(not(unix))]
-    {
-        fs::write(path, value).map_err(|error| error.to_string())
-    }
 }
 
 #[cfg(test)]

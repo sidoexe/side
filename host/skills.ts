@@ -295,9 +295,7 @@ async function managedPluginSetting(
   const root =
     process.platform === "darwin"
       ? "/Library/Application Support/ClaudeCode"
-      : process.platform === "win32"
-        ? "C:\\Program Files\\ClaudeCode"
-        : "/etc/claude-code";
+      : "/etc/claude-code";
   let value = await pluginSetting(join(root, "managed-settings.json"), pluginId);
   const dir = join(root, "managed-settings.d");
   const files = (await readdir(dir).catch(() => []))

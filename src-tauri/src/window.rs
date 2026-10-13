@@ -5,10 +5,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use tauri::window::Color;
-#[cfg(target_os = "windows")]
-use tauri::window::{Effect, EffectsBuilder};
 use tauri::{AppHandle, Emitter, EventTarget, Manager, WebviewWindow, WebviewWindowBuilder};
 
 static WINDOW_COUNTER: AtomicU32 = AtomicU32::new(1);
@@ -135,7 +133,7 @@ pub struct Rgb {
 }
 
 // macOS hands the components to AppKit instead, so it has no use for this.
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(target_os = "linux")]
 impl Rgb {
     fn fill(self) -> Color {
         Color(self.r, self.g, self.b, 255)
@@ -166,16 +164,6 @@ pub fn set_window_glass_enabled(
             crate::macos::disable_glass(&window, background.r, background.g, background.b);
         }
     }
-    #[cfg(target_os = "windows")]
-    {
-        if enabled {
-            let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
-            let _ = window.set_effects(EffectsBuilder::new().effect(Effect::Acrylic).build());
-        } else {
-            let _ = window.set_effects(None);
-            let _ = window.set_background_color(Some(background.fill()));
-        }
-    }
     #[cfg(target_os = "linux")]
     {
         // No system blur API on Linux: transparency only. The compositor
@@ -186,7 +174,7 @@ pub fn set_window_glass_enabled(
             background.fill()
         }));
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = (window, enabled, background);
     }

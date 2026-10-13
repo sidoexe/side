@@ -157,33 +157,25 @@ fn credentials_candidates() -> Vec<PathBuf> {
             .map(PathBuf::from)
     };
     candidate_paths(
-        cfg!(windows),
-        env("APPDATA"),
         env("XDG_DATA_HOME"),
         env("XDG_CONFIG_HOME"),
         dirs_home().map(PathBuf::from),
     )
 }
 
-/// Where `devin auth login` keeps credentials.toml: `%APPDATA%\devin` on
-/// Windows, the XDG data directory (`~/.local/share/devin`) elsewhere. The
-/// config directory is read last for logins made by older CLIs.
+/// Where `devin auth login` keeps credentials.toml: the XDG data directory
+/// (`~/.local/share/devin`). The config directory is read last for logins
+/// made by older CLIs.
 fn candidate_paths(
-    windows: bool,
-    app_data: Option<PathBuf>,
     xdg_data: Option<PathBuf>,
     xdg_config: Option<PathBuf>,
     home: Option<PathBuf>,
 ) -> Vec<PathBuf> {
     let file = |dir: PathBuf| dir.join("devin").join("credentials.toml");
     let mut dirs = Vec::new();
-    if windows {
-        dirs.extend(app_data);
-    } else {
-        dirs.extend(xdg_data);
-        dirs.extend(home.as_ref().map(|home| home.join(".local").join("share")));
-        dirs.extend(xdg_config);
-    }
+    dirs.extend(xdg_data);
+    dirs.extend(home.as_ref().map(|home| home.join(".local").join("share")));
+    dirs.extend(xdg_config);
     dirs.extend(home.map(|home| home.join(".config")));
     let mut paths: Vec<PathBuf> = Vec::new();
     for path in dirs.into_iter().map(file) {
@@ -378,13 +370,11 @@ mod tests {
         let home = PathBuf::from("/home/me");
         let file = |dir: &str| PathBuf::from(dir).join("devin").join("credentials.toml");
         assert_eq!(
-            candidate_paths(false, None, None, None, Some(home.clone())),
+            candidate_paths(None, None, Some(home.clone())),
             vec![file("/home/me/.local/share"), file("/home/me/.config")]
         );
         assert_eq!(
             candidate_paths(
-                false,
-                None,
                 Some("/data".into()),
                 Some("/cfg".into()),
                 Some(home.clone())
@@ -395,10 +385,6 @@ mod tests {
                 file("/cfg"),
                 file("/home/me/.config"),
             ]
-        );
-        assert_eq!(
-            candidate_paths(true, Some("/appdata".into()), None, None, Some(home)),
-            vec![file("/appdata"), file("/home/me/.config")]
         );
     }
 

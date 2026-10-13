@@ -1,6 +1,6 @@
 # Remote access (experimental)
 
-sIDE can run Claude Code, Codex, Cursor, Grok Build, OpenCode, Pi, OMP, fx, Hermes Agent, Antigravity, and Devin sessions on a separate Windows, Linux, or macOS host. The host owns the provider processes and session database. Closing the desktop, closing a session tab, or losing the SSH tunnel does not stop a host session.
+sIDE can run Claude Code, Codex, Cursor, Grok Build, OpenCode, Pi, OMP, fx, Hermes Agent, Antigravity, and Devin sessions on a separate Linux or macOS host. The host owns the provider processes and session database. Closing the desktop, closing a session tab, or losing the SSH tunnel does not stop a host session.
 
 A folder on a connected machine is a project in the rail, marked with a globe. Every session in it runs on that machine, in the same session view and composer as a local session. The Sessions sidebar lists that machine's sessions for the project.
 
@@ -12,12 +12,10 @@ sIDE downloads the host package matching the desktop release and remote architec
 
 Prerequisites:
 
-- SSH must already be enabled and reachable on the host. sIDE uses the desktop's OpenSSH client and normal SSH config, keys, and agent. Windows clients need the OpenSSH Client feature installed.
-- Hosts: Windows 10/11 or Server 2019+, Linux, or macOS, on x64 or arm64. Mac/Linux need `curl` or `wget`, `tar`, and `shasum` or `sha256sum`. Windows needs Windows PowerShell 5.1, OpenSSH Server, and Task Scheduler; no WSL or Unix shell is required. Setup detects the remote platform through SSH.
+- SSH must already be enabled and reachable on the host. sIDE uses the desktop's OpenSSH client and normal SSH config, keys, and agent.
+- Hosts: Linux or macOS, on x64 or arm64, with `curl` or `wget`, `tar`, and `shasum` or `sha256sum`.
 - Install and authenticate each provider you want to use on the host under the connecting OS account. The host must be able to find its CLI on PATH or in its standard install directory. Antigravity's ACP server is available only on macOS and Linux.
 - Linux needs systemd user services. Setup runs `loginctl enable-linger` for the SSH account so the host survives logout. Lingering applies to all of that account's user services, and `service uninstall` leaves it enabled. If enabling it requires administrator access, Settings displays the recovery command. macOS needs an active desktop login; keep that Mac signed in and awake.
-- Windows uses a per-user Task Scheduler task, with no time limit, under the connecting user's normal permissions. Sign in to that same account at the Windows desktop and keep it signed in and awake. Locking the desktop and disconnecting SSH are fine; signing out or rebooting interrupts agents. The task starts again at the next login. No Windows password is stored for scheduling. This uses an interactive logon token because S4U tasks cannot access network or encrypted files. [Microsoft task logon documentation](https://learn.microsoft.com/en-us/windows/win32/taskschd/principal-logontype).
-- Windows provider discovery supports native `.exe` installations for supported providers other than Antigravity, and standard npm installations of `@openai/codex` and `@anthropic-ai/claude-code`. Those npm entry points run with the bundled Node runtime; arbitrary custom `.cmd` wrappers are not supported. SSH aliases can supply Windows domain/user names through the normal SSH config.
 
 SSH host verification and password/passphrase prompts appear in Settings. Changed host keys are rejected by OpenSSH. Passwords/passphrases are used only for the current authentication, not saved. When key/agent authentication is available, opening the remote view restores a lost tunnel automatically. If SSH needs another prompt, use **Reconnect** in Settings. Reconnecting uses the saved device credential and checks the host's identity.
 
@@ -54,7 +52,7 @@ node build/host/monocode-host.mjs pair --name "My laptop"
 
 `start` launches the host independently of the terminal. `pair` prints a device ID and a device token; copy the token to the receiving desktop. Create a separate credential for each desktop. Tokens grant control of the host as its OS user, including provider execution and workspace reads.
 
-The host binds only to `127.0.0.1:3774`. State and logs live in `~/.monocode-host` (`%USERPROFILE%\.monocode-host` on Windows). Unix permissions restrict access to the owner; Windows ACLs restrict it to the current user, SYSTEM, and Administrators. Use `--data-dir` and `--port` to override them. `serve` runs in the foreground for debugging.
+The host binds only to `127.0.0.1:3774`. State and logs live in `~/.monocode-host`. Unix permissions restrict access to the owner. Use `--data-dir` and `--port` to override them. `serve` runs in the foreground for debugging.
 
 Open an SSH tunnel from your laptop:
 
@@ -115,19 +113,17 @@ node build/host/monocode-host.mjs service uninstall
 
 SSH setup names each device credential after the desktop's computer name. Removing a saved connection from the desktop does not stop the host. It revokes the device credential only when you choose **Revoke access and remove**. Otherwise, use `devices` and `revoke` on the host to remove access. Stopping the host interrupts active turns; restarting retains their transcripts and marks them interrupted. No uncertain provider operation is automatically replayed after a host crash.
 
-`service uninstall` is the cleanup path for a host you no longer want running. It removes the systemd user service, the LaunchAgent, or this user's scheduled task. It then stops the host, including a manually started one, and interrupts any running turns. It never deletes the data directory. Sessions, logs, and device credentials stay in `~/.monocode-host` until you delete that directory yourself. To remove access without stopping the host, use `revoke` instead. On Linux, the command prints how to turn off lingering if nothing else needs it.
+`service uninstall` is the cleanup path for a host you no longer want running. It removes the systemd user service or the LaunchAgent. It then stops the host, including a manually started one, and interrupts any running turns. It never deletes the data directory. Sessions, logs, and device credentials stay in `~/.monocode-host` until you delete that directory yourself. To remove access without stopping the host, use `revoke` instead. On Linux, the command prints how to turn off lingering if nothing else needs it.
 
 The machine must remain awake. Manual `start` launches a detached process. `service install` installs a user service; SSH setup runs it automatically. Only one host may own a data directory. Restart the host after changing its provider installation or PATH. Service installs preserve an already-running host, including one previously started manually.
 
 SSH-installed hosts have a launcher at `~/.monocode-host/bin/monocode-host`; use it in place of `node build/host/monocode-host.mjs` in management commands. Linux services are named `monocode-host.service`; macOS uses `com.monocode.host`. A service manager can restart a stopped process, so use `service uninstall` rather than `stop` to keep the host stopped.
 
-On Windows, the launcher is `%USERPROFILE%\.monocode-host\bin\monocode-host.cmd`. The scheduled task is named `sIDE Host-<user SID>`; `service uninstall` unregisters it and stops the host. Normal cancellation and shutdown stop the provider's process tree. A plain manual `start` is detached, but use `service install` for SSH-hosted Windows sessions so Task Scheduler owns the process independently of the SSH login.
-
 ## Release packaging
 
-`npm run host:package` builds a self-contained package for the current Windows/Mac/Linux architecture. `npm run host:package -- --all` builds all six archives, using pinned official Node binaries and checksums. Archives contain the host bundle, runtime, launcher, and licenses. `host/package.mjs` pins the runtime version. Cross-packaging Windows on Unix requires `zip` and `unzip`; native Windows packaging uses PowerShell.
+`npm run host:package` builds a self-contained package for the current Mac/Linux architecture. `npm run host:package -- --all` builds all four archives, using pinned official Node binaries and checksums. Archives contain the host bundle, runtime, launcher, and licenses. `host/package.mjs` pins the runtime version.
 
-The release workflow publishes `monocode-host-{darwin,linux}-{arm64,x64}.tar.gz`, `monocode-host-win32-{arm64,x64}.zip`, and their `.sha256` files alongside the desktop release. SSH setup downloads from the exact desktop version's GitHub release, then installs under `~/.monocode-host/runtime`.
+The release workflow publishes `monocode-host-darwin-arm64.tar.gz` and its `.sha256` file alongside the desktop release. SSH setup downloads from the exact desktop version's GitHub release, then installs under `~/.monocode-host/runtime`.
 
 **Unreleased development builds:** automatic first-time installation and **Update Host** require host archives published for the desktop version. Release builds from v0.5.0 onward include the matching archives; an unreleased checkout may not have them. Until the matching release is available, use the manual development connection above. A missing archive produces an explicit error in Settings. No fallback to an arbitrary latest release or unverified download is used. Connecting does not automatically upgrade a running host. When an SSH host lacks Explorer or Changes, Settings → Connections offers **Update Host**. This downloads and verifies the matching package, restarts the host service, and reconnects using the existing device credential. The restart interrupts active agent turns; sessions and history remain on the host. URL connections must be updated on the host manually.
 
@@ -154,4 +150,4 @@ Host tests use fake provider executables and temporary loopback servers. They do
 
 For the real OpenSSH transport and native askpass smoke test on Linux/macOS, build with `npm run host:package` and `cargo build --bin monocode`, then run `python3 scripts/test-remote-ssh.py`. It uses a disposable loopback sshd, temporary keys and known-hosts file, and an isolated packaged host. It leaves personal SSH configuration, provider credentials, and OS services untouched.
 
-Host CI runs on Windows, macOS, and Linux. Windows-specific tests cover ACL inheritance, Task Scheduler definitions, bootstrap parsing/installation, and provider child-process cleanup. They use temporary data and mocked task registration so normal test runs do not install or replace a real user's background task. Full SSH-to-Task-Scheduler setup must also be validated on a signed-in Windows host before a supported release.
+Host CI runs on macOS.

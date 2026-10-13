@@ -3,11 +3,6 @@ import { promisify } from "node:util";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
-import {
-  runPowerShell,
-  windowsTaskScript,
-  windowsUninstallScript,
-} from "./windows";
 
 const exec = promisify(execFile);
 const LABEL = "com.monocode.host";
@@ -129,7 +124,6 @@ export async function uninstallService(
     platform?: NodeJS.Platform;
     home?: string;
     run?: Run;
-    powershell?: (script: string) => Promise<unknown>;
   } = {},
 ): Promise<string[]> {
   const platform = system.platform ?? process.platform;
@@ -165,11 +159,7 @@ export async function uninstallService(
       `Lingering is still enabled for ${user.username}; other user services may rely on it. To turn it off: loginctl disable-linger ${user.username}`,
     ];
   }
-  if (platform === "win32") {
-    await (system.powershell ?? runPowerShell)(windowsUninstallScript());
-    return [];
-  }
-  throw new Error("sIDE Host supports Windows, Linux and macOS");
+  throw new Error("sIDE Host supports Linux and macOS");
 }
 
 export async function installService(
@@ -254,10 +244,8 @@ export async function installService(
       ["--user", "enable", "--now", "monocode-host.service"],
       env,
     );
-  } else if (process.platform === "win32") {
-    await runPowerShell(windowsTaskScript(options, process.env.PATH ?? ""));
   } else {
-    throw new Error("sIDE Host supports Windows, Linux and macOS");
+    throw new Error("sIDE Host supports Linux and macOS");
   }
   for (let attempt = 0; attempt < 50; attempt++) {
     try {
@@ -268,8 +256,6 @@ export async function installService(
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   throw new Error(
-    process.platform === "win32"
-      ? `The host task did not start. Sign in to the Windows desktop as the SSH user and keep that account signed in (locking is fine), then reconnect. Check Task Scheduler and ${join(options.directory, "host.log")}.`
-      : `The host service was installed but did not start. Check ${join(options.directory, "host.log")}.`,
+    `The host service was installed but did not start. Check ${join(options.directory, "host.log")}.`,
   );
 }

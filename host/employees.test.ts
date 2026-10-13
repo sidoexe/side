@@ -64,7 +64,6 @@ it("reads and writes topics inside the folder only", () => {
 });
 
 it("keeps employee files private", () => {
-  if (process.platform === "win32") return;
   const { store } = employees();
   store.save("m", "MEMORY.md", "private", undefined);
   expect(statSync(store.load("m").memoryPath).mode & 0o777).toBe(0o600);

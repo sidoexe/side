@@ -46,7 +46,7 @@ it("lists host files and rejects paths escaping the project", async () => {
   symlinkSync(
     tmpdir(),
     join(root, "outside"),
-    process.platform === "win32" ? "junction" : "dir",
+    "dir",
   );
   expect((await listHostFiles(root, "")).map((entry) => entry.name)).toContain(
     "src",
@@ -270,7 +270,6 @@ it("stages and unstages a folder subtree without affecting other changes", async
 });
 
 it
-  .runIf(process.platform !== "win32")
   .each(["*", "folder?", "[ab]", ":(glob)*"])(
   "stages and unstages the literal folder %s without touching siblings",
   async (folder) => {

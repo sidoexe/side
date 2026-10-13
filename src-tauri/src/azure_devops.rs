@@ -1233,10 +1233,9 @@ fn git_unified_hunks(old: Option<&[u8]>, new: Option<&[u8]>) -> Option<(i64, i64
     // Isolate the subprocess from user configuration: a global
     // `diff.external`, textconv driver, or attributes file could otherwise
     // replace the unified output this parser expects.
-    let null_device = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    let null_device = "/dev/null";
     let null_file: &Path = Path::new(null_device);
     let mut cmd = Command::new("git");
-    crate::hide_window_console(&mut cmd);
     let output = cmd
         .args([
             "-c",
@@ -1829,7 +1828,6 @@ fn encode_segment(value: &str) -> String {
 
 fn azure_devops_repo_for(root: &Path, organization_url: &str) -> Result<String, String> {
     let mut cmd = Command::new("git");
-    crate::hide_window_console(&mut cmd);
     let output = cmd
         .args(["config", "--get-regexp", r"^remote\..*\.url$"])
         .current_dir(root)
@@ -2062,10 +2060,6 @@ fn write_secret_file(path: &Path, value: &str) -> Result<(), String> {
         file.write_all(value.as_bytes())
             .map_err(|error| error.to_string())?;
         Ok(())
-    }
-    #[cfg(not(unix))]
-    {
-        fs::write(path, value).map_err(|error| error.to_string())
     }
 }
 

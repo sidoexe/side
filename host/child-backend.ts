@@ -59,8 +59,6 @@ function execArgsAllowed(provider: RemoteProvider, args: string[]): boolean {
 
 /** The user config file Devin itself reads. */
 function devinUserConfigPath(): string {
-  if (process.platform === "win32")
-    return join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "devin", "config.json");
   return join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "devin", "config.json");
 }
 
@@ -170,7 +168,6 @@ export class HostChildBackend implements ChildBackend {
           cwd: typeof args.cwd === "string" ? args.cwd : undefined,
           timeout: 10_000,
           maxBuffer: 8 * 1024 * 1024,
-          windowsHide: true,
         });
         return stdout as T;
       }
@@ -369,8 +366,7 @@ export class HostChildBackend implements ChildBackend {
       {
         cwd: String(args.cwd),
         stdio: ["pipe", "pipe", "pipe", "pipe"],
-        detached: process.platform !== "win32",
-        windowsHide: true,
+        detached: true,
         env,
       },
     );
@@ -426,8 +422,7 @@ export class HostChildBackend implements ChildBackend {
     signal: NodeJS.Signals,
   ): void {
     try {
-      if (process.platform === "win32") child.kill(signal);
-      else if (child.pid) process.kill(-child.pid, signal);
+      if (child.pid) process.kill(-child.pid, signal);
     } catch {
       /* already exited */
     }
@@ -437,35 +432,6 @@ export class HostChildBackend implements ChildBackend {
     const child = this.children.get(id);
     if (!child) return;
     this.children.delete(id);
-    if (process.platform === "win32") {
-      // Kill descendants while the leader still exists. Closing stdin first
-      // can let the leader exit, making its remaining children untraceable.
-      if (child.pid && child.exitCode === null && child.signalCode === null) {
-        try {
-          await exec(
-            join(
-              process.env.SystemRoot ?? "C:\\Windows",
-              "System32",
-              "taskkill.exe",
-            ),
-            ["/PID", String(child.pid), "/T", "/F"],
-            { windowsHide: true, timeout: 10_000 },
-          );
-        } catch {
-          child.kill();
-        }
-      }
-      child.stdin.destroy();
-      if (child.exitCode !== null || child.signalCode !== null) return;
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, 1_000);
-        child.once("close", () => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
-      return;
-    }
     child.stdin.destroy();
     this.signal(child, "SIGTERM");
     await new Promise<void>((resolve) => {

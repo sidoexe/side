@@ -35,12 +35,8 @@ fn user_config_path() -> Option<PathBuf> {
             .filter(|value| !value.is_empty())
             .map(PathBuf::from)
     };
-    let dir = if cfg!(windows) {
-        env("APPDATA")
-    } else {
-        env("XDG_CONFIG_HOME")
-            .or_else(|| dirs_home().map(|home| PathBuf::from(home).join(".config")))
-    }?;
+    let dir = env("XDG_CONFIG_HOME")
+        .or_else(|| dirs_home().map(|home| PathBuf::from(home).join(".config")))?;
     Some(dir.join("devin").join("config.json"))
 }
 

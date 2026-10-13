@@ -195,7 +195,7 @@ import {
   projectName,
 } from "../../../shared/lib/paths";
 import { revealPath } from "../../../platform/tauri/fs";
-import { IS_LINUX, IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import { IS_LINUX, IS_MAC } from "../../../platform/tauri/platform";
 import {
   loadArchivedProjects,
   looksLikeProject,
@@ -319,7 +319,6 @@ import {
   currentKeybindings,
   loadClaudeHooks,
   loadIdleAgentLimit,
-  loadCloseToTray,
   loadCollapsedProjectRailMode,
   loadComposerRunner,
   loadDiffViewer,
@@ -342,7 +341,6 @@ import {
   saveIdleAgentLimit,
   IDLE_AGENT_LIMITS,
   type IdleAgentLimit,
-  saveCloseToTray,
   saveCollapsedProjectRailMode,
   saveComposerRunner,
   saveDiffViewer,
@@ -777,7 +775,6 @@ function GeneralPage({
   const [tabAnimationsEnabled, setTabAnimationsEnabled] = useState(
     loadTabAnimationsEnabled,
   );
-  const [closeToTray, setCloseToTray] = useState(loadCloseToTray);
   const [quickComposerEnabled, setQuickComposerEnabled] = useState(
     loadQuickComposerEnabled,
   );
@@ -838,11 +835,6 @@ function GeneralPage({
   const onTabAnimationsEnabled = (next: boolean) => {
     saveTabAnimationsEnabled(next);
     setTabAnimationsEnabled(next);
-  };
-
-  const onCloseToTray = (next: boolean) => {
-    saveCloseToTray(next);
-    setCloseToTray(next);
   };
 
   return (
@@ -949,19 +941,6 @@ function GeneralPage({
             onChange={onLiveAgentsEnabled}
           />
         </Row>
-        {IS_WIN && (
-          <Row
-            id="close-to-tray"
-            label="Close to tray"
-            description="Closing a window hides it to the system tray instead of quitting, so running agents keep going. Reopen from the tray icon, and quit for real from its menu. Turn this off to have close end the window."
-          >
-            <Toggle
-              label="Close to tray"
-              on={closeToTray}
-              onChange={onCloseToTray}
-            />
-          </Row>
-        )}
       </Group>
 
       <Group title="About">
@@ -4426,12 +4405,12 @@ function AccentColorPicker({
   );
 }
 
-/** macOS keeps the decision after the first prompt; only System Settings can flip it. Windows toasts are governed by Settings > Notifications. */
+/** macOS keeps the decision after the first prompt; only System Settings can flip it. */
 function NotificationsBlocked() {
   return (
     <span className="flex items-center gap-2 text-[12px] text-content/45">
       Permission needed
-      {IS_MAC || IS_WIN ? (
+      {IS_MAC ? (
         <button
           type="button"
           onClick={() => {

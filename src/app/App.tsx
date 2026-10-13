@@ -727,7 +727,6 @@ import {
   peekAzureDevOpsWorkItemDetails,
 } from "../features/inbox/model/azureDevOps";
 import {
-  loadCloseToTray,
   loadAutosave,
   loadCollapsedProjectRailMode,
   loadFileTabMode,
@@ -2294,10 +2293,9 @@ function Workspace({
           void hideCurrentWindow();
           return;
         }
-        const toTray = loadCloseToTray();
         if (hasInFlightSessions(sessionsRef.current)) {
           flushHarnessEvents();
-          if (!toTray && !IS_MAC) {
+          if (!IS_MAC) {
             void closeBusyWindow();
             return;
           }
@@ -2317,7 +2315,7 @@ function Workspace({
           lastDockSideRef.current ?? undefined,
           keepWorkspaceTab,
         ).finally(() => {
-          void (toTray ? hideCurrentWindow() : closeCurrentWindow());
+          void closeCurrentWindow();
         });
       })
       .then((fn) => {
@@ -12367,7 +12365,6 @@ function Workspace({
       listen<string>(NOTIFICATION_CLICK_EVENT, ({ payload: sessionId }) => {
         if (!sessionsRef.current.some((s) => s.id === sessionId)) return;
         const win = getCurrentWindow();
-        // Windows leaves a minimized window minimized when it is only focused.
         void win
           .unminimize()
           .then(() => win.setFocus())

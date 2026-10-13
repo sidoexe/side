@@ -44,7 +44,7 @@ import {
   type MonoLook,
   type MonoState,
 } from "../../features/monos/model/mono";
-import { IS_MAC, IS_WIN, MOD, SHIFT } from "../../platform/tauri/platform";
+import { IS_MAC, MOD, SHIFT } from "../../platform/tauri/platform";
 import type { RecentProject } from "../../features/projects/model/recents";
 import {
   ExplorerMenu,
@@ -1118,7 +1118,7 @@ function TitleBarComponent({
           </div>
         )}
 
-        {!IS_MAC && !IS_WIN ? (
+        {!IS_MAC ? (
           <div className="flex min-w-0 flex-1 items-center justify-center px-4">
             <span className="pointer-events-none truncate text-[11.5px] font-medium text-content/40 select-none">
               {systemTitle}

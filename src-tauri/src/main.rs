@@ -1,5 +1,3 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
 fn main() {
     if let Some(code) = monocode_lib::ssh_askpass::maybe_run() {
         std::process::exit(code);

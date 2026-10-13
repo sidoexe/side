@@ -40,7 +40,7 @@ it.each(["cursor", "pi", "fx"] as const)(
   },
 );
 
-it.runIf(process.platform !== "win32")(
+it(
   "recognizes an npm-installed pi launcher stub through its package manifest",
   async () => {
     const directory = mkdtempSync(join(tmpdir(), "monocode-pi-npm-"));
@@ -74,7 +74,7 @@ it.runIf(process.platform !== "win32")(
   },
 );
 
-it.runIf(process.platform !== "win32")(
+it(
   "does not mistake an unrelated npm stub named pi for the pi agent",
   async () => {
     const directory = mkdtempSync(join(tmpdir(), "monocode-pi-unrelated-"));
@@ -103,7 +103,7 @@ it.runIf(process.platform !== "win32")(
   },
 );
 
-it.runIf(process.platform !== "win32")(
+it(
   "recognizes a Cursor agent shim without executing it",
   async () => {
     const directory = mkdtempSync(join(tmpdir(), "monocode-cursor-identity-"));

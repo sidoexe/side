@@ -14,7 +14,6 @@ import {
   resolvePiBinary,
 } from "./child";
 import { isLiveHarness } from "./registry";
-import { IS_WIN } from "../../../platform/tauri/platform";
 import {
   emitHarnessAvailability,
   harnessAvailabilityProbedAt,
@@ -55,9 +54,7 @@ const CLI: Record<HarnessId, { name: string; install?: string }> = {
   antigravity: { name: "Antigravity ACP server (agy_acp_server.par)" },
   devin: {
     name: "Devin CLI",
-    install: IS_WIN
-      ? "irm https://static.devin.ai/cli/setup.ps1 | iex"
-      : "curl -fsSL https://cli.devin.ai/install.sh | bash",
+    install: "curl -fsSL https://cli.devin.ai/install.sh | bash",
   },
 };
 

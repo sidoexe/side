@@ -1,5 +1,4 @@
 use crate::ssh_askpass::Askpass;
-use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -172,18 +171,11 @@ pub fn is_loopback(target: &SshTarget) -> bool {
 
 /// `ssh` and its arguments for an interactive shell in `cwd` on the target,
 /// using the user's own SSH config, keys and agent like the host tunnel.
-pub fn terminal_command(target: &SshTarget, cwd: &str, windows: bool) -> (String, Vec<String>) {
-    let remote = if windows {
-        format!(
-            "powershell -NoLogo -NoExit -Command \"Set-Location -LiteralPath '{}'\"",
-            cwd.replace('\'', "''")
-        )
-    } else {
-        format!(
-            "cd -- '{}' 2>/dev/null; exec \"${{SHELL:-/bin/sh}}\" -l",
-            cwd.replace('\'', "'\\''")
-        )
-    };
+pub fn terminal_command(target: &SshTarget, cwd: &str) -> (String, Vec<String>) {
+    let remote = format!(
+        "cd -- '{}' 2>/dev/null; exec \"${{SHELL:-/bin/sh}}\" -l",
+        cwd.replace('\'', "'\\''")
+    );
     let mut args = vec![
         "-t".to_string(),
         "-o".to_string(),
@@ -243,11 +235,6 @@ fn command(target: &SshTarget, interactive: bool) -> Command {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000);
-    }
     command
 }
 
@@ -266,88 +253,13 @@ fn capture(mut reader: impl Read + Send + 'static) -> std::thread::JoinHandle<Ve
     })
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HostPlatform {
-    Unix,
-    Windows,
-}
-
-const PLATFORM_PROBE: &[&str] = &["echo", "MONOCODE_PLATFORM", "$env:OS", "%OS%", "$OS"];
-
-fn parse_platform(output: &str) -> Result<HostPlatform, String> {
-    let marker = output
-        .rsplit_once("MONOCODE_PLATFORM")
-        .ok_or("Could not identify the remote shell. Use cmd.exe, PowerShell, or a Unix shell.")?
-        .1;
-    Ok(
-        if marker
-            .split_whitespace()
-            .any(|word| word.eq_ignore_ascii_case("Windows_NT"))
-        {
-            HostPlatform::Windows
-        } else {
-            HostPlatform::Unix
-        },
-    )
-}
-
-pub fn detect_platform(
-    target: &SshTarget,
-    job: &Arc<Job>,
-    askpass: &Askpass,
-) -> Result<HostPlatform, String> {
-    job.message("Checking the remote machine…");
-    let output = run_remote_command(
-        target,
-        String::new(),
-        job,
-        askpass,
-        command(target, true),
-        PLATFORM_PROBE,
-    )?;
-    parse_platform(&output)
-}
-
-fn powershell_encoded(script: &str) -> String {
-    let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
-    base64::engine::general_purpose::STANDARD.encode(bytes)
-}
-
-/// Keep the remote command below cmd.exe's length limit. The actual script is
-/// read from UTF-8 stdin as a single block, rather than evaluated line by line.
-fn powershell_reader() -> String {
-    // Prefer this shell's built-in modules if the SSH environment inherited
-    // PowerShell 7 module paths through an intermediate process.
-    powershell_encoded("$env:PSModulePath = $PSHOME + '\\Modules;' + $env:PSModulePath; $ErrorActionPreference = 'Stop'; [Console]::InputEncoding = [Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); try { & ([ScriptBlock]::Create([Console]::In.ReadToEnd())) } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }")
-}
-
 pub fn run_script(
     target: &SshTarget,
-    platform: HostPlatform,
     script: String,
     job: &Arc<Job>,
     askpass: &Askpass,
 ) -> Result<String, String> {
-    if platform == HostPlatform::Windows {
-        let encoded = powershell_reader();
-        run_remote_command(
-            target,
-            script,
-            job,
-            askpass,
-            command(target, true),
-            &[
-                "powershell.exe",
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-EncodedCommand",
-                &encoded,
-            ],
-        )
-    } else {
-        run_script_with_command(target, script, job, askpass, command(target, true))
-    }
+    run_script_with_command(target, script, job, askpass, command(target, true))
 }
 
 fn run_script_with_command(
@@ -417,51 +329,26 @@ fn run_remote_command(
 pub fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
-fn powershell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "''"))
-}
-
-pub fn bootstrap_script(platform: HostPlatform) -> String {
-    let template = match platform {
-        HostPlatform::Unix => include_str!("remote_bootstrap.sh"),
-        HostPlatform::Windows => include_str!("remote_bootstrap.ps1"),
-    };
-    bootstrap_script_from_template(platform, template)
-}
-
-fn bootstrap_script_from_template(platform: HostPlatform, template: &str) -> String {
+pub fn bootstrap_script() -> String {
     let version = env!("CARGO_PKG_VERSION");
     let url = format!("https://github.com/sidoexe/side/releases/download/v{version}");
-    match platform {
-        // include_str! preserves checkout line endings, including Windows CRLF.
-        HostPlatform::Unix => template
-            .replace("\r\n", "\n")
-            .replace("@@VERSION@@", &shell_quote(version))
-            .replace("@@RELEASE@@", &shell_quote(&url)),
-        HostPlatform::Windows => template
-            .replace("@@VERSION@@", &powershell_quote(version))
-            .replace("@@RELEASE@@", &powershell_quote(&url))
-            .replace("@@ACL@@", include_str!("../../host/windows-acl.ps1")),
-    }
+    include_str!("remote_bootstrap.sh")
+        .replace("@@VERSION@@", &shell_quote(version))
+        .replace("@@RELEASE@@", &shell_quote(&url))
 }
 
-pub fn upgrade_script(platform: HostPlatform, port: u16) -> String {
-    let script = bootstrap_script(platform);
-    match platform {
-        HostPlatform::Unix => {
-            format!("MONOCODE_HOST_FORCE_UPGRADE=1\nMONOCODE_HOST_PORT={port}\n{script}")
-        }
-        HostPlatform::Windows => format!(
-            "$env:MONOCODE_HOST_FORCE_UPGRADE = '1'\n$env:MONOCODE_HOST_PORT = '{port}'\n{script}"
-        ),
-    }
+pub fn upgrade_script(port: u16) -> String {
+    format!(
+        "MONOCODE_HOST_FORCE_UPGRADE=1\nMONOCODE_HOST_PORT={port}\n{}",
+        bootstrap_script()
+    )
 }
 
-pub fn pairing_script(platform: HostPlatform, name: &str) -> String {
-    match platform {
-        HostPlatform::Unix => format!("set -eu\n\"$HOME/.monocode-host/bin/monocode-host\" pair --name {} --json\n", shell_quote(name)),
-        HostPlatform::Windows => format!("$ErrorActionPreference = 'Stop'\n$base = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.monocode-host'\n$runtime = [IO.File]::ReadAllText((Join-Path $base 'runtime-path')).Trim()\n& (Join-Path $runtime 'node.exe') (Join-Path $runtime 'host.mjs') pair --name {} --json\nif ($LASTEXITCODE -ne 0) {{ throw 'Host pairing failed.' }}\n", powershell_quote(name)),
-    }
+pub fn pairing_script(name: &str) -> String {
+    format!(
+        "set -eu\n\"$HOME/.monocode-host/bin/monocode-host\" pair --name {} --json\n",
+        shell_quote(name)
+    )
 }
 
 pub struct Tunnel {
@@ -655,7 +542,6 @@ impl Tunnels {
 
 /// How this desktop appears in the host's device list.
 pub fn device_name() -> String {
-    #[cfg(not(windows))]
     let run = |program: &str, args: &[&str]| {
         Command::new(program)
             .args(args)
@@ -668,9 +554,7 @@ pub fn device_name() -> String {
     };
     #[cfg(target_os = "macos")]
     let name = run("scutil", &["--get", "ComputerName"]).or_else(|| run("hostname", &[]));
-    #[cfg(windows)]
-    let name = std::env::var("COMPUTERNAME").ok();
-    #[cfg(not(any(target_os = "macos", windows)))]
+    #[cfg(not(target_os = "macos"))]
     let name = std::fs::read_to_string("/etc/hostname")
         .ok()
         .or_else(|| run("hostname", &[]));
@@ -712,7 +596,7 @@ mod tests {
     #[test]
     fn opens_a_terminal_in_the_quoted_folder() {
         let (program, args) =
-            terminal_command(&target("me@air", Some(2222)), "/Users/me/it's here", false);
+            terminal_command(&target("me@air", Some(2222)), "/Users/me/it's here");
         assert_eq!(program, "ssh");
         assert_eq!(
             &args[..5],
@@ -722,11 +606,6 @@ mod tests {
         assert_eq!(
             args[7],
             "cd -- '/Users/me/it'\\''s here' 2>/dev/null; exec \"${SHELL:-/bin/sh}\" -l"
-        );
-        let (_, windows) = terminal_command(&target("me@pc", None), "C:\\Users\\o'neil", true);
-        assert_eq!(
-            windows.last().unwrap(),
-            "powershell -NoLogo -NoExit -Command \"Set-Location -LiteralPath 'C:\\Users\\o''neil'\""
         );
     }
 
@@ -797,16 +676,6 @@ mod tests {
         };
         let job = Job::new();
         let askpass = job.askpass().unwrap();
-        let detected = run_remote_command(
-            &target,
-            String::new(),
-            &job,
-            &askpass,
-            make_command(),
-            PLATFORM_PROBE,
-        )
-        .unwrap();
-        assert_eq!(parse_platform(&detected).unwrap(), HostPlatform::Unix);
         let output = run_script_with_command(
             &target,
             "printf 'remote-script-ok\\n'\n".into(),
@@ -860,102 +729,16 @@ mod tests {
         assert_eq!(shell_quote("a'b"), "'a'\\''b'");
     }
     #[test]
-    fn unix_bootstrap_accepts_windows_checkout_line_endings() {
-        let lf_template = include_str!("remote_bootstrap.sh").replace("\r\n", "\n");
-        let crlf_template = lf_template.replace('\n', "\r\n");
-        let script = bootstrap_script_from_template(HostPlatform::Unix, &crlf_template);
-        assert!(script.starts_with("set -eu\n"));
-        assert!(!script.contains('\r'));
-        assert_eq!(
-            script,
-            bootstrap_script_from_template(HostPlatform::Unix, &lf_template)
-        );
-    }
-    #[test]
     fn bootstrap_is_versioned_and_only_explicit_upgrade_restarts_the_host() {
-        let script = bootstrap_script(HostPlatform::Unix);
+        let script = bootstrap_script();
         assert!(!script.contains('\r'));
         assert!(!script.contains("@@"));
         assert!(script.contains("--proto '=https'"));
         assert!(script.contains("checksum mismatch"));
         assert!(script.contains("\"$FORCE_UPGRADE\" = 1"));
         assert!(script.contains("service uninstall"));
-        assert!(
-            upgrade_script(HostPlatform::Unix, 3774).starts_with("MONOCODE_HOST_FORCE_UPGRADE=1")
-        );
-        assert!(!upgrade_script(HostPlatform::Unix, 3774).contains('\r'));
-        assert!(upgrade_script(HostPlatform::Windows, 3774)
-            .starts_with("$env:MONOCODE_HOST_FORCE_UPGRADE = '1'"));
-    }
-    #[test]
-    fn remote_platform_probe_handles_cmd_powershell_and_unix() {
-        assert_eq!(
-            parse_platform("MONOCODE_PLATFORM $env:OS Windows_NT $OS\r\n").unwrap(),
-            HostPlatform::Windows
-        );
-        assert_eq!(
-            parse_platform("MONOCODE_PLATFORM\r\nWindows_NT\r\n%OS%\r\n").unwrap(),
-            HostPlatform::Windows
-        );
-        assert_eq!(
-            parse_platform("MONOCODE_PLATFORM :OS %OS%\n").unwrap(),
-            HostPlatform::Unix
-        );
-        assert!(parse_platform("unrecognized shell").is_err());
-        assert!(powershell_reader().len() < 4096);
-        let script = bootstrap_script(HostPlatform::Windows);
-        assert!(!script.contains("@@"));
-        assert!(script.contains("checksum mismatch"));
-        assert!(script.contains("Protect-MonoCodeDirectory"));
-        assert!(pairing_script(HostPlatform::Windows, "Nick's $PC").contains("'Nick''s $PC'"));
-    }
-    #[cfg(windows)]
-    #[test]
-    fn windows_shells_detect_the_platform_and_accept_utf8_scripts() {
-        for (program, args) in [
-            ("cmd.exe", vec!["/D", "/C"]),
-            (
-                "powershell.exe",
-                vec!["-NoProfile", "-NonInteractive", "-Command"],
-            ),
-        ] {
-            let output = Command::new(program)
-                .env_remove("PSModulePath")
-                .args(args)
-                .arg(PLATFORM_PROBE.join(" "))
-                .output()
-                .unwrap();
-            assert!(output.status.success());
-            assert_eq!(
-                parse_platform(&String::from_utf8_lossy(&output.stdout)).unwrap(),
-                HostPlatform::Windows
-            );
-        }
-        let mut child = Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-EncodedCommand",
-                &powershell_reader(),
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all("Write-Output '日本語 🖥'\n".as_bytes())
-            .unwrap();
-        let output = child.wait_with_output().unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "日本語 🖥");
+        assert!(upgrade_script(3774).starts_with("MONOCODE_HOST_FORCE_UPGRADE=1"));
+        assert!(!upgrade_script(3774).contains('\r'));
     }
     #[test]
     fn device_names_are_bounded_single_lines() {

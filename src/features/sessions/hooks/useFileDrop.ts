@@ -4,7 +4,6 @@ import {
   EXPLORER_FILE_POINTER_DRAG_EVENT,
   type ExplorerFilePointerDragDetail,
 } from "../../../shared/lib/drag";
-import { dragPointToClient } from "../../../shared/lib/dragPoint";
 import type { Attachment } from "../model/session";
 import {
   attachmentsFromFiles,
@@ -119,8 +118,7 @@ export function useFileDrop({
           return;
         }
         const { x, y } = event.payload.position;
-        const point = dragPointToClient(x, y);
-        const over = overTarget(point.x, point.y);
+        const over = overTarget(x, y);
         const supported = state.current.attachmentsSupported;
         if (event.payload.type === "enter" || event.payload.type === "over") {
           setFileDrag(over && supported);

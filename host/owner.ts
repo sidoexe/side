@@ -3,7 +3,6 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { runPowerShell } from "./windows";
 
 const exec = promisify(execFile);
 
@@ -43,16 +42,11 @@ export async function acquireHostOwner(directory: string): Promise<() => void> {
         if (alive) {
           // Never treat an unresponsive host as dead. For legacy locks, check
           // the process command, conservatively refusing if it cannot be read.
-          const command =
-            process.platform === "win32"
-              ? await runPowerShell(
-                  `$p = Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}'; if ($null -eq $p.CommandLine) { throw 'Cannot inspect host lock owner' }; $p.CommandLine`,
-                )
-              : (
-                  await exec("ps", ["-ww", "-p", String(pid), "-o", "args="], {
-                    timeout: 5_000,
-                  })
-                ).stdout;
+          const command = (
+            await exec("ps", ["-ww", "-p", String(pid), "-o", "args="], {
+              timeout: 5_000,
+            })
+          ).stdout;
           if (!command.trim() || /monocode-host.*\bserve\b/.test(command))
             throw new Error("A host already owns this data directory");
         }

@@ -1,12 +1,9 @@
-import { IS_WIN } from "../../platform/tauri/platform";
-
 function windowsPath(path: string): boolean {
   return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\") || path.startsWith("//");
 }
 
 export function slash(path: string): string {
-  return windowsPath(path) || (IS_WIN && !path.startsWith("/"))
-    ? path.replace(/\\/g, "/") : path;
+  return windowsPath(path) ? path.replace(/\\/g, "/") : path;
 }
 
 function trimSlash(path: string): string {

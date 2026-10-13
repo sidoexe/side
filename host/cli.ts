@@ -35,7 +35,6 @@ import {
 } from "../src/features/connections/model/protocol";
 import { connectionInfo, installService, uninstallService } from "./service";
 import { version } from "../package.json";
-import { protectWindowsDirectory } from "./windows";
 
 process.umask(0o077);
 // npm-based providers can launch Node subprocesses without a separate Node
@@ -79,12 +78,8 @@ const lifecycle = async (state: Running, action: "status" | "stop") => {
  * there is one, otherwise this runtime and script. */
 function appCliCommand(): string {
   const quote = (value: string) =>
-    process.platform === "win32"
-      ? `"${value.replace(/"/g, "")}"`
-      : /^[\w./:-]+$/.test(value)
-        ? value
-        : `'${value.replace(/'/g, "'\\''")}'`;
-  const launcher = join(directory, "bin", process.platform === "win32" ? "monocode-host.cmd" : "monocode-host");
+    /^[\w./:-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`;
+  const launcher = join(directory, "bin", "monocode-host");
   const base = existsSync(launcher)
     ? quote(launcher)
     : `${quote(process.execPath)} ${quote(fileURLToPath(import.meta.url))}`;
@@ -101,7 +96,7 @@ async function main() {
     return;
   }
   if (command === "help" || command === "--help") {
-    console.log(`sIDE Host (experimental; Node 24+; Windows/Linux/macOS)
+    console.log(`sIDE Host (experimental; Node 24+; Linux/macOS)
   serve                 Run in foreground on 127.0.0.1
   start                 Run detached from this terminal
   service install       Install/start the persistent user service
@@ -120,8 +115,7 @@ Connect another computer using an SSH forward to the loopback port.`);
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     throw new Error("Invalid port");
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  if (process.platform === "win32") await protectWindowsDirectory(directory);
-  else chmodSync(directory, 0o700);
+  chmodSync(directory, 0o700);
   if (command === "connection-info") {
     console.log(JSON.stringify(await connectionInfo(directory)));
     return;
@@ -189,14 +183,13 @@ Connect another computer using an SSH forward to the loopback port.`);
       ],
       {
         detached: true,
-        windowsHide: true,
         stdio: ["ignore", log, log],
         env: process.env,
       },
     );
     child.unref();
     closeSync(log);
-    for (let i = 0; i < (process.platform === "win32" ? 150 : 50); i++) {
+    for (let i = 0; i < 50; i++) {
       await new Promise((resolve) => setTimeout(resolve, 100));
       const state = readRunning();
       if (state && state.pid === child.pid) {

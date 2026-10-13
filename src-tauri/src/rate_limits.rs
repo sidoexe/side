@@ -140,9 +140,7 @@ fn opencode_data_dir() -> Option<PathBuf> {
     if let Some(xdg) = env_var("XDG_DATA_HOME") {
         return Some(PathBuf::from(xdg).join(app));
     }
-    let home = dirs_home().or_else(|| {
-        std::env::var_os("USERPROFILE").map(|value| value.to_string_lossy().into_owned())
-    })?;
+    let home = dirs_home()?;
     Some(PathBuf::from(home).join(".local/share").join(app))
 }
 
@@ -175,10 +173,6 @@ fn read_opencode_go_api_key() -> Option<String> {
         .or_else(|_| {
             // Legacy macOS location.
             dirs_home()
-                .or_else(|| {
-                    std::env::var_os("USERPROFILE")
-                        .map(|value| value.to_string_lossy().into_owned())
-                })
                 .ok_or_else(|| {
                     std::io::Error::new(std::io::ErrorKind::NotFound, "no home directory")
                 })
@@ -221,9 +215,7 @@ fn opencode_config_paths() -> Vec<PathBuf> {
         paths.push(root.join("opencode.jsonc"));
         paths.push(root.join("opencode.json"));
     }
-    if let Some(home) = dirs_home().or_else(|| {
-        std::env::var_os("USERPROFILE").map(|value| value.to_string_lossy().into_owned())
-    }) {
+    if let Some(home) = dirs_home() {
         let root = PathBuf::from(home).join(".config/opencode");
         paths.push(root.join("opencode.jsonc"));
         paths.push(root.join("opencode.json"));
@@ -438,9 +430,7 @@ fn claude_credentials_path(config_dir: Option<&std::path::Path>) -> Option<PathB
     if let Some(dir) = config_dir {
         return Some(dir.join(".credentials.json"));
     }
-    let home = dirs_home().or_else(|| {
-        std::env::var_os("USERPROFILE").map(|value| value.to_string_lossy().into_owned())
-    })?;
+    let home = dirs_home()?;
     Some(PathBuf::from(home).join(".claude/.credentials.json"))
 }
 

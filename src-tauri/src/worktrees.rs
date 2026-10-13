@@ -31,7 +31,6 @@ pub struct Worktrees {
 
 fn git(root: &Path, args: &[&str]) -> Result<String, String> {
     let mut command = Command::new("git");
-    crate::hide_window_console(&mut command);
     let output = command
         .arg("-C")
         .arg(root)
@@ -80,24 +79,13 @@ fn list(root: &Path) -> Result<Vec<Worktree>, String> {
 fn same_path(a: &Path, b: &Path) -> bool {
     let a = a.canonicalize().unwrap_or_else(|_| a.to_path_buf());
     let b = b.canonicalize().unwrap_or_else(|_| b.to_path_buf());
-    if cfg!(windows) {
-        a.to_string_lossy()
-            .eq_ignore_ascii_case(&b.to_string_lossy())
-    } else {
-        a == b
-    }
+    a == b
 }
 
 pub(crate) fn contains_working_dir(root: &Path, cwd: &Path) -> bool {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
-    if cfg!(windows) {
-        let root = path_to_js(&root).to_lowercase();
-        let cwd = path_to_js(&cwd).to_lowercase();
-        cwd == root || cwd.starts_with(&format!("{}/", root.trim_end_matches('/')))
-    } else {
-        cwd.starts_with(root)
-    }
+    cwd.starts_with(root)
 }
 
 fn session_ids(conn: &rusqlite::Connection, path: &Path) -> Result<Vec<String>, String> {
@@ -301,11 +289,6 @@ fn file_mode(path: &Path) -> Option<u32> {
     std::fs::symlink_metadata(path)
         .ok()
         .map(|meta| meta.permissions().mode() & 0o777)
-}
-
-#[cfg(not(unix))]
-fn file_mode(_path: &Path) -> Option<u32> {
-    None
 }
 
 fn checkout_state_matches(source: &Path, target: &Path) -> bool {
@@ -1023,7 +1006,6 @@ mod tests {
         let mut removed = remove_with_sessions(&conn, path, path, true, true).unwrap();
         removed.session_ids.sort();
         assert_eq!(removed.session_ids, vec!["archived", "direct", "shared"]);
-        // Git omits the verbatim prefix added by canonicalize() on Windows.
         assert!(same_path(Path::new(&removed.project_cwd), &root));
         assert!(!path.exists());
         assert!(session_ids(&conn, path).unwrap().is_empty());

@@ -466,12 +466,10 @@ fn start_ssh_job(
             let mut target = target;
             let mut machine = if let Some(mut existing) = existing {
                 if upgrade {
-                    let platform = remote_ssh::detect_platform(&target, &job, &askpass)?;
                     job.message("Updating sIDE Host on the machine…");
                     let output = remote_ssh::run_script(
                         &target,
-                        platform,
-                        remote_ssh::upgrade_script(platform, target.remote_port),
+                        remote_ssh::upgrade_script(target.remote_port),
                         &job,
                         &askpass,
                     )?;
@@ -489,12 +487,10 @@ fn start_ssh_job(
                 }
                 existing
             } else {
-                let platform = remote_ssh::detect_platform(&target, &job, &askpass)?;
                 job.message("Installing or starting sIDE Host…");
                 let output = remote_ssh::run_script(
                     &target,
-                    platform,
-                    remote_ssh::bootstrap_script(platform),
+                    remote_ssh::bootstrap_script(),
                     &job,
                     &askpass,
                 )?;
@@ -509,8 +505,7 @@ fn start_ssh_job(
                 job.message("Pairing this desktop with the host…");
                 let pair = remote_ssh::run_script(
                     &target,
-                    platform,
-                    remote_ssh::pairing_script(platform, &remote_ssh::device_name()),
+                    remote_ssh::pairing_script(&remote_ssh::device_name()),
                     &job,
                     &askpass,
                 )?;

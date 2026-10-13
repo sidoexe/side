@@ -210,10 +210,6 @@ fn prepare_files(source: &Path, home: &Path) -> Result<(), String> {
     for name in ["auth.json", ".credentials.json"] {
         link_entry(&source.join(name), &home.join(name))?;
     }
-    #[cfg(windows)]
-    if !source.join("auth.json").exists() && home.join("auth.json").exists() {
-        std::fs::remove_file(home.join("auth.json")).map_err(|e| e.to_string())?;
-    }
     // Encrypted auth/MCP files are replaced atomically. Sharing their directory,
     // rather than individual files, preserves those writes in both homes.
     std::fs::create_dir_all(source.join("secrets")).map_err(|e| e.to_string())?;
@@ -227,28 +223,12 @@ fn link_entry(source: &Path, target: &Path) -> Result<(), String> {
         if link == source {
             return Ok(());
         }
-        // Windows junctions can return a different path spelling than the
-        // canonical source (for example, without the verbatim path prefix).
-        #[cfg(windows)]
-        if link.canonicalize().is_ok_and(|resolved| resolved == source) {
-            return Ok(());
-        }
         return Err(format!(
             "Unexpected link in Employee Codex storage: {}",
             target.display()
         ));
     }
     if target.exists() {
-        #[cfg(windows)]
-        if target.is_file() && source.is_file() {
-            std::fs::remove_file(target).map_err(|e| e.to_string())?;
-        } else {
-            return Err(format!(
-                "Unexpected entry in Employee Codex storage: {}",
-                target.display()
-            ));
-        }
-        #[cfg(not(windows))]
         return Err(format!(
             "Unexpected entry in Employee Codex storage: {}",
             target.display()
@@ -258,19 +238,6 @@ fn link_entry(source: &Path, target: &Path) -> Result<(), String> {
     if let Err(error) = std::os::unix::fs::symlink(source, target) {
         if std::fs::read_link(target).ok().as_deref() != Some(source) {
             return Err(format!("Could not share Codex configuration: {error}"));
-        }
-    }
-    #[cfg(windows)]
-    {
-        if source.is_dir() {
-            // Junctions work without Administrator privileges or Developer Mode.
-            // Windows PowerShell adds an NT prefix to an already verbatim
-            // canonical path, producing a junction with an unreadable target.
-            junction::create(source, target)
-                .map_err(|e| format!("Could not share the Codex configuration directory: {e}"))?;
-        } else if source.is_file() {
-            std::fs::hard_link(source, target)
-                .map_err(|e| format!("Could not share Codex configuration: {e}"))?;
         }
     }
     Ok(())
@@ -541,7 +508,6 @@ fn copy_rollouts_with_edges(
         let temp = dest.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
         std::fs::copy(path, &temp)
             .map_err(|e| format!("Could not retain the full Codex thread: {e}"))?;
-        // Windows requires write access when flushing a file to disk.
         std::fs::File::options()
             .write(true)
             .open(&temp)
@@ -792,51 +758,7 @@ mod tests {
             fixture.home().join("sessions"),
         )
         .unwrap();
-        #[cfg(windows)]
-        junction::create(
-            fixture.source().join("sessions"),
-            fixture.home().join("sessions"),
-        )
-        .unwrap();
         assert!(prepare_files(&fixture.source(), &fixture.home()).is_err());
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn shares_readable_directory_junctions_with_verbatim_paths() {
-        let fixture = Fixture::new();
-        let source = fixture.source().join("skills [shared]");
-        std::fs::create_dir_all(&source).unwrap();
-        std::fs::create_dir_all(fixture.home()).unwrap();
-        std::fs::write(source.join("skill.txt"), "shared skill").unwrap();
-        // canonicalize supplies the verbatim prefix that broke PowerShell.
-        let source = source.canonicalize().unwrap();
-        let target = fixture.home().canonicalize().unwrap().join("skills");
-        link_entry(&source, &target).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(target.join("skill.txt")).unwrap(),
-            "shared skill"
-        );
-        link_entry(&source, &target).unwrap();
-        assert_eq!(target.canonicalize().unwrap(), source);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn rejects_an_unrelated_configuration_junction() {
-        let fixture = Fixture::new();
-        let source = fixture.source();
-        let other = fixture.0.join("other-account");
-        let target = fixture.home().join("skills");
-        std::fs::create_dir_all(&source).unwrap();
-        std::fs::create_dir_all(&other).unwrap();
-        std::fs::create_dir_all(fixture.home()).unwrap();
-        junction::create(&other, &target).unwrap();
-        assert!(link_entry(&source.canonicalize().unwrap(), &target).is_err());
-        assert_eq!(
-            target.canonicalize().unwrap(),
-            other.canonicalize().unwrap()
-        );
     }
 
     #[test]

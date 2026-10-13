@@ -47,7 +47,6 @@ import {
 } from "../model/fileTree";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
-import { dragPointToClient } from "../../../shared/lib/dragPoint";
 import {
   basename,
   clipboardFilePaths,
@@ -60,7 +59,7 @@ import {
   type FsEntry,
 } from "../../../platform/tauri/fs";
 import { displayPath, parentPath, rebasePath } from "../../../shared/lib/paths";
-import { IS_MAC, IS_WIN, MOD, SHIFT } from "../../../platform/tauri/platform";
+import { IS_MAC, MOD, SHIFT } from "../../../platform/tauri/platform";
 import type { OpenFileFn } from "../../search/model/search";
 import type { GitStatusMap } from "../../source-control/hooks/useGitFileStatuses";
 import {
@@ -95,11 +94,7 @@ type Clip = { mode: "copy" | "cut"; path: string; isDir: boolean };
 type MenuTarget = { path: string; isDir: boolean; isRoot: boolean };
 type MenuState = { x: number; y: number; target: MenuTarget };
 
-const REVEAL_LABEL = IS_MAC
-  ? "Reveal in Finder"
-  : IS_WIN
-    ? "Reveal in File Explorer"
-    : "Open Containing Folder";
+const REVEAL_LABEL = IS_MAC ? "Reveal in Finder" : "Open Containing Folder";
 
 type TreeCtxValue = {
   expanded: Set<string>;
@@ -898,8 +893,7 @@ export const FileTree = memo(function FileTree({
     const treePathAt = (x: number, y: number): string | null => {
       const root = rootRef.current;
       if (!root) return null;
-      const point = dragPointToClient(x, y);
-      const el = document.elementFromPoint(point.x, point.y);
+      const el = document.elementFromPoint(x, y);
       if (!el || !root.contains(el)) return null;
       return el.closest<HTMLElement>("[role='treeitem']")?.title ?? cwd;
     };

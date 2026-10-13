@@ -24,7 +24,7 @@ export type HostDescriptor = {
   name: string;
   providers: RemoteProvider[];
   capabilities: string[];
-  platform?: "win32" | "darwin" | "linux";
+  platform?: "darwin" | "linux";
   /** How an agent on the host calls the app CLI, with the `app` capability. */
   appCli?: string;
 };

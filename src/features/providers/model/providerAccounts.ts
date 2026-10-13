@@ -36,8 +36,8 @@ export function supportsProviderAccounts(
 }
 
 /**
- * Providers whose CLIs can keep isolated, locally named profiles. Devin has
- * no config-dir override on Windows, so it offers only its default login.
+ * Providers whose CLIs can keep isolated, locally named profiles. Devin
+ * offers only its default login.
  */
 const PROFILE_PROVIDERS = [
   "claude",

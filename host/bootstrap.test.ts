@@ -79,7 +79,7 @@ function fixture(badChecksum = false) {
     );
   return { dir, base, run };
 }
-it.skipIf(process.platform === "win32")(
+it(
   "installs a verified package, handles unusual home paths, and reuses its host on reconnect",
   async () => {
     const { dir, base, run } = fixture();
@@ -94,7 +94,7 @@ it.skipIf(process.platform === "win32")(
     ).toHaveLength(2);
   },
 );
-it.skipIf(process.platform === "win32")(
+it(
   "updates an existing host only when requested, then restarts its service",
   async () => {
     const { dir, base, run } = fixture();
@@ -112,7 +112,7 @@ it.skipIf(process.platform === "win32")(
     ).toHaveLength(4);
   },
 );
-it.skipIf(process.platform === "win32")(
+it(
   "rejects a corrupted package before executing or publishing it",
   async () => {
     const { dir, base, run } = fixture(true);

@@ -22,8 +22,6 @@ struct EditorDefinition {
     commands: &'static [&'static str],
     #[cfg(target_os = "macos")]
     mac_apps: &'static [&'static str],
-    #[cfg(windows)]
-    windows_paths: &'static [(&'static str, &'static str)],
 }
 
 const EDITORS: &[EditorDefinition] = &[
@@ -33,12 +31,6 @@ const EDITORS: &[EditorDefinition] = &[
         commands: &["code"],
         #[cfg(target_os = "macos")]
         mac_apps: &["Visual Studio Code.app"],
-        #[cfg(windows)]
-        windows_paths: &[
-            ("LOCALAPPDATA", "Programs/Microsoft VS Code/Code.exe"),
-            ("ProgramFiles", "Microsoft VS Code/Code.exe"),
-            ("ProgramFiles(x86)", "Microsoft VS Code/Code.exe"),
-        ],
     },
     EditorDefinition {
         id: "vscode-insiders",
@@ -46,21 +38,6 @@ const EDITORS: &[EditorDefinition] = &[
         commands: &["code-insiders"],
         #[cfg(target_os = "macos")]
         mac_apps: &["Visual Studio Code - Insiders.app"],
-        #[cfg(windows)]
-        windows_paths: &[
-            (
-                "LOCALAPPDATA",
-                "Programs/Microsoft VS Code Insiders/Code - Insiders.exe",
-            ),
-            (
-                "ProgramFiles",
-                "Microsoft VS Code Insiders/Code - Insiders.exe",
-            ),
-            (
-                "ProgramFiles(x86)",
-                "Microsoft VS Code Insiders/Code - Insiders.exe",
-            ),
-        ],
     },
     EditorDefinition {
         id: "vscodium",
@@ -68,12 +45,6 @@ const EDITORS: &[EditorDefinition] = &[
         commands: &["codium"],
         #[cfg(target_os = "macos")]
         mac_apps: &["VSCodium.app"],
-        #[cfg(windows)]
-        windows_paths: &[
-            ("LOCALAPPDATA", "Programs/VSCodium/VSCodium.exe"),
-            ("ProgramFiles", "VSCodium/VSCodium.exe"),
-            ("ProgramFiles(x86)", "VSCodium/VSCodium.exe"),
-        ],
     },
     EditorDefinition {
         id: "cursor",
@@ -81,12 +52,6 @@ const EDITORS: &[EditorDefinition] = &[
         commands: &["cursor"],
         #[cfg(target_os = "macos")]
         mac_apps: &["Cursor.app"],
-        #[cfg(windows)]
-        windows_paths: &[
-            ("LOCALAPPDATA", "Programs/cursor/Cursor.exe"),
-            ("ProgramFiles", "Cursor/Cursor.exe"),
-            ("ProgramFiles(x86)", "Cursor/Cursor.exe"),
-        ],
     },
     EditorDefinition {
         id: "zed",
@@ -94,11 +59,6 @@ const EDITORS: &[EditorDefinition] = &[
         commands: &["zed"],
         #[cfg(target_os = "macos")]
         mac_apps: &["Zed.app", "Zed Preview.app"],
-        #[cfg(windows)]
-        windows_paths: &[
-            ("LOCALAPPDATA", "Programs/Zed/Zed.exe"),
-            ("ProgramFiles", "Zed/Zed.exe"),
-        ],
     },
     EditorDefinition {
         id: "windsurf",
@@ -106,11 +66,6 @@ const EDITORS: &[EditorDefinition] = &[
         commands: &["windsurf"],
         #[cfg(target_os = "macos")]
         mac_apps: &["Windsurf.app"],
-        #[cfg(windows)]
-        windows_paths: &[
-            ("LOCALAPPDATA", "Programs/Windsurf/Windsurf.exe"),
-            ("ProgramFiles", "Windsurf/Windsurf.exe"),
-        ],
     },
     EditorDefinition {
         id: "sublime-text",
@@ -118,11 +73,6 @@ const EDITORS: &[EditorDefinition] = &[
         commands: &["subl", "sublime_text"],
         #[cfg(target_os = "macos")]
         mac_apps: &["Sublime Text.app"],
-        #[cfg(windows)]
-        windows_paths: &[
-            ("ProgramFiles", "Sublime Text/sublime_text.exe"),
-            ("ProgramFiles(x86)", "Sublime Text/sublime_text.exe"),
-        ],
     },
 ];
 
@@ -151,27 +101,10 @@ fn installed_mac_app(editor: &EditorDefinition) -> Option<PathBuf> {
     })
 }
 
-#[cfg(windows)]
-fn installed_windows_app(editor: &EditorDefinition) -> Option<PathBuf> {
-    editor
-        .windows_paths
-        .iter()
-        .find_map(|(variable, relative)| {
-            let root = std::env::var_os(variable)?;
-            let path = PathBuf::from(root).join(relative);
-            path.is_file().then_some(path)
-        })
-}
-
 fn resolve_editor(editor: &EditorDefinition) -> Option<EditorLauncher> {
     #[cfg(target_os = "macos")]
     if let Some(path) = installed_mac_app(editor) {
         return Some(EditorLauncher::MacApp(path));
-    }
-
-    #[cfg(windows)]
-    if let Some(path) = installed_windows_app(editor) {
-        return Some(EditorLauncher::Command(path));
     }
 
     editor

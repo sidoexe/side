@@ -858,7 +858,7 @@ pub fn harness_resolve_devin() -> Result<CursorBinary, String> {
             path: path.to_string_lossy().into_owned(),
         })
         .ok_or_else(|| {
-            "Devin CLI not found. Install it with `curl -fsSL https://cli.devin.ai/install.sh | bash` (Windows: `irm https://static.devin.ai/cli/setup.ps1 | iex`) and run `devin auth login`, then retry."
+            "Devin CLI not found. Install it with `curl -fsSL https://cli.devin.ai/install.sh | bash` and run `devin auth login`, then retry."
                 .into()
         })
 }
@@ -1522,15 +1522,12 @@ pub(crate) fn exec_output(
 const KILL_ESCALATE: Duration = Duration::from_secs(2);
 /// Quit and `Drop` cannot wait on a detached escalate thread — the process
 /// exits first and isolated harness groups stay behind as PID-1 orphans.
-#[cfg(not(windows))]
 const KILL_ALL_GRACE: Duration = Duration::from_millis(300);
-#[cfg(not(windows))]
 const KILL_ALL_KILL_WAIT: Duration = Duration::from_millis(150);
 const HARNESS_PARENT_ENV: &str = "MONOCODE_HARNESS_PARENT";
 
 /// An interactive shell has to source the user's whole rc file; nvm alone can
 /// take a second.
-#[cfg(not(windows))]
 const LOGIN_SHELL_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A spawn that was cancelled mid-fork. The session it was starting is already
@@ -1548,31 +1545,12 @@ fn isolate_child(cmd: &mut Command) {
         use std::os::unix::process::CommandExt;
         cmd.process_group(0);
     }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        cmd.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = cmd;
-    }
 }
 
 fn spawn_managed(cmd: &mut Command) -> std::io::Result<std::process::Child> {
-    #[cfg(windows)]
-    {
-        crate::windows::spawn_managed(cmd)
-    }
     #[cfg(unix)]
     {
         spawn_retrying_text_file_busy(cmd)
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        cmd.spawn()
     }
 }
 
@@ -1607,12 +1585,6 @@ fn terminate_after(pid: u32, escalate: Duration) {
     if pid == 0 || pid == 1 {
         return;
     }
-    #[cfg(windows)]
-    {
-        let _ = escalate;
-        signal_tree(pid, TreeSignal::Kill);
-    }
-    #[cfg(not(windows))]
     {
         signal_tree(pid, TreeSignal::Term);
         thread::spawn(move || {
@@ -1627,11 +1599,6 @@ fn terminate_after(pid: u32, escalate: Duration) {
 /// SIGTERM every tree, then SIGKILL whatever is still standing, before return.
 pub(crate) fn terminate_all(pids: &[u32]) {
     let pids: Vec<u32> = pids.iter().copied().filter(|pid| *pid > 1).collect();
-    #[cfg(windows)]
-    for pid in pids {
-        signal_tree(pid, TreeSignal::Kill);
-    }
-    #[cfg(not(windows))]
     {
         if pids.is_empty() {
             return;
@@ -1659,7 +1626,6 @@ pub(crate) fn terminate_all(pids: &[u32]) {
 /// answering `kill(pid, 0)` within a poll or two. Reaping here instead would
 /// race that thread for the exit status and free the pid while we still signal
 /// it.
-#[cfg(not(windows))]
 fn wait_until_dead(pids: &[u32], until: Instant) {
     while Instant::now() < until {
         if pids.iter().all(|pid| !tree_alive(*pid)) {
@@ -1670,7 +1636,6 @@ fn wait_until_dead(pids: &[u32], until: Instant) {
 }
 
 enum TreeSignal {
-    #[cfg(not(windows))]
     Term,
     Kill,
 }
@@ -1692,34 +1657,13 @@ fn signal_tree(pid: u32, signal: TreeSignal) {
             libc::kill(ipid, sig);
         }
     }
-    #[cfg(windows)]
-    {
-        let _ = signal;
-        let mut cmd = Command::new("taskkill");
-        crate::hide_window_console(&mut cmd);
-        cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        let _ = cmd.status();
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = signal;
-        let _ = Command::new("kill").arg(pid.to_string()).status();
-    }
 }
 
-#[cfg(not(windows))]
 fn tree_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
         let ipid = pid as i32;
         unsafe { libc::kill(ipid, 0) == 0 || libc::kill(-ipid, 0) == 0 }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = pid;
-        false
     }
 }
 
@@ -1731,11 +1675,6 @@ fn process_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
         unsafe { libc::kill(pid as i32, 0) == 0 }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = pid;
-        false
     }
 }
 
@@ -2089,16 +2028,9 @@ fn configured_binary_fingerprint(path: &Path) -> Option<String> {
             metadata.modified().ok()
         ))
     }
-    #[cfg(not(unix))]
-    {
-        Some(format!("{}:{:?}", metadata.len(), metadata.modified().ok()))
-    }
 }
 
 fn resolve_harness_binary_override(provider: &str, binary_path: &str) -> Result<PathBuf, String> {
-    if provider == "antigravity" && cfg!(windows) {
-        return Err("Antigravity ACP server overrides are not supported on Windows.".into());
-    }
     let names: &[&str] = match provider {
         "claude" => &["claude"],
         "codex" => &["codex"],
@@ -2461,12 +2393,6 @@ fn resolve_hermes() -> Option<PathBuf> {
         candidates.push(home.join(".cargo/bin/hermes"));
         candidates.push(home.join("n/bin/hermes"));
     }
-    #[cfg(windows)]
-    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA").map(PathBuf::from) {
-        // Native Windows installer launchers, then the underlying virtualenv.
-        candidates.push(local_app_data.join("hermes/bin/hermes"));
-        candidates.push(local_app_data.join("hermes/hermes-agent/venv/Scripts/hermes"));
-    }
     #[cfg(target_os = "macos")]
     candidates.push(PathBuf::from("/opt/homebrew/bin/hermes"));
     candidates.push(PathBuf::from("/usr/local/bin/hermes"));
@@ -2487,11 +2413,6 @@ fn resolve_devin() -> Option<PathBuf> {
         // Official installer target on macOS and Linux.
         candidates.push(home.join(".local/bin/devin"));
     }
-    #[cfg(windows)]
-    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA").map(PathBuf::from) {
-        // The Windows installer keeps its launcher beside versioned builds.
-        candidates.push(local_app_data.join("devin/cli/bin/devin"));
-    }
     #[cfg(target_os = "macos")]
     candidates.push(PathBuf::from("/opt/homebrew/bin/devin"));
     candidates.push(PathBuf::from("/usr/local/bin/devin"));
@@ -2504,12 +2425,6 @@ fn resolve_devin() -> Option<PathBuf> {
 }
 
 fn resolve_antigravity() -> Option<PathBuf> {
-    // The .par wrapper is a POSIX self-extracting archive — Antigravity ships
-    // no Windows ACP binary, so report the provider unavailable there instead
-    // of probing paths that can never be executable.
-    if cfg!(windows) {
-        return None;
-    }
     let mut candidates = Vec::new();
     if let Some(home) = dirs_home().map(PathBuf::from) {
         // Prefer the wrapper: it sets the server's required resource directory.
@@ -2798,58 +2713,20 @@ fn first_binary_matching(
 }
 
 fn existing_binary(path: PathBuf) -> Option<PathBuf> {
-    #[cfg(windows)]
-    if path.extension().is_none() {
-        for ext in ["exe", "cmd", "bat", "com"] {
-            let candidate = path.with_extension(ext);
-            if is_executable_file(&candidate) {
-                return Some(candidate);
-            }
-        }
-    }
     is_executable_file(&path).then_some(path)
-}
-
-#[cfg(all(test, windows))]
-mod windows_launcher_tests {
-    use super::*;
-
-    #[test]
-    fn npm_shell_shim_does_not_hide_windows_launcher() {
-        let dir = std::env::temp_dir().join(format!("monocode-launcher-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let bare = dir.join("agent");
-        let cmd = dir.join("agent.cmd");
-        std::fs::write(&bare, b"#!/bin/sh\n").unwrap();
-        std::fs::write(&cmd, b"@echo off\n").unwrap();
-        assert_eq!(existing_binary(bare.clone()), Some(cmd.clone()));
-        std::fs::remove_file(&cmd).unwrap();
-        assert_eq!(existing_binary(bare.clone()), None);
-        std::fs::remove_file(bare).unwrap();
-        std::fs::remove_dir(dir).unwrap();
-    }
 }
 
 fn configured_binary_name_eq(path: &Path, expected: &str) -> bool {
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
         return false;
     };
-    if cfg!(windows) {
-        return binary_name_eq(path, expected);
-    }
     name == expected
 }
 
 fn binary_name_eq(path: &Path, expected: &str) -> bool {
     path.file_stem()
         .and_then(|name| name.to_str())
-        .is_some_and(|name| {
-            if cfg!(windows) {
-                name.eq_ignore_ascii_case(expected)
-            } else {
-                name == expected
-            }
-        })
+        .is_some_and(|name| name == expected)
 }
 
 fn path_has_component(path: &Path, needle: &str) -> bool {
@@ -2868,18 +2745,6 @@ fn is_executable_file(path: &Path) -> bool {
         std::fs::metadata(path)
             .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
             .unwrap_or(false)
-    }
-    #[cfg(not(unix))]
-    {
-        path.is_file()
-            && path
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| {
-                    ["exe", "cmd", "bat", "com"]
-                        .iter()
-                        .any(|allowed| ext.eq_ignore_ascii_case(allowed))
-                })
     }
 }
 
@@ -2921,20 +2786,12 @@ fn gui_search_path_from(
         parts.push(format!("{home}/.grok/bin").into());
         parts.push(format!("{home}/.npm-global/bin").into());
         parts.push(format!("{home}/.bun/bin").into());
-        parts.push(format!("{home}/AppData/Roaming/npm").into());
-        parts.push(format!("{home}/AppData/Local/Yarn/bin").into());
-        parts.push(format!("{home}/scoop/shims").into());
     }
     parts.push("/opt/homebrew/bin".into());
     parts.push("/usr/local/bin".into());
     parts.push("/usr/bin".into());
     parts.push("/bin".into());
     parts.push("/snap/bin".into());
-    #[cfg(windows)]
-    {
-        parts.push(r"C:\Program Files\Git\cmd".into());
-        parts.push(r"C:\Program Files\nodejs".into());
-    }
     std::env::join_paths(parts)
         .unwrap_or_default()
         .to_string_lossy()
@@ -2947,7 +2804,6 @@ fn apply_gui_path(cmd: &mut Command) {
 
 pub(crate) fn apply_gui_env(cmd: &mut Command) {
     apply_gui_path(cmd);
-    crate::hide_window_console(cmd);
     if let Some(id) = passwd_identity() {
         if std::env::var_os("HOME").is_none() {
             cmd.env("HOME", &id.home);
@@ -2961,14 +2817,6 @@ pub(crate) fn apply_gui_env(cmd: &mut Command) {
         }
     } else if let Some(home) = dirs_home() {
         cmd.env("HOME", &home);
-        if std::env::var_os("USERPROFILE").is_none() {
-            cmd.env("USERPROFILE", &home);
-        }
-        if std::env::var_os("USER").is_none() {
-            if let Ok(username) = std::env::var("USERNAME") {
-                cmd.env("USER", username);
-            }
-        }
     }
     if std::env::var_os("LANG").is_none() && std::env::var_os("LC_ALL").is_none() {
         cmd.env("LANG", "en_US.UTF-8");
@@ -3046,17 +2894,6 @@ fn login_shell_env(name: &str) -> Option<String> {
 }
 
 fn load_login_shell_env() -> HashMap<String, String> {
-    #[cfg(windows)]
-    {
-        LOGIN_SHELL_KEYS
-            .into_iter()
-            .filter_map(|key| {
-                let value = std::env::var(key).ok()?;
-                (!value.is_empty()).then(|| (key.to_string(), value))
-            })
-            .collect()
-    }
-    #[cfg(not(windows))]
     load_unix_login_shell_env()
 }
 
@@ -3066,7 +2903,6 @@ fn load_login_shell_env() -> HashMap<String, String> {
 /// version managers (nvm, fnm, mise, volta) all initialize from there. A
 /// login-but-not-interactive shell sees `.zshenv`/`.zprofile` only, so every
 /// nvm-managed CLI looks uninstalled.
-#[cfg(not(windows))]
 fn load_unix_login_shell_env() -> HashMap<String, String> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| {
         if cfg!(target_os = "macos") {
@@ -3919,7 +3755,6 @@ mod tests {
         assert_eq!(command_basename("/Users/me/.local/bin/fx"), "fx");
         assert_eq!(command_basename("fx"), "fx");
         assert_eq!(command_basename("/Users/me/.grok/bin/grok"), "grok");
-        assert_eq!(command_basename("fx.exe"), "fx");
     }
 
     #[test]
@@ -4068,36 +3903,6 @@ mod exec_allowlist_tests {
         ] {
             assert!(!exec_args_allowed(Some("opencode"), &args(rejected)));
         }
-    }
-}
-
-#[cfg(all(windows, test))]
-mod windows_binary_tests {
-    use super::*;
-
-    #[test]
-    fn configured_binary_path_accepts_windows_shim_extension() {
-        let dir = std::env::temp_dir().join(format!(
-            "monocode-configured-windows-binary-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let shim = dir.join("codex.cmd");
-        std::fs::write(&shim, b"@echo off\r\necho codex-cli 0.156.1\r\n").unwrap();
-        let shim_path = shim.to_string_lossy().into_owned();
-
-        assert_eq!(
-            resolve_harness_binary_override("codex", &shim_path),
-            Ok(shim.clone())
-        );
-        assert!(is_resolved_harness_binary(
-            &shim_path,
-            Some("codex"),
-            Some(&shim_path)
-        ));
-
-        std::fs::remove_dir_all(dir).unwrap();
     }
 }
 

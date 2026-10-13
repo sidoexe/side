@@ -726,10 +726,6 @@ fn write_secret_file(path: &std::path::Path, token: &str) -> Result<(), String> 
             .map_err(|error| error.to_string())?;
         Ok(())
     }
-    #[cfg(not(unix))]
-    {
-        fs::write(path, token).map_err(|error| error.to_string())
-    }
 }
 
 #[cfg(test)]

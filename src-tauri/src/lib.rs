@@ -51,12 +51,8 @@ mod skills;
 pub mod ssh_askpass;
 #[cfg(target_os = "macos")]
 mod trackpad_zoom;
-#[cfg(target_os = "windows")]
-mod tray;
 mod window;
 mod window_transfer;
-#[cfg(windows)]
-mod windows;
 mod worktree_lifecycle;
 mod worktrees;
 
@@ -88,56 +84,10 @@ pub(crate) struct PasswdIdentity {
 }
 
 pub(crate) fn dirs_home() -> Option<String> {
-    #[cfg(windows)]
-    let keys = ["USERPROFILE", "HOME"];
-    #[cfg(not(windows))]
-    let keys = ["HOME", "USERPROFILE"];
-    for key in keys {
-        if let Some(home) = std::env::var_os(key) {
-            let home = home.to_string_lossy().into_owned();
-            if !home.is_empty() {
-                return Some(home);
-            }
-        }
-    }
-    match (std::env::var("HOMEDRIVE"), std::env::var("HOMEPATH")) {
-        (Ok(drive), Ok(path)) if !drive.is_empty() && !path.is_empty() => {
-            Some(format!("{drive}{path}"))
-        }
-        _ => passwd_identity().map(|id| id.home),
-    }
-}
-
-/// Hide the console window that Windows allocates for GUI-spawned children.
-pub(crate) fn hide_window_console(cmd: &mut std::process::Command) {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(WINDOWS_BACKGROUND_CREATION_FLAGS);
-    }
-    let _ = cmd;
-}
-
-#[cfg(windows)]
-const WINDOWS_BACKGROUND_CREATION_FLAGS: u32 = 0x0800_0000; // CREATE_NO_WINDOW
-
-#[cfg(all(test, windows))]
-mod background_command_tests {
-    use super::*;
-
-    #[test]
-    fn background_commands_keep_piped_output_and_exit_status() {
-        assert_eq!(WINDOWS_BACKGROUND_CREATION_FLAGS, 0x0800_0000);
-
-        let mut cmd = std::process::Command::new("cmd.exe");
-        cmd.args(["/D", "/C", "(echo stdout)&(echo stderr 1>&2)&exit /b 7"]);
-        hide_window_console(&mut cmd);
-
-        let output = cmd.output().expect("background command should run");
-        assert_eq!(output.status.code(), Some(7));
-        assert!(String::from_utf8_lossy(&output.stdout).contains("stdout"));
-        assert!(String::from_utf8_lossy(&output.stderr).contains("stderr"));
-    }
+    std::env::var_os("HOME")
+        .map(|home| home.to_string_lossy().into_owned())
+        .filter(|home| !home.is_empty())
+        .or_else(|| passwd_identity().map(|id| id.home))
 }
 
 /// Finder-launched .app bundles often omit HOME/USER/SHELL. Fall back to the
@@ -177,10 +127,6 @@ pub(crate) fn passwd_identity() -> Option<PasswdIdentity> {
             Some(PasswdIdentity { home, user, shell })
         }
     }
-    #[cfg(not(unix))]
-    {
-        None
-    }
 }
 
 #[tauri::command]
@@ -219,15 +165,14 @@ fn set_trackpad_zoom_enabled(
     trackpad_zoom::set_enabled(&window, enabled);
 }
 
-// Async so the window is built off the main thread. Building it from a sync
-// command deadlocks WebView2 on Windows and leaves the new window blank.
+// Async so the window is built off the main thread.
 #[tauri::command]
 async fn open_new_window(app: tauri::AppHandle) -> Result<(), String> {
     window::open_new_window(&app)
 }
 
 fn should_request_quit(code: Option<i32>) -> bool {
-    code.is_some() || cfg!(any(target_os = "linux", target_os = "windows"))
+    code.is_some() || cfg!(target_os = "linux")
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -244,16 +189,10 @@ pub fn run() {
     }
     #[cfg(target_os = "macos")]
     macos::register_spellcheck_default();
-    #[cfg(windows)]
-    windows::initialize().expect("Failed to initialize Windows process safety");
     let builder = tauri::Builder::default();
     // Closing to the tray leaves the process running without a taskbar entry,
     // so a second launch must reopen it instead of starting another instance.
     // Registered first so the duplicate exits before any setup runs.
-    #[cfg(target_os = "windows")]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-        let _ = window::show_hidden_or_open_new(app);
-    }));
     let app = builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -278,8 +217,6 @@ pub fn run() {
             reminders::init(app.handle());
             checkpoint::init(app.handle())?;
             menu::install(app.handle())?;
-            #[cfg(target_os = "windows")]
-            tray::install(app.handle())?;
             #[cfg(target_os = "macos")]
             {
                 quick_composer::init(app.handle())?;
@@ -676,7 +613,7 @@ pub fn run() {
             api.prevent_exit();
             // Last window destroyed (red button). Stay in the dock on macOS;
             // ⌘Q is a separate menu handler and arrives with an exit code.
-            // Linux and Windows have no dock, so the last close is a quit.
+            // Linux has no dock, so the last close is a quit.
             if !should_request_quit(code) {
                 return;
             }
@@ -713,7 +650,7 @@ mod tests {
         assert!(should_request_quit(Some(0)));
     }
 
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     #[test]
     fn last_window_close_requests_quit_without_dock() {
         assert!(should_request_quit(None));

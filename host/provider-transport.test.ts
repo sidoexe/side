@@ -101,7 +101,6 @@ describe("existing providers over headless process I/O", () => {
     fixtureHome.path = directory;
     const configHome = join(directory, ".config");
     vi.stubEnv("XDG_CONFIG_HOME", configHome);
-    vi.stubEnv("APPDATA", configHome);
     mkdirSync(join(configHome, "devin"), { recursive: true });
     writeFileSync(
       join(configHome, "devin", "config.json"),

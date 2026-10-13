@@ -474,7 +474,7 @@ export function movePath(from: string, destParent: string): Promise<string> {
 }
 
 /**
- * Paths for files copied in a file manager, on macOS, Linux and Windows.
+ * Paths for files copied in a file manager, on macOS and Linux.
  * Rejects when the clipboard cannot be read; an empty list means it holds no
  * files.
  */

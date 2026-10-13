@@ -940,7 +940,6 @@ fn path_contains_symlink(root: &Path, relative: &str) -> bool {
 
 fn git_head(root: &Path) -> Result<Vec<u8>, String> {
     let mut command = Command::new("git");
-    crate::hide_window_console(&mut command);
     let output = command
         .arg("-C")
         .arg(root)
@@ -1135,7 +1134,6 @@ fn calculate_session_stats(dir: &Path, manifest: &Manifest, relative: &str) -> O
 
 fn diff_numstat(before: &Path, after: &Path) -> Option<(i64, i64)> {
     let mut cmd = Command::new("git");
-    crate::hide_window_console(&mut cmd);
     let output = cmd
         .args(["diff", "--no-index", "--no-ext-diff", "--numstat", "--"])
         .arg(before)
@@ -1272,11 +1270,6 @@ fn file_mode(path: &Path) -> Option<u32> {
         .map(|meta| meta.permissions().mode() & 0o777)
 }
 
-#[cfg(not(unix))]
-fn file_mode(_path: &Path) -> Option<u32> {
-    None
-}
-
 #[cfg(unix)]
 fn set_file_mode(path: &Path, mode: Option<u32>) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
@@ -1284,11 +1277,6 @@ fn set_file_mode(path: &Path, mode: Option<u32>) -> Result<(), String> {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
             .map_err(|e| e.to_string())?;
     }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn set_file_mode(_path: &Path, _mode: Option<u32>) -> Result<(), String> {
     Ok(())
 }
 

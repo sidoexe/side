@@ -51,8 +51,8 @@ export function saveUiScale(value: number) {
 }
 
 /**
- * App-wide scaling via the native webview zoom (Chromium page zoom /
- * WebView2 zoom), so menu anchors, drag-resize deltas, and terminal layout —
+ * App-wide scaling via the native webview zoom, so menu anchors,
+ * drag-resize deltas, and terminal layout —
  * all computed from getBoundingClientRect / clientX — stay consistent.
  * Outside Tauri (plain `vite dev` in a browser) it falls back to CSS zoom.
  */

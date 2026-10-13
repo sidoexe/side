@@ -52,7 +52,7 @@ function shellWords(command: string): string[] | undefined {
     if (char === "\\") {
       const next = command[index + 1];
       if (!next) return undefined;
-      // Preserve ordinary path separators, including quoted Windows paths.
+      // A backslash only escapes characters the shell would treat specially.
       if (
         (quote === '"' && !/[\\"$`]/.test(next)) ||
         (!quote && !/[\s'"\\;&|<>()[\]{}$`#]/.test(next))

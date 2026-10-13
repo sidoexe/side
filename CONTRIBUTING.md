@@ -8,7 +8,7 @@ Please don’t open PRs that add a new provider right now. The existing harnesse
 
 You need Node.js 20+, a current stable Rust toolchain, and at least one provider CLI installed and logged in. See [provider setup](docs/providers.md) for installation and login instructions.
 
-macOS, Linux, and Windows are supported targets. See [building from source](docs/building.md) for platform prerequisites and packaging commands.
+macOS and Linux are supported targets. See [building from source](docs/building.md) for platform prerequisites and packaging commands.
 
 ```bash
 npm install

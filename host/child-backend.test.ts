@@ -237,8 +237,7 @@ setInterval(() => {}, 1000);
     {
       cwd: directory,
       stdio: ["pipe", "ignore", "ignore", "pipe"],
-      detached: process.platform !== "win32",
-      windowsHide: true,
+      detached: true,
     },
   );
   let guardClosed = false;
@@ -257,7 +256,6 @@ setInterval(() => {}, 1000);
       },
       { timeout: 5_000 },
     );
-    // The guard's cwd keeps this directory locked on Windows until it exits.
     await vi.waitFor(() => expect(guardClosed).toBe(true), { timeout: 5_000 });
   } finally {
     guard.stdio[3]?.destroy();

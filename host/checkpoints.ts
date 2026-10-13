@@ -303,7 +303,7 @@ async function matches(
 
 function safeRelative(root: string, path: string): string {
   const absolute = isAbsolute(path) ? resolve(path) : resolve(root, path);
-  const rel = relative(root, absolute).replace(/\\/g, "/");
+  const rel = relative(root, absolute);
   if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error("Path is outside this checkout");
   return rel;
 }

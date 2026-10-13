@@ -23,8 +23,7 @@ afterEach(() =>
 );
 
 function fixture() {
-  // Use the same native resolution as fs/promises.realpath in the host,
-  // including expansion of Windows short directory names such as RUNNER~1.
+  // Use the same native resolution as fs/promises.realpath in the host.
   const home = realpathSync.native(
     mkdtempSync(join(tmpdir(), "monocode-selected-git-")),
   );
@@ -61,8 +60,6 @@ function fixture() {
   return { home, commands, repo };
 }
 
-const apiRoot = (path: string) =>
-  process.platform === "win32" ? path.replace(/\\/g, "/") : path;
 
 it("commits only selected working files and preserves other staging and repos", async () => {
   const { commands, repo } = fixture();
@@ -187,7 +184,7 @@ it("rejects invalid and cross-repo selections before touching staging", async ()
   ).rejects.toThrow("cannot amend");
 });
 
-it.skipIf(process.platform === "win32")(
+it(
   "treats wildcard, pathspec, newline and backslash filenames literally",
   async () => {
     const { commands, repo } = fixture();
@@ -229,10 +226,10 @@ it("locates each checkout and deleted parents while enforcing host boundaries", 
       paths: relatives.map((path, i) => join(roots[i], path)),
     }),
   ).toEqual([
-    { root: apiRoot(a.cwd), relative: relatives[0] },
-    { root: apiRoot(b.cwd), relative: "chosen.txt" },
-    { root: apiRoot(tree), relative: "chosen.txt" },
-    { root: apiRoot(join(a.cwd, "nested")), relative: "chosen.txt" },
+    { root: a.cwd, relative: relatives[0] },
+    { root: b.cwd, relative: "chosen.txt" },
+    { root: tree, relative: "chosen.txt" },
+    { root: join(a.cwd, "nested"), relative: "chosen.txt" },
   ]);
   await expect(
     commands.run("git_locate_files", { paths: [join(home, "outside.txt")] }),
@@ -250,7 +247,7 @@ it("locates each checkout and deleted parents while enforcing host boundaries", 
   ).toEqual([null]);
 });
 
-it.skipIf(process.platform === "win32")(
+it(
   "keeps file symlinks in their checkout and rejects traversal through outside directories",
   async () => {
     const { home, commands, repo } = fixture();
@@ -262,7 +259,7 @@ it.skipIf(process.platform === "win32")(
       await commands.run("git_locate_files", {
         paths: [join(cwd, "file-link")],
       }),
-    ).toEqual([{ root: apiRoot(cwd), relative: "file-link" }]);
+    ).toEqual([{ root: cwd, relative: "file-link" }]);
     const context = (await commands.run("git_staged_context", {
       cwd,
       paths: ["file-link"],
@@ -289,15 +286,12 @@ it("lists skills and reads a user skill outside every project", async () => {
   const { home, commands, repo } = fixture();
   const { cwd } = repo();
   const userHome = join(home, "user-home");
-  // os.homedir() reads USERPROFILE on Windows, HOME elsewhere.
-  for (const key of ["HOME", "USERPROFILE"]) {
-    const previous = process.env[key];
-    process.env[key] = userHome;
-    cleanups.push(() => {
-      if (previous === undefined) delete process.env[key];
-      else process.env[key] = previous;
-    });
-  }
+  const previous = process.env.HOME;
+  process.env.HOME = userHome;
+  cleanups.push(() => {
+    if (previous === undefined) delete process.env.HOME;
+    else process.env.HOME = previous;
+  });
   const write = (dir: string, body: string) => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "SKILL.md"), body);

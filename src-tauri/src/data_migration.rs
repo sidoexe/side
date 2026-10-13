@@ -103,12 +103,6 @@ fn symlink(link: &Path, target: &Path) -> Result<(), String> {
     std::os::unix::fs::symlink(link, target).map_err(|e| format!("{}: {e}", target.display()))
 }
 
-#[cfg(windows)]
-fn symlink(link: &Path, target: &Path) -> Result<(), String> {
-    std::os::windows::fs::symlink_dir(link, target)
-        .map_err(|e| format!("{}: {e}", target.display()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

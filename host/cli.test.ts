@@ -31,7 +31,7 @@ it(
       exec(
         process.execPath,
         [cli, ...args, "--data-dir", directory, "--port", String(port)],
-        { timeout: process.platform === "win32" ? 25_000 : 10_000 },
+        { timeout: 10_000 },
       );
     try {
       // A stale legacy PID now belongs to this unrelated test process.
@@ -63,12 +63,10 @@ it(
         ((await response.json()) as { result: { environmentId: string } })
           .result.environmentId,
       ).toBe(device.environmentId);
-      if (process.platform !== "win32") {
-        expect(statSync(directory).mode & 0o777).toBe(0o700);
-        expect(statSync(join(directory, "running.json")).mode & 0o777).toBe(
-          0o600,
-        );
-      }
+      expect(statSync(directory).mode & 0o777).toBe(0o700);
+      expect(statSync(join(directory, "running.json")).mode & 0o777).toBe(
+        0o600,
+      );
       await run("revoke", device.id);
       await expect(run("revoke", device.id)).rejects.toThrow(
         "Device not found",
@@ -100,5 +98,5 @@ it(
       rmSync(directory, { recursive: true, force: true });
     }
   },
-  process.platform === "win32" ? 60_000 : 20_000,
+  20_000,
 );

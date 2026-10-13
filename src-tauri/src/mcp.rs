@@ -12,14 +12,7 @@ fn claude_desktop_config(home: &Path) -> PathBuf {
     {
         home.join("Library/Application Support/Claude/claude_desktop_config.json")
     }
-    #[cfg(target_os = "windows")]
-    {
-        std::env::var_os("APPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home.join("AppData/Roaming"))
-            .join("Claude/claude_desktop_config.json")
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(target_os = "macos"))]
     {
         home.join(".config/Claude/claude_desktop_config.json")
     }

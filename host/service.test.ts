@@ -29,7 +29,7 @@ it("keeps paths and environment content from injecting service configuration", (
   expect(unit).toContain("KillMode=control-group");
 });
 
-it.skipIf(process.platform === "win32").each(["darwin", "linux"] as const)(
+it.each(["darwin", "linux"] as const)(
   "removes the %s service registration but keeps host data",
   async (platform) => {
     const home = mkdtempSync(join(tmpdir(), "monocode-service-test-"));
@@ -73,14 +73,3 @@ it.skipIf(process.platform === "win32").each(["darwin", "linux"] as const)(
     }
   },
 );
-
-it("unregisters only this user's Windows task", async () => {
-  const scripts: string[] = [];
-  await uninstallService({
-    platform: "win32",
-    powershell: async (script) => scripts.push(script),
-  });
-  expect(scripts[0]).toContain('"sIDE Host-$sid"');
-  expect(scripts[0]).toContain("Unregister-ScheduledTask");
-  expect(scripts[0]).not.toMatch(/Remove-Item|\.monocode-host/);
-});

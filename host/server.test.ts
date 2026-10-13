@@ -56,8 +56,6 @@ async function setup(providers: RemoteProvider[] = ["codex"]) {
       answer: () => {},
     },
   });
-  // Follow production's canonicalization, including Windows 8.3 paths such
-  // as RUNNER~1 in the CI runner's temporary directory.
   const project = await engine.openProject(directory);
   const server = createHostServer(engine, providers);
   try {
@@ -630,7 +628,7 @@ describe("remote host API", () => {
     symlinkSync(
       tmpdir(),
       join(s.directory, "outside"),
-      process.platform === "win32" ? "junction" : "dir",
+      "dir",
     );
     expect(
       (await s.call("files.read", { projectId: s.project.id, path: "outside" }))

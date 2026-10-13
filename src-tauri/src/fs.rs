@@ -98,34 +98,6 @@ fn directory_identity(path: &Path) -> Result<String, String> {
     Ok(format!("unix:{}:{}", metadata.dev(), metadata.ino()))
 }
 
-#[cfg(windows)]
-fn directory_identity(path: &Path) -> Result<String, String> {
-    use std::fs::OpenOptions;
-    use std::os::windows::fs::OpenOptionsExt;
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Storage::FileSystem::{
-        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS,
-    };
-
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
-        .open(path)
-        .map_err(|error| error.to_string())?;
-    let mut info = BY_HANDLE_FILE_INFORMATION::default();
-    let succeeded = unsafe {
-        GetFileInformationByHandle(file.as_raw_handle() as _, std::ptr::addr_of_mut!(info))
-    };
-    if succeeded == 0 {
-        return Err(std::io::Error::last_os_error().to_string());
-    }
-    let file_index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
-    Ok(format!(
-        "windows:{}:{file_index}",
-        info.dwVolumeSerialNumber
-    ))
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DirEntry {
@@ -1287,7 +1259,6 @@ fn git_github_status_for() -> GitHubStatus {
         .env("GH_PAGER", "cat")
         .env("GIT_PAGER", "cat");
     crate::harness::apply_gui_env(&mut cmd);
-    crate::hide_window_console(&mut cmd);
     let authenticated = cmd
         .output()
         .map(|output| output.status.success())
@@ -2695,7 +2666,6 @@ fn git_locate_file(path: &Path) -> Result<Option<GitFileLocation>, String> {
     let repo = std::fs::canonicalize(top).map_err(|e| e.to_string())?;
     let relative = actual.strip_prefix(&repo).map_err(|e| e.to_string())?;
     Ok(Some(GitFileLocation {
-        // Git supplies a usable Windows path without canonicalize's verbatim prefix.
         root: path_to_js(top),
         relative: path_to_js(relative),
     }))
@@ -4507,7 +4477,6 @@ fn gh_run_raw(root: &Path, args: &[&str], allow_empty: bool) -> Result<String, S
         .env("GH_PAGER", "cat")
         .env("GIT_PAGER", "cat");
     crate::harness::apply_gui_env(&mut cmd);
-    crate::hide_window_console(&mut cmd);
     let output = cmd.output().map_err(|error| {
         if error.kind() == ErrorKind::NotFound {
             "GitHub CLI (`gh`) is not installed.".to_string()
@@ -4555,9 +4524,7 @@ pub(crate) fn resolve_repo_path(root: &Path, relative: &str) -> Result<String, S
 }
 
 fn git_cmd() -> Command {
-    let mut cmd = Command::new("git");
-    crate::hide_window_console(&mut cmd);
-    cmd
+    Command::new("git")
 }
 
 fn git_cmd_for_args_with_path(args: &[&str], gui_path: impl FnOnce() -> String) -> Command {
@@ -5358,14 +5325,7 @@ pub(crate) fn expand_home(path: &str) -> PathBuf {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(path));
     }
-    let rest = path.strip_prefix("~/").or_else(|| {
-        if cfg!(windows) {
-            path.strip_prefix("~\\")
-        } else {
-            None
-        }
-    });
-    if let Some(rest) = rest {
+    if let Some(rest) = path.strip_prefix("~/") {
         if let Some(home) = dirs_home() {
             return PathBuf::from(home).join(rest);
         }
@@ -5374,12 +5334,7 @@ pub(crate) fn expand_home(path: &str) -> PathBuf {
 }
 
 pub(crate) fn path_to_js(path: &Path) -> String {
-    let text = path.to_string_lossy();
-    if cfg!(windows) {
-        text.replace('\\', "/")
-    } else {
-        text.into_owned()
-    }
+    path.to_string_lossy().into_owned()
 }
 
 #[cfg(all(test, unix))]
@@ -5988,14 +5943,6 @@ fn same_entry(a: &Path, b: &Path) -> bool {
         use std::os::unix::fs::MetadataExt;
         a_meta.dev() == b_meta.dev() && a_meta.ino() == b_meta.ino()
     }
-    #[cfg(not(unix))]
-    {
-        let _ = (a_meta, b_meta);
-        match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
-            (Ok(left), Ok(right)) => left == right,
-            _ => false,
-        }
-    }
 }
 
 fn split_stem_ext(name: &str) -> (&str, &str) {
@@ -6205,22 +6152,7 @@ fn reveal_path_sync(path: &str) -> Result<(), String> {
         Ok(())
     }
 
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        // explorer.exe returns 1 even when it opened the folder.
-        let path_str = path.to_string_lossy().replace('/', "\\");
-        // `.arg` would wrap the whole `/select,...` switch in quotes when the
-        // path has spaces; explorer ignores a quoted switch and opens its
-        // default folder instead. Only the path itself may be quoted.
-        Command::new("explorer")
-            .raw_arg(format!("/select,\"{path_str}\""))
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(target_os = "macos"))]
     {
         let parent = path
             .parent()

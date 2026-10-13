@@ -318,7 +318,7 @@ export async function searchHostContent(
       const lineEnd = output.indexOf("\0", pathEnd + 1);
       const previewEnd = output.indexOf("\n", lineEnd + 1);
       if (pathEnd < 0 || lineEnd < 0) break;
-      const relative = output.slice(offset, pathEnd).replace(/\\/g, "/");
+      const relative = output.slice(offset, pathEnd);
       const preview = output.slice(
         lineEnd + 1,
         previewEnd < 0 ? undefined : previewEnd,

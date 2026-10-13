@@ -347,12 +347,7 @@ export function ConnectionsSettings() {
                     <code className="rounded bg-content/10 px-1">
                       ~/.monocode-host/bin/monocode-host service uninstall
                     </code>{" "}
-                    on that machine (
-                    <code className="rounded bg-content/10 px-1">
-                      %USERPROFILE%\.monocode-host\bin\monocode-host.cmd service
-                      uninstall
-                    </code>{" "}
-                    on Windows). Its sessions and history are kept.
+                    on that machine. Its sessions and history are kept.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -384,7 +379,7 @@ export function ConnectionsSettings() {
         </div>
       ) : loaded && !adding ? (
         <div className="rounded-xl border border-dashed border-content/15 px-5 py-8 text-center text-[13px] text-content/45">
-          Add your always-on Windows, Mac, or Linux machine to get started.
+          Add your always-on Mac or Linux machine to get started.
         </div>
       ) : null}
       {adding && (
@@ -448,9 +443,9 @@ export function ConnectionsSettings() {
           <p className="text-[12px] leading-relaxed text-content/45">
             sIDE installs and starts its background host, then connects
             securely. Your SSH keys and config are used automatically. Enable
-            SSH on the host and sign in to Codex or Claude Code there. On
-            Windows and Mac, keep the host’s desktop account signed in and the
-            machine awake. Locking the desktop is fine.
+            SSH on the host and sign in to Codex or Claude Code there. On a
+            Mac, keep the host’s desktop account signed in and the machine
+            awake. Locking the desktop is fine.
           </p>
           <p className="text-[12px] leading-relaxed text-content/45">
             On Linux, setup installs a systemd user service and turns on

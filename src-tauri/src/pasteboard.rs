@@ -168,7 +168,7 @@ fn wayland_file_paths() -> WlPaths {
 /// Paths for files copied in a file manager, empty when it holds none.
 ///
 /// A file manager puts a URI list on the clipboard (`text/uri-list` on X11 and
-/// Wayland, `public.file-url` on macOS, `CF_HDROP` on Windows) that a paste
+/// Wayland, `public.file-url` on macOS) that a paste
 /// event does not surface, so the webview sees nothing to attach.
 ///
 /// An empty clipboard is an empty list, not a failure: only a clipboard that
@@ -328,7 +328,6 @@ fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod path_tests {
     use super::clean_clipboard_paths;
-    // `Url::to_file_path` rejects `file:///home/...` on Windows.
     #[cfg(unix)]
     use super::paths_from_uri_list;
 

@@ -127,14 +127,8 @@ fn paths_overlap(a: &str, b: &str) -> bool {
     a == b || a.starts_with(&format!("{b}/")) || b.starts_with(&format!("{a}/"))
 }
 
-/** Windows paths compare case-insensitively; POSIX paths must retain case. */
 fn comparison_path(path: &Path) -> String {
-    let value = path.to_string_lossy().replace('\\', "/");
-    if cfg!(windows) {
-        value.to_lowercase()
-    } else {
-        value
-    }
+    path.to_string_lossy().into_owned()
 }
 
 #[derive(Deserialize)]
@@ -691,7 +685,6 @@ mod tests {
         inner.active.remove("ordinary");
         assert!(request_grant(&inner, "app", &token).is_err());
     }
-    #[cfg(not(windows))]
     #[test]
     fn comparison_keys_preserve_posix_case() {
         assert_eq!(comparison_path(Path::new("/tmp/Foo")), "/tmp/Foo");

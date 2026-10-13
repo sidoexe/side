@@ -104,9 +104,8 @@ const MAX_PREVIEW_FILE = 10 * 1024 * 1024;
 const MAX_STAT_FILES = 64;
 const ROOTS_TTL_MS = 5_000;
 
-const slashed = (path: string) => path.replace(/\\/g, "/");
 const joined = (parent: string, name: string) =>
-  `${slashed(parent).replace(/\/+$/, "")}/${slashed(name).replace(/^\/+|\/+$/g, "")}`;
+  `${parent.replace(/\/+$/, "")}/${name.replace(/^\/+|\/+$/g, "")}`;
 const alreadyExists = (name: string) =>
   `A file or folder ${name} already exists at this location. Please choose a different name.`;
 
@@ -677,7 +676,7 @@ export class WorkspaceCommands {
     }
     // Discovery cannot widen the host's registered project boundaries.
     const root = await this.gitRoot(top);
-    return { root: slashed(root), relative: process.platform === "win32" ? slashed(relative(root, actual)) : relative(root, actual) };
+    return { root, relative: relative(root, actual) };
   }
 
   private async gitSelectedPaths(root: string, paths: unknown): Promise<string[]> {
@@ -686,7 +685,7 @@ export class WorkspaceCommands {
     const selected: string[] = [];
     for (const path of paths) {
       if (typeof path !== "string" || isAbsolute(path) || path.includes("\0") ||
-          (process.platform === "win32" ? slashed(path) : path).split("/").some((part) => !part || part === "." || part === ".." || part.toLowerCase() === ".git"))
+          path.split("/").some((part) => !part || part === "." || part === ".." || part.toLowerCase() === ".git"))
         throw new Error("Invalid selected file path");
       const target = workspacePath(root, path);
       const entry = await lstat(target).catch((error: NodeJS.ErrnoException) => {
@@ -696,7 +695,7 @@ export class WorkspaceCommands {
       if (entry?.isDirectory())
         throw new Error("Select files rather than directories");
       const location = await this.gitLocateFile(target);
-      if (!location || location.root !== slashed(root))
+      if (!location || location.root !== root)
         throw new Error("Selected files must belong to this repository");
       // Even missing folders must not widen a literal selection to their children.
       const tracked = await this.gitCommand(root, ["--literal-pathspecs", "ls-files", "-z", "--", path]);
@@ -818,7 +817,7 @@ export class WorkspaceCommands {
   private async gitCommitFileDiff(cwd: unknown, shaInput: unknown, input: unknown) {
     const sha = await this.gitCommitSha(cwd, shaInput);
     const root = await this.gitRoot(cwd);
-    const path = relative(root, workspacePath(root, input)).replace(/\\/g, "/");
+    const path = relative(root, workspacePath(root, input));
     const parent = await this.gitCommand(root, ["rev-parse", "--verify", `${sha}^`]).catch(() => "");
     const [original, current] = await Promise.all([
       parent ? this.gitBlob(root, `${parent.trim()}:${path}`) : Promise.resolve({ bytes: Buffer.alloc(0), tooLarge: false }),
