@@ -14,10 +14,7 @@ import { MonoIntroCard } from "../../features/monos/ui/MonoIntro";
 import { saveMonosEnabled } from "../../features/settings/model/settings";
 import { ProjectBackgroundDialog } from "../../features/projects/ui/ProjectBackgroundDialog";
 import { monoBackgroundKey } from "../../features/monos/model/monoBackground";
-import {
-  ColorPicker,
-  MascotPicker,
-} from "../../features/monos/ui/monoPanelParts";
+import { ColleagueLookPicker } from "../../features/monos/ui/ColleagueLookPicker";
 import {
   defaultMonoName,
   findMono,
@@ -28,10 +25,8 @@ import {
   monoProjectsPhrase,
   monosSnapshot,
   reorderMonos,
-  saveMonoMascot,
   saveMonoName,
   subscribeMonos,
-  updateMono,
   type MonoState,
 } from "../../features/monos/model/mono";
 
@@ -174,6 +169,7 @@ export function MonoRailSection({
                 <MonoRailMascot
                   name={look.mascot}
                   color={look.color}
+                  avatar={look.avatar}
                   status={state.status}
                 />
                 {state.status === "working" ? (
@@ -314,16 +310,7 @@ function MonoMenu({
         className="mb-2 w-full rounded-lg border border-content/10 bg-content/5 px-2.5 py-1.5 text-[13px] text-content outline-none ring-accent/40 placeholder:text-content/45 focus:ring-1"
       />
       <div className="mb-2 flex flex-col gap-2">
-        <MascotPicker
-          current={look.mascot}
-          color={look.color}
-          onPick={(mascot) => saveMonoMascot(monoId, mascot)}
-        />
-        <ColorPicker
-          inline
-          current={look.color}
-          onPick={(color) => updateMono(monoId, (mono) => ({ ...mono, color }))}
-        />
+        <ColleagueLookPicker monoId={monoId} look={look} />
       </div>
       <div role="separator" className="my-1 h-px bg-content/10" />
       <button

@@ -1,23 +1,26 @@
-import { PixelMascot } from "../../projects/ui/PixelMascot";
-import type { MonoStatus } from "../model/mono";
+import type { MonoAvatar, MonoStatus } from "../model/mono";
+import { ColleagueAvatar } from "./ColleagueAvatar";
 
 /** The rail mascot and its status circle, shared by both rail layouts. */
 export function MonoRailMascot({
   name,
   color,
+  avatar,
   status = "idle",
   className = "size-4 shrink-0",
 }: {
   name: string;
   color: string;
+  avatar?: MonoAvatar;
   status?: MonoStatus;
   className?: string;
 }) {
   return (
     <span className={`relative grid place-items-center ${className}`}>
-      <PixelMascot
-        name={name}
+      <ColleagueAvatar
+        mascot={name}
         color={color}
+        avatar={avatar}
         status={status}
         still={status === "idle"}
         className="size-full"

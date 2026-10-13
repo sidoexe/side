@@ -127,19 +127,19 @@ it("opens on General and moves between its sections", async () => {
   expect(dialog().querySelector("[data-mono-soul]")).not.toBeNull();
 });
 
-it("keeps the mascots and colors in a popover opened from its icon", async () => {
+it("keeps the faces and colors in a popover opened from its icon", async () => {
   await render();
   expect(document.querySelector('[aria-label="Mascot"]')).toBeNull();
   const face = dialog().querySelector<HTMLElement>(
-    '[aria-label="Change mascot and color"]',
+    '[aria-label="Change face and color"]',
   )!;
   act(() => face.click());
-  const popover = document.querySelector('[aria-label="Mascot and color"]')!;
+  const popover = document.querySelector('[aria-label="Face and color"]')!;
   expect(popover.querySelector('[aria-label="Mascot"]')).not.toBeNull();
   expect(popover.querySelector('[aria-label="Color"]')).not.toBeNull();
   // Escape closes the popover first, then the dialog.
   escape();
-  expect(document.querySelector('[aria-label="Mascot and color"]')).toBeNull();
+  expect(document.querySelector('[aria-label="Face and color"]')).toBeNull();
   expect(onClose).not.toHaveBeenCalled();
   escape();
   expect(onClose).toHaveBeenCalledOnce();

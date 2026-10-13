@@ -106,6 +106,47 @@ import UngroupItemsIcon from "@hugeicons/core-free-icons/UngroupItemsIcon";
 import ViewIcon from "@hugeicons/core-free-icons/ViewIcon";
 import WholeWordIcon from "@hugeicons/core-free-icons/WholeWordIcon";
 import Wrench01Icon from "@hugeicons/core-free-icons/Wrench01Icon";
+import RoboticIcon from "@hugeicons/core-free-icons/RoboticIcon";
+import BrainIcon from "@hugeicons/core-free-icons/BrainIcon";
+import Idea01Icon from "@hugeicons/core-free-icons/Idea01Icon";
+import Rocket01Icon from "@hugeicons/core-free-icons/Rocket01Icon";
+import CodeIcon from "@hugeicons/core-free-icons/CodeIcon";
+import TerminalIcon from "@hugeicons/core-free-icons/TerminalIcon";
+import Bug01Icon from "@hugeicons/core-free-icons/Bug01Icon";
+import Database01Icon from "@hugeicons/core-free-icons/Database01Icon";
+import CloudIcon from "@hugeicons/core-free-icons/CloudIcon";
+import Analytics01Icon from "@hugeicons/core-free-icons/Analytics01Icon";
+import ChartLineData01Icon from "@hugeicons/core-free-icons/ChartLineData01Icon";
+import Target01Icon from "@hugeicons/core-free-icons/Target01Icon";
+import Compass01Icon from "@hugeicons/core-free-icons/Compass01Icon";
+import Flag01Icon from "@hugeicons/core-free-icons/Flag01Icon";
+import Briefcase01Icon from "@hugeicons/core-free-icons/Briefcase01Icon";
+import Building03Icon from "@hugeicons/core-free-icons/Building03Icon";
+import Money01Icon from "@hugeicons/core-free-icons/Money01Icon";
+import Mail01Icon from "@hugeicons/core-free-icons/Mail01Icon";
+import Megaphone01Icon from "@hugeicons/core-free-icons/Megaphone01Icon";
+import Calendar01Icon from "@hugeicons/core-free-icons/Calendar01Icon";
+import Book02Icon from "@hugeicons/core-free-icons/Book02Icon";
+import PenTool01Icon from "@hugeicons/core-free-icons/PenTool01Icon";
+import Camera01Icon from "@hugeicons/core-free-icons/Camera01Icon";
+import MusicNote01Icon from "@hugeicons/core-free-icons/MusicNote01Icon";
+import GameController01Icon from "@hugeicons/core-free-icons/GameController01Icon";
+import PuzzleIcon from "@hugeicons/core-free-icons/PuzzleIcon";
+import Shield01Icon from "@hugeicons/core-free-icons/Shield01Icon";
+import Globe02Icon from "@hugeicons/core-free-icons/Globe02Icon";
+import Home01Icon from "@hugeicons/core-free-icons/Home01Icon";
+import UserGroupIcon from "@hugeicons/core-free-icons/UserGroupIcon";
+import FavouriteIcon from "@hugeicons/core-free-icons/FavouriteIcon";
+import FireIcon from "@hugeicons/core-free-icons/FireIcon";
+import CrownIcon from "@hugeicons/core-free-icons/CrownIcon";
+import DiamondIcon from "@hugeicons/core-free-icons/DiamondIcon";
+import Sun01Icon from "@hugeicons/core-free-icons/Sun01Icon";
+import Moon02Icon from "@hugeicons/core-free-icons/Moon02Icon";
+import Leaf01Icon from "@hugeicons/core-free-icons/Leaf01Icon";
+import Plant01Icon from "@hugeicons/core-free-icons/Plant01Icon";
+import Coffee01Icon from "@hugeicons/core-free-icons/Coffee01Icon";
+import CatIcon from "@hugeicons/core-free-icons/CatIcon";
+import SmileIcon from "@hugeicons/core-free-icons/SmileIcon";
 import { forwardRef, type Ref } from "react";
 
 /** Props shared by every chrome icon. `icon` is filled in by the named wrappers. */
@@ -282,3 +323,55 @@ export const WholeWord = wrap(WholeWordIcon, "WholeWord");
 export const Wrench = wrap(Wrench01Icon, "Wrench");
 export const X = wrap(Cancel01Icon, "X");
 export const Zap = wrap(FlashIcon, "Zap");
+
+/** Icons a Colleague can wear instead of its mascot, by the name it is saved under. */
+export const COLLEAGUE_ICONS: Record<string, IconComponent> = {
+  Bot: wrap(BotIcon, "Bot"),
+  Robotic: wrap(RoboticIcon, "Robotic"),
+  Brain: wrap(BrainIcon, "Brain"),
+  Idea01: wrap(Idea01Icon, "Idea01"),
+  MagicWand01: wrap(MagicWand01Icon, "MagicWand01"),
+  Rocket01: wrap(Rocket01Icon, "Rocket01"),
+  Code: wrap(CodeIcon, "Code"),
+  Terminal: wrap(TerminalIcon, "Terminal"),
+  Bug01: wrap(Bug01Icon, "Bug01"),
+  Database01: wrap(Database01Icon, "Database01"),
+  Cloud: wrap(CloudIcon, "Cloud"),
+  Settings01: wrap(Settings01Icon, "Settings01"),
+  Analytics01: wrap(Analytics01Icon, "Analytics01"),
+  ChartLineData01: wrap(ChartLineData01Icon, "ChartLineData01"),
+  Target01: wrap(Target01Icon, "Target01"),
+  Compass01: wrap(Compass01Icon, "Compass01"),
+  Flag01: wrap(Flag01Icon, "Flag01"),
+  Briefcase01: wrap(Briefcase01Icon, "Briefcase01"),
+  Building03: wrap(Building03Icon, "Building03"),
+  Money01: wrap(Money01Icon, "Money01"),
+  Mail01: wrap(Mail01Icon, "Mail01"),
+  Megaphone01: wrap(Megaphone01Icon, "Megaphone01"),
+  Calendar01: wrap(Calendar01Icon, "Calendar01"),
+  Book02: wrap(Book02Icon, "Book02"),
+  PenTool01: wrap(PenTool01Icon, "PenTool01"),
+  PaintBoard: wrap(PaintBoardIcon, "PaintBoard"),
+  Camera01: wrap(Camera01Icon, "Camera01"),
+  MusicNote01: wrap(MusicNote01Icon, "MusicNote01"),
+  GameController01: wrap(GameController01Icon, "GameController01"),
+  Puzzle: wrap(PuzzleIcon, "Puzzle"),
+  Shield01: wrap(Shield01Icon, "Shield01"),
+  Globe02: wrap(Globe02Icon, "Globe02"),
+  Home01: wrap(Home01Icon, "Home01"),
+  UserGroup: wrap(UserGroupIcon, "UserGroup"),
+  Star: wrap(StarIcon, "Star"),
+  Favourite: wrap(FavouriteIcon, "Favourite"),
+  Fire: wrap(FireIcon, "Fire"),
+  Flash: wrap(FlashIcon, "Flash"),
+  Crown: wrap(CrownIcon, "Crown"),
+  Diamond: wrap(DiamondIcon, "Diamond"),
+  Sun01: wrap(Sun01Icon, "Sun01"),
+  Moon02: wrap(Moon02Icon, "Moon02"),
+  Leaf01: wrap(Leaf01Icon, "Leaf01"),
+  Plant01: wrap(Plant01Icon, "Plant01"),
+  Coffee01: wrap(Coffee01Icon, "Coffee01"),
+  Cat: wrap(CatIcon, "Cat"),
+  Ghost: wrap(GhostIcon, "Ghost"),
+  Smile: wrap(SmileIcon, "Smile"),
+};

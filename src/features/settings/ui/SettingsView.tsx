@@ -1,3 +1,4 @@
+import { ColleagueAvatar } from "../../monos/ui/ColleagueAvatar";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ConnectionsSettings } from "../../connections/ui/ConnectionsSettings";
@@ -301,7 +302,6 @@ import {
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
-import { PixelMascot } from "../../projects/ui/PixelMascot";
 import {
   defaultMonoName,
   listMonos,
@@ -4091,9 +4091,10 @@ function MonoRow({ mono }: { mono: Mono }) {
     <Row
       label={
         <span className="flex min-w-0 items-center gap-2">
-          <PixelMascot
-            name={look.mascot}
+          <ColleagueAvatar
+            mascot={look.mascot}
             color={look.color}
+            avatar={look.avatar}
             still
             className="size-4 shrink-0"
           />

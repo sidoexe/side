@@ -1,9 +1,12 @@
+import { ColleagueAvatar } from "./ColleagueAvatar";
 import type { CSSProperties } from "react";
 import { PROJECT_MASCOTS } from "../../projects/model/projectMascots";
 import { PixelMascot } from "../../projects/ui/PixelMascot";
 import { TAB_GROUP_COLORS } from "../../workspace/model/tabGroups";
 import { playCue } from "../../settings/model/sounds";
-type Look = { mascot: string; color: string };
+import type { MonoAvatar } from "../model/mono";
+
+type Look = { mascot: string; color: string; avatar?: MonoAvatar };
 
 type Props = {
   /** The mascot and color the user's first Mono will have. */
@@ -98,9 +101,10 @@ export function MonoIntroCard({ look, onCreate, onHide }: Props) {
 
         {/* The user's mono drops in front once the rest are in. */}
         <div className="mono-intro-drop absolute bottom-1 left-1/2 -ml-4">
-          <PixelMascot
-            name={look.mascot}
+          <ColleagueAvatar
+            mascot={look.mascot}
             color={look.color}
+            avatar={look.avatar}
             className="size-8"
           />
         </div>

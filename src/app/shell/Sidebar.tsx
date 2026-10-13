@@ -185,6 +185,7 @@ import {
   monoLook,
   monosSnapshot,
   subscribeMonos,
+  type MonoAvatar,
   type MonoStatus,
 } from "../../features/monos/model/mono";
 import { MonoRailMascot } from "../../features/monos/ui/MonoRailMascot";
@@ -2700,6 +2701,7 @@ function CompactProjectRail({
                   name={mono.name}
                   mascot={mono.mascot}
                   color={mono.color}
+                  avatar={mono.avatar}
                   status={mono.status}
                   active={mono.id === monos.activeId}
                   unseen={
@@ -2831,6 +2833,7 @@ function CompactRailMono({
   name,
   mascot,
   color,
+  avatar,
   status,
   active,
   unseen,
@@ -2839,6 +2842,7 @@ function CompactRailMono({
   name: string;
   mascot: string;
   color: string;
+  avatar?: MonoAvatar;
   status: MonoStatus;
   active: boolean;
   /** Replies the user has not read. */
@@ -2865,7 +2869,7 @@ function CompactRailMono({
           : "opacity-65 hover:bg-content/10 hover:opacity-100"
       }`}
     >
-      <MonoRailMascot name={mascot} color={color} status={status} />
+      <MonoRailMascot name={mascot} color={color} avatar={avatar} status={status} />
       {unseen ? (
         <span
           aria-hidden

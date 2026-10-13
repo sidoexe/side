@@ -1,3 +1,4 @@
+import { ColleagueAvatar } from "./ColleagueAvatar";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -9,7 +10,6 @@ import {
   useArtifact,
 } from "../../artifacts/ui/ArtifactContent";
 import { artifactLabel } from "../../artifacts/artifacts";
-import { PixelMascot } from "../../projects/ui/PixelMascot";
 import { AgentTranscript } from "../../sessions/ui/AgentTranscript";
 import { QuestionForm } from "../../sessions/ui/QuestionForm";
 import { revokeAttachment } from "../../sessions/model/attachments";
@@ -170,9 +170,10 @@ export function FloatingMonoChat({ onShown }: { onShown: () => void }) {
           className="flex shrink-0 items-center gap-2 border-b border-content/8 px-3 py-3"
         >
           {mono ? (
-            <PixelMascot
-              name={mono.mascot}
+            <ColleagueAvatar
+              mascot={mono.mascot}
               color={mono.color}
+              avatar={mono.avatar}
               status={state.status}
               className="pointer-events-none size-7 shrink-0"
             />
@@ -235,9 +236,10 @@ export function FloatingMonoChat({ onShown }: { onShown: () => void }) {
             className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-8 text-center"
           >
             {mono ? (
-              <PixelMascot
-                name={mono.mascot}
+              <ColleagueAvatar
+                mascot={mono.mascot}
                 color={mono.color}
+                avatar={mono.avatar}
                 className="size-12"
               />
             ) : (
@@ -338,9 +340,10 @@ function MonoRail({
                 selected ? "" : "opacity-40 hover:opacity-100 focus-visible:opacity-100"
               }`}
             >
-              <PixelMascot
-                name={mono.mascot}
+              <ColleagueAvatar
+                mascot={mono.mascot}
                 color={mono.color}
+                avatar={mono.avatar}
                 className="pointer-events-none size-7"
               />
             </button>
@@ -400,9 +403,10 @@ function FloatingConversation({
       <div className="@container relative min-h-0 flex-1">
         {!session.blocks.length ? (
           <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 px-8 text-center">
-            <PixelMascot
-              name={mono.mascot}
+            <ColleagueAvatar
+              mascot={mono.mascot}
               color={mono.color}
+              avatar={mono.avatar}
               className="size-12"
             />
             <p className="text-[13px] leading-6 text-content/45">

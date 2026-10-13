@@ -14,11 +14,9 @@ import { Settings, Sparkles, StickyNote } from "../../../shared/ui/icons";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
 import { AccessPicker } from "../../sessions/ui/AccessPicker";
 import { ModelPicker, ModelSettingRows } from "../../sessions/ui/ModelPicker";
-import { PixelMascot } from "../../projects/ui/PixelMascot";
 import {
   defaultMonoName,
   findMono,
-  saveMonoMascot,
   saveMonoName,
   subscribeMonos,
   updateMono,
@@ -28,7 +26,9 @@ import {
 import { ConfirmReset } from "./ConfirmReset";
 import { MemoryPage, SoulPage, useMonoFiles } from "./MonoFilePages";
 import { MonoProjects } from "./MonoProjects";
-import { ColorPicker, MascotPicker, SwitchRow } from "./monoPanelParts";
+import { ColleagueAvatar } from "./ColleagueAvatar";
+import { ColleagueLookPicker } from "./ColleagueLookPicker";
+import { SwitchRow } from "./monoPanelParts";
 
 export type MonoSettingsSection = "general" | "soul" | "memory";
 
@@ -343,18 +343,19 @@ function LookButton({ monoId, agent }: { monoId: string; agent: MonoLook }) {
       <button
         ref={anchor}
         type="button"
-        aria-label="Change mascot and color"
+        aria-label="Change face and color"
         aria-haspopup="dialog"
         aria-expanded={open}
-        title="Change mascot and color"
+        title="Change face and color"
         onClick={() => setOpen((value) => !value)}
         className={`grid size-20 shrink-0 place-items-center rounded-2xl border border-stroke hover:bg-content/8 ${
           open ? "bg-content/8" : "bg-content/4"
         }`}
       >
-        <PixelMascot
-          name={agent.mascot}
+        <ColleagueAvatar
+          mascot={agent.mascot}
           color={agent.color}
+          avatar={agent.avatar}
           className="size-12 shrink-0"
         />
       </button>
@@ -367,24 +368,10 @@ function LookButton({ monoId, agent }: { monoId: string; agent: MonoLook }) {
           constrainHeight={false}
           onDismiss={() => setOpen(false)}
           role="dialog"
-          aria-label="Mascot and color"
+          aria-label="Face and color"
           className="flex flex-col gap-3 p-3"
         >
-          <MascotPicker
-            columns={5}
-            current={agent.mascot}
-            color={agent.color}
-            onPick={(mascot) => saveMonoMascot(monoId, mascot)}
-          />
-          <div className="h-px bg-content/10" />
-          <ColorPicker
-            inline
-            columns={5}
-            current={agent.color}
-            onPick={(color) =>
-              updateMono(monoId, (mono) => ({ ...mono, color }))
-            }
-          />
+          <ColleagueLookPicker monoId={monoId} look={agent} columns={5} />
         </Popover>
       ) : null}
     </>

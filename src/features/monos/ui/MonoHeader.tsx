@@ -1,9 +1,9 @@
+import { ColleagueAvatar } from "./ColleagueAvatar";
 import {
   monoProjectsPhrase,
   type MonoLook,
   type MonoState,
 } from "../model/mono";
-import { PixelMascot } from "../../projects/ui/PixelMascot";
 import { MonoStatus } from "./MonoStatus";
 
 type Props = {
@@ -29,9 +29,10 @@ export function MonoHeader({
         greeting ? "min-h-full justify-center py-12" : "pb-6 pt-8"
       }`}
     >
-      <PixelMascot
-        name={agent.mascot}
+      <ColleagueAvatar
+        mascot={agent.mascot}
         color={agent.color}
+        avatar={agent.avatar}
         status={state.status}
         className={`relative z-10 shrink-0 ${greeting ? "size-14" : "size-8"}`}
       />

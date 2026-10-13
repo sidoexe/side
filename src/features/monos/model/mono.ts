@@ -31,6 +31,11 @@ export const MONO_COLORS = [
  * conversation, and the projects it works on. It is not tied to any one of
  * them; it lives on the rail beside the projects and can be given more.
  */
+/** A face picked instead of the mascot: an emoji, or an icon by name. */
+export type MonoAvatar =
+  | { kind: "emoji"; value: string }
+  | { kind: "icon"; value: string };
+
 export type Mono = {
   id: string;
   /** Its conversation; absent until it is first opened. */
@@ -39,6 +44,8 @@ export type Mono = {
   name?: string;
   mascot: string;
   color: string;
+  /** Replaces the mascot when set. */
+  avatar?: MonoAvatar;
   /** Project folders it works on, in the order they were added. */
   projects: string[];
   /** New sessions stay out of the project sidebar unless turned on. */
@@ -156,12 +163,14 @@ function parseMono(value: unknown): Mono | undefined {
   const name = text("name");
   const instructions = text("instructions");
   const legacyProject = text("legacyProject");
+  const avatar = parseAvatar(entry.avatar);
   return {
     id: entry.id,
     ...(sessionId ? { sessionId } : {}),
     ...(name ? { name } : {}),
     mascot: text("mascot") ?? PROJECT_MASCOTS[0].name,
     color: text("color") ?? TAB_GROUP_COLORS[1],
+    ...(avatar ? { avatar } : {}),
     projects: Array.isArray(entry.projects)
       ? entry.projects.filter(
           (path): path is string => typeof path === "string" && !!path,
@@ -174,6 +183,16 @@ function parseMono(value: unknown): Mono | undefined {
     ...(instructions ? { instructions } : {}),
     ...(legacyProject ? { legacyProject } : {}),
   };
+}
+
+function parseAvatar(value: unknown): MonoAvatar | undefined {
+  const entry = record(value);
+  if (typeof entry.value !== "string") return undefined;
+  if (entry.kind === "emoji" && entry.value && [...entry.value].length <= 16)
+    return { kind: "emoji", value: entry.value };
+  if (entry.kind === "icon" && /^[A-Za-z0-9]{1,64}$/.test(entry.value))
+    return { kind: "icon", value: entry.value };
+  return undefined;
 }
 
 /** Every Mono, in the order the rail shows them. */
@@ -332,8 +351,13 @@ export function saveMonoName(monoId: string, name: string): void {
   updateMono(monoId, (mono) => ({ ...mono, name }));
 }
 
+/** Picking a mascot puts it back in place of any emoji or icon. */
 export function saveMonoMascot(monoId: string, mascot: string): void {
-  updateMono(monoId, (mono) => ({ ...mono, mascot }));
+  updateMono(monoId, ({ avatar: _avatar, ...mono }) => ({ ...mono, mascot }));
+}
+
+export function saveMonoAvatar(monoId: string, avatar: MonoAvatar): void {
+  updateMono(monoId, (mono) => ({ ...mono, avatar }));
 }
 
 export function addMonoProject(monoId: string, path: string): void {
@@ -393,6 +417,7 @@ export type MonoLook = {
   name: string;
   mascot: string;
   color: string;
+  avatar?: MonoAvatar;
   projects: MonoProject[];
 };
 
@@ -403,6 +428,7 @@ export function monoLook(mono: Mono): MonoLook {
     name: mono.name?.trim() || defaultMonoName(mono.mascot),
     mascot: mono.mascot,
     color: mono.color,
+    ...(mono.avatar ? { avatar: mono.avatar } : {}),
     projects: mono.projects.map((path) => ({
       path,
       name: resolveTabGroupLabel(projectKey(path), labels, projectName(path)),

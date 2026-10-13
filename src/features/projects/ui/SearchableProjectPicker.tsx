@@ -1,3 +1,4 @@
+import { ColleagueAvatar } from "../../monos/ui/ColleagueAvatar";
 import {
   useEffect,
   useRef,
@@ -28,9 +29,8 @@ import { Check, ChevronDown, Plus, Search } from "../../../shared/ui/icons";
 import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
 import { ProjectLogoIcon } from "./ProjectLogoIcon";
 import { ProjectMascot } from "./ProjectMascot";
-import { PixelMascot } from "./PixelMascot";
 import { MonoRailMascot } from "../../monos/ui/MonoRailMascot";
-import { MONO_STATUS_LABEL, type MonoStatus } from "../../monos/model/mono";
+import { MONO_STATUS_LABEL, type MonoAvatar, type MonoStatus } from "../../monos/model/mono";
 
 /** A Mono the picker offers beside the projects. */
 export type PickerMono = {
@@ -38,6 +38,7 @@ export type PickerMono = {
   name: string;
   mascot: string;
   color: string;
+  avatar?: MonoAvatar;
   status?: MonoStatus;
 };
 
@@ -180,6 +181,7 @@ export function SearchableProjectPicker({
           <MonoRailMascot
             name={activeMono.mascot}
             color={activeMono.color}
+            avatar={activeMono.avatar}
             status={activeMono.status}
             className={`${compact ? "size-4" : "size-3.5"} shrink-0`}
           />
@@ -417,9 +419,10 @@ export function ProjectPickerPopover({
               {mono.id === monos?.activeId ? (
                 <Check className="size-3.5" strokeWidth={2} />
               ) : (
-                <PixelMascot
-                  name={mono.mascot}
+                <ColleagueAvatar
+                  mascot={mono.mascot}
                   color={mono.color}
+                  avatar={mono.avatar}
                   still
                   className="size-4"
                 />

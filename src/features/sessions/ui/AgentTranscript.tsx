@@ -1,3 +1,4 @@
+import { ColleagueAvatar } from "../../monos/ui/ColleagueAvatar";
 import {
   ArrowUp,
   Check,
@@ -52,7 +53,6 @@ import { artifactCards } from "../../artifacts/artifacts";
 import { TerminalSpinner } from "./TerminalSpinner";
 import { Popover } from "../../../shared/ui/Popover";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
-import { PixelMascot } from "../../projects/ui/PixelMascot";
 import type { MonoLook } from "../../monos/model/mono";
 import {
   monoSpawnedSessions,
@@ -201,7 +201,7 @@ type Props = {
   /** Who the turns are by, in place of the model: a Mono's name. */
   agentName?: string;
   /** A Mono's mascot and color, in place of the provider's mark. */
-  agentMascot?: Pick<MonoLook, "mascot" | "color">;
+  agentMascot?: Pick<MonoLook, "mascot" | "color" | "avatar">;
   /** Keeps short conversations at the bottom and skips prompt-to-top anchoring. */
   bottomAligned?: boolean;
   /** Keeps process in the activity trail, with live progress in the header. */
@@ -2938,9 +2938,10 @@ function WorkFoldLine({
       ) : (
         <>
           {agentMascot ? (
-            <PixelMascot
-              name={agentMascot.mascot}
+            <ColleagueAvatar
+              mascot={agentMascot.mascot}
               color={agentMascot.color}
+              avatar={agentMascot.avatar}
               still
               className={`size-3.5 shrink-0 ${expandable ? "group-hover:opacity-0" : ""}`}
             />
@@ -3285,9 +3286,10 @@ function MonoTurnHeader({
     };
   }
   const mark = agentMascot ? (
-    <PixelMascot
-      name={agentMascot.mascot}
+    <ColleagueAvatar
+      mascot={agentMascot.mascot}
       color={agentMascot.color}
+      avatar={agentMascot.avatar}
       still
       className="size-3.5 shrink-0"
     />

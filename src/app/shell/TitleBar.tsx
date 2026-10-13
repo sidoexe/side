@@ -1,3 +1,4 @@
+import { ColleagueAvatar } from "../../features/monos/ui/ColleagueAvatar";
 import {
   CheckCircle,
   ChevronLeft,
@@ -38,7 +39,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { TabLabel } from "../../shared/ui/TabLabel";
 import { WindowControls } from "./WindowControls";
-import { PixelMascot } from "../../features/projects/ui/PixelMascot";
 import {
   MONO_STATUS_LABEL,
   type MonoLook,
@@ -1151,9 +1151,10 @@ function MonoTitle({ look, state }: { look: MonoLook; state: MonoState }) {
       data-mono-title
       className="flex min-w-0 flex-1 items-center gap-2 px-4"
     >
-      <PixelMascot
-        name={look.mascot}
+      <ColleagueAvatar
+        mascot={look.mascot}
         color={look.color}
+        avatar={look.avatar}
         status={state.status}
         still={state.status === "idle"}
         className="size-4 shrink-0"

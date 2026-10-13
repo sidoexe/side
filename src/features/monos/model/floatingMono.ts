@@ -2,7 +2,7 @@ import type { ApprovalDecision } from "../../../integrations/harness";
 import type { Attachment, Session } from "../../sessions/model/session";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import { displayAttachments } from "../../sessions/model/attachments";
-import { listMonos, monoLook, monoState, type MonoStatus } from "./mono";
+import { listMonos, monoLook, monoState, type MonoAvatar, type MonoStatus } from "./mono";
 import { pixelLayers } from "../../projects/model/pixelMascots";
 
 export const FLOATING_MONO_CHANGED = "mono_chat_changed";
@@ -12,6 +12,7 @@ export type FloatingMonoEntry = {
   name: string;
   mascot: string;
   color: string;
+  avatar?: MonoAvatar;
   sessionId: string | null;
   status: MonoStatus;
 };
@@ -59,9 +60,22 @@ export function floatingMonoRoster(
 /** Draw the same portraits in AppKit without a second set of mascot assets. */
 export function floatingMonoMenuMascots(monos: FloatingMonoEntry[]) {
   return monos.map((mono) => {
+    // AppKit draws rects only: an emoji or icon face shows as its color tile.
+    if (mono.avatar) return { monoId: mono.id, rects: colorTile(mono.color) };
     const { body, open } = pixelLayers(mono.mascot, mono.color);
     return { monoId: mono.id, rects: [...body, ...open] };
   });
+}
+
+/** A rounded tile on the 16×16 pixel grid, stepped at the corners. */
+function colorTile(fill: string) {
+  return [
+    { x: 4, y: 2, w: 8, h: 1, fill },
+    { x: 3, y: 3, w: 10, h: 1, fill },
+    { x: 2, y: 4, w: 12, h: 8, fill },
+    { x: 3, y: 12, w: 10, h: 1, fill },
+    { x: 4, y: 13, w: 8, h: 1, fill },
+  ];
 }
 
 /** Blob URLs belong to their webview; send attachment bytes/paths instead. */
