@@ -289,12 +289,15 @@ it("lists skills and reads a user skill outside every project", async () => {
   const { home, commands, repo } = fixture();
   const { cwd } = repo();
   const userHome = join(home, "user-home");
-  const previous = process.env.HOME;
-  process.env.HOME = userHome;
-  cleanups.push(() => {
-    if (previous === undefined) delete process.env.HOME;
-    else process.env.HOME = previous;
-  });
+  // os.homedir() reads USERPROFILE on Windows, HOME elsewhere.
+  for (const key of ["HOME", "USERPROFILE"]) {
+    const previous = process.env[key];
+    process.env[key] = userHome;
+    cleanups.push(() => {
+      if (previous === undefined) delete process.env[key];
+      else process.env[key] = previous;
+    });
+  }
   const write = (dir: string, body: string) => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "SKILL.md"), body);
