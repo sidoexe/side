@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { invokeWorkspace } from "../../../platform/tauri/fs";
 
 export type CheckpointFile = {
   path: string;
@@ -168,7 +169,7 @@ export function sessionCheckpointStatus(
   editedPaths?: readonly string[],
 ): Promise<CheckpointStatus> {
   return enqueueCheckpoint(sessionId, () =>
-    invoke<CheckpointStatus>("session_checkpoint_status", {
+    invokeWorkspace<CheckpointStatus>("session_checkpoint_status", {
       sessionId,
       cwd,
       ...(editedPaths === undefined ? {} : { editedPaths }),
@@ -217,7 +218,7 @@ export function sessionCheckpointFileDiff(
   relative: string,
 ): Promise<CheckpointFileDiff> {
   return enqueueCheckpoint(sessionId, () =>
-    invoke<CheckpointFileDiff>("session_checkpoint_file_diff", {
+    invokeWorkspace<CheckpointFileDiff>("session_checkpoint_file_diff", {
       sessionId,
       cwd,
       relative,
@@ -231,7 +232,7 @@ export function undoSessionChanges(
   relative?: string,
 ): Promise<CheckpointStatus> {
   return enqueueCheckpoint(sessionId, () =>
-    invoke<CheckpointStatus>("session_checkpoint_undo", {
+    invokeWorkspace<CheckpointStatus>("session_checkpoint_undo", {
       sessionId,
       cwd,
       relative: relative ?? null,
@@ -245,7 +246,7 @@ export function keepSessionChanges(
   relative?: string,
 ): Promise<CheckpointStatus> {
   return enqueueCheckpoint(sessionId, () =>
-    invoke<CheckpointStatus>("session_checkpoint_keep", {
+    invokeWorkspace<CheckpointStatus>("session_checkpoint_keep", {
       sessionId,
       cwd,
       relative: relative ?? null,

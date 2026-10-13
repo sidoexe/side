@@ -1,7 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-const { remoteRequest, remoteMachineFor, invokeLocal } = vi.hoisted(() => ({
+const { remoteRequest, remoteMachineFor, invokeLocal, remoteSessionFor } = vi.hoisted(() => ({
   remoteRequest: vi.fn(),
+  remoteSessionFor: vi.fn((shellId: string) => (shellId === "tab" ? "host-session" : undefined)),
   invokeLocal: vi.fn(),
   remoteMachineFor: vi.fn(async (environmentId: string) =>
     environmentId === "env"
@@ -9,7 +10,7 @@ const { remoteRequest, remoteMachineFor, invokeLocal } = vi.hoisted(() => ({
       : undefined,
   ),
 }));
-vi.mock("./connections", () => ({ remoteRequest, remoteMachineFor }));
+vi.mock("./connections", () => ({ remoteRequest, remoteMachineFor, remoteSessionFor }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeLocal }));
 
 import { runRemoteCommand } from "./remoteCommands";
@@ -203,6 +204,27 @@ it("lists a machine's skills with its own disabled paths only", async () => {
     args: {
       cwd: "/home/me/repo",
       disabledPaths: ["/home/me/.agents/skills/ship/SKILL.md"],
+    },
+  });
+});
+
+it("reviews a remote turn under the host's own session ID and paths", async () => {
+  const { sessionCheckpointStatus } = await import("../../sessions/model/checkpoint");
+  remoteRequest.mockResolvedValue({
+    files: [{ path: "/home/me/repo/a.ts", relative: "a.ts", status: "modified", additions: 1, deletions: 0, exact: true, undoable: true }],
+  });
+  const status = await sessionCheckpointStatus("tab", "remote://env/home/me/repo", [
+    "/home/me/repo/a.ts",
+    "remote://env/home/me/repo/b.ts",
+    "remote://other/x.ts",
+  ]);
+  expect(status.files[0].path).toBe("remote://env/home/me/repo/a.ts");
+  expect(remoteRequest).toHaveBeenCalledWith("machine", "workspace.run", {
+    command: "session_checkpoint_status",
+    args: {
+      sessionId: "host-session",
+      cwd: "/home/me/repo",
+      editedPaths: ["/home/me/repo/a.ts", "/home/me/repo/b.ts"],
     },
   });
 });

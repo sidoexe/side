@@ -8,6 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { HostCheckpoints } from "./checkpoints";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -240,6 +241,7 @@ Connect another computer using an SSH forward to the loopback port.`);
       }
     }
     const engine = new HostEngine(store, hostProviders, accounts);
+    engine.checkpoints = new HostCheckpoints(join(directory, "checkpoints"));
     const secret = randomBytes(32).toString("base64url");
     let stopping = false;
     let stop: () => Promise<void>;

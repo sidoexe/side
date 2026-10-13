@@ -271,7 +271,13 @@ export type SessionPaneProps = {
 type Props = SessionPaneProps & {
   /** The session runtime is on another machine. */
   remoteSession?: boolean;
-  remoteFeatures?: { attachments: boolean; plan: boolean; draft: boolean };
+  remoteFeatures?: {
+    attachments: boolean;
+    plan: boolean;
+    draft: boolean;
+    queue?: boolean;
+    editLast?: boolean;
+  };
   /** An opened host conversation whose transcript has not arrived yet. */
   remoteSessionLoading?: boolean;
   remoteSessionStarted?: boolean;
@@ -395,7 +401,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const remote = remoteSession;
   // A Mono's chat is a running conversation; what was said stays said.
   const editLastTurnSupported =
-    !remote && !monoForSession(session.id) && canEditLastTurn(session);
+    (!remote || !!remoteFeatures?.editLast) &&
+    !monoForSession(session.id) &&
+    canEditLastTurn(session);
   const turnRecall = editLastTurnSupported ? lastTurnRecall(session) : null;
   const draftBlock = sessionDraftBlock(session);
   useSyncExternalStore(

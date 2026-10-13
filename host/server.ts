@@ -3,6 +3,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
+import { hostCommitMessage } from "./commit-message";
 import { hostname, homedir } from "node:os";
 import { execFile } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
@@ -144,6 +145,20 @@ export function createHostServer(
   const workspace = new WorkspaceCommands(
     engine.store,
     (projectId, action) => engine.withIdleProject(projectId, action),
+    (cwd, context, preferred) =>
+      hostCommitMessage({
+        cwd,
+        context,
+        installed: providers,
+        providers: engine.providers,
+        preferred,
+      }),
+    {
+      busy: (path) => engine.worktreeSessions(path),
+      release: (ids, projectCwd, keep) =>
+        engine.releaseWorktreeSessions(ids, projectCwd, keep),
+    },
+    engine.checkpoints,
   );
   const models = async (projectId?: unknown) => {
     const cwd =
@@ -293,6 +308,9 @@ export function createHostServer(
                 "sessions.draft",
                 "sessions.plan",
                 "sessions.import",
+                "sessions.queue",
+                "sessions.editLast",
+                ...(engine.checkpoints ? ["sessions.review"] : []),
                 "accounts",
               ],
             };
@@ -385,6 +403,7 @@ export function createHostServer(
             if (current.projectId !== params.projectId)
               throw new Error("Session does not belong to this project");
             engine.store.deleteSession(sessionId);
+            void engine.checkpoints?.forget(sessionId).catch(() => undefined);
             result = { deleted: true };
             break;
           }

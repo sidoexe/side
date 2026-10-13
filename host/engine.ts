@@ -31,6 +31,7 @@ import {
 } from "../src/features/connections/model/protocol";
 import type { HostProvider } from "./providers";
 import { HostStore } from "./store";
+import type { HostCheckpoints } from "./checkpoints";
 import { CONTINUE_PROMPT } from "../src/features/sessions/model/inFlight";
 import { usageLimitResumeDue } from "../src/features/sessions/model/usageLimit";
 import {
@@ -41,6 +42,10 @@ import {
   type HostAccounts,
 } from "./accounts";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments";
+import {
+  lastUserTurnBlock,
+  truncateBeforeLastEditableTurn,
+} from "../src/features/sessions/model/editLastTurn";
 
 // Streamed output is written in batches. Anything a user may need to act on
 // (approvals, questions, errors, completion) is written immediately.
@@ -204,8 +209,41 @@ export function parseCommand(input: unknown): HostCommand {
       ...(v.type === "send" && v.prompt !== undefined
         ? { prompt: providerPrompt(v.prompt) }
         : {}),
-    };
+    } as HostCommand;
   }
+  if (v.type === "queue" || v.type === "editLast") {
+    const attachments = parseRemoteAttachments(v.attachments);
+    const typed = promptText(v.text);
+    if (!typed.trim() && attachments.length === 0) throw new Error("Invalid prompt");
+    if (v.type === "queue" && v.intent !== undefined && v.intent !== "default" && v.intent !== "plan")
+      throw new Error("Invalid turn intent");
+    return {
+      type: v.type,
+      commandId,
+      sessionId,
+      text: typed,
+      ...(attachments.length ? { attachments } : {}),
+      ...(v.type === "queue" && v.intent ? { intent: v.intent as "default" | "plan" } : {}),
+      ...(v.prompt !== undefined ? { prompt: providerPrompt(v.prompt) } : {}),
+    } as HostCommand;
+  }
+  if (v.type === "queueEdit")
+    return {
+      type: "queueEdit",
+      commandId,
+      sessionId,
+      messageId: text(v.messageId, "message ID"),
+      text: promptText(v.text),
+      ...(v.prompt !== undefined ? { prompt: providerPrompt(v.prompt) } : {}),
+    };
+  if (v.type === "queueRemove" || v.type === "queueSteer")
+    return {
+      type: v.type,
+      commandId,
+      sessionId,
+      messageId: text(v.messageId, "message ID"),
+    };
+  if (v.type === "queueResume") return { type: "queueResume", commandId, sessionId };
   if (v.type === "removeDraft")
     return {
       type: "removeDraft",
@@ -287,6 +325,8 @@ export function parseCommand(input: unknown): HostCommand {
 }
 
 export class HostEngine {
+  /** Turn review snapshots; absent in tests that do not exercise them. */
+  checkpoints?: HostCheckpoints;
   private switchingProjects = new Set<string>();
   private running = new Map<
     string,
@@ -310,7 +350,7 @@ export class HostEngine {
 
   constructor(
     readonly store: HostStore,
-    private readonly providers: Partial<Record<RemoteProvider, HostProvider>>,
+    readonly providers: Partial<Record<RemoteProvider, HostProvider>>,
     private readonly accounts?: HostAccounts,
   ) {
     // Provider dispatch is not transactional with SQLite. Never replay a send
@@ -396,6 +436,7 @@ export class HostEngine {
       if (this.store.session(id).session.usageLimit?.resumeAtReset) this.resumeAtReset.add(id);
       else this.resumeAtReset.delete(id);
       this.resumeDue();
+      if (patch.usageLimit === null) this.dispatchQueued(id);
     }
     return summary;
   }
@@ -566,6 +607,16 @@ export class HostEngine {
     if (previous) return previous;
     // Commands apply to the latest state, including batched stream output.
     if (command.type !== "create") this.flush(command.sessionId);
+    if (command.type === "queue" && this.canSendNow(command.sessionId))
+      return this.command({
+        type: "send",
+        commandId: command.commandId,
+        sessionId: command.sessionId,
+        text: command.text,
+        ...(command.attachments ? { attachments: command.attachments } : {}),
+        ...(command.intent ? { intent: command.intent } : {}),
+        ...(command.prompt ? { prompt: command.prompt } : {}),
+      });
     let effect: ((saved: HostSession) => void) | undefined;
     const { receipt, saved } = this.store.transaction(() => {
       let value: HostSession;
@@ -674,6 +725,135 @@ export class HostEngine {
               ),
             },
           };
+        } else if (command.type === "queue") {
+          const attachments = resolveAttachments(
+            this.store,
+            command.attachments ?? [],
+          );
+          value = {
+            ...value,
+            session: {
+              ...value.session,
+              queuedMessages: [
+                ...(value.session.queuedMessages ?? []),
+                {
+                  id: command.commandId,
+                  text: command.text,
+                  attachments,
+                  ...(command.attachments?.length
+                    ? { attachmentRefs: command.attachments }
+                    : {}),
+                  ...(command.intent === "plan" ? { intent: "plan" as const } : {}),
+                  ...(command.prompt ? { prompt: command.prompt } : {}),
+                },
+              ],
+            },
+          };
+          effect = () => this.dispatchQueued(command.sessionId);
+        } else if (command.type === "queueEdit") {
+          const queued = value.session.queuedMessages ?? [];
+          if (!queued.some((message) => message.id === command.messageId))
+            throw new Error("Queued message not found");
+          value = {
+            ...value,
+            session: {
+              ...value.session,
+              queuedMessages: queued.map((message) =>
+                message.id === command.messageId
+                  ? {
+                      ...message,
+                      text: command.text,
+                      prompt: command.prompt,
+                      error: undefined,
+                    }
+                  : message,
+              ),
+            },
+          };
+        } else if (command.type === "queueRemove") {
+          const queued = (value.session.queuedMessages ?? []).filter(
+            (message) => message.id !== command.messageId,
+          );
+          value = {
+            ...value,
+            session: {
+              ...value.session,
+              queuedMessages: queued.length ? queued : undefined,
+              queueStatus: queued.length ? value.session.queueStatus : undefined,
+            },
+          };
+        } else if (command.type === "queueResume") {
+          value = {
+            ...value,
+            session: {
+              ...value.session,
+              queueStatus: undefined,
+              queuedMessages: value.session.queuedMessages?.map((message) => ({
+                ...message,
+                error: undefined,
+              })),
+            },
+          };
+          effect = () => this.dispatchQueued(command.sessionId);
+        } else if (command.type === "queueSteer") {
+          if (value.status !== "running")
+            throw new Error("Nothing is running to steer");
+          if (!provider.steer)
+            throw new Error("This provider cannot take a message during a turn");
+          const message = value.session.queuedMessages?.find(
+            (entry) => entry.id === command.messageId,
+          );
+          if (!message) throw new Error("Queued message not found");
+          if (message.intent === "plan")
+            throw new Error("A plan request waits for the current turn");
+          const queued = (value.session.queuedMessages ?? []).filter(
+            (entry) => entry !== message,
+          );
+          value = {
+            ...value,
+            session: {
+              ...value.session,
+              queuedMessages: queued.length ? queued : undefined,
+              blocks: [
+                ...value.session.blocks,
+                {
+                  id: message.id,
+                  role: "user",
+                  text: message.text,
+                  ...(message.attachments.length
+                    ? { attachments: message.attachments }
+                    : {}),
+                  startedAt: Date.now(),
+                },
+              ],
+            },
+          };
+          const session = value.session;
+          effect = () =>
+            void provider
+              .steer!({
+                sessionId: session.id,
+                cwd: session.cwd,
+                model: session.model,
+                modelSettings: session.modelSettings,
+                text: message.prompt ?? message.text,
+                attachments: withImageData(message.attachments),
+              })
+              .catch((reason) =>
+                this.note(
+                  session.id,
+                  `Could not add the message to the running turn: ${reason instanceof Error ? reason.message : String(reason)}`,
+                ),
+              );
+        } else if (command.type === "editLast") {
+          if (value.status === "running")
+            throw new Error("Wait for the current turn before editing");
+          if (!provider.rewind)
+            throw new Error("This provider cannot edit its last message");
+          const last = lastUserTurnBlock(value.session.blocks as Session["blocks"]);
+          if (!last) throw new Error("There is no message to edit");
+          const session = value.session;
+          effect = () => void this.resendEdited(command, session, provider, last.providerTurnId);
         } else if (command.type === "send" || command.type === "compact") {
           if (value.status === "running")
             throw new Error("This session is already running");
@@ -744,6 +924,7 @@ export class HostEngine {
                       attachments,
                     )
                   : value.session.title,
+              queuedMessages: dropQueued(value.session.queuedMessages, command.commandId),
               blocks: [
                 ...value.session.blocks
                   .filter((block) => !block.draft)
@@ -932,6 +1113,176 @@ export class HostEngine {
     }
   }
 
+  /** Host sessions working inside `path`, refused while one is running. */
+  worktreeSessions(path: string): string[] {
+    const inside = (cwd: string) =>
+      cwd === path || cwd.startsWith(path.endsWith("/") ? path : `${path}/`);
+    const sessions = this.store.sessions().filter((value) => inside(value.session.cwd));
+    if (sessions.some((value) => value.status === "running"))
+      throw new Error("Stop the sessions running in this worktree first.");
+    return sessions.map((value) => value.session.id);
+  }
+
+  /** After a worktree is gone, its sessions either go or move to the project. */
+  releaseWorktreeSessions(ids: readonly string[], projectCwd: string, keep: boolean): void {
+    for (const id of ids) {
+      if (!keep) {
+        this.store.deleteSession(id);
+        continue;
+      }
+      this.patch(
+        id,
+        (session) => ({
+          ...session,
+          cwd: projectCwd,
+          worktreeCwd: undefined,
+          branch: undefined,
+          blocks: [
+            ...session.blocks,
+            {
+              id: randomUUID(),
+              role: "system",
+              text: "Its worktree was deleted. This conversation now works in the project folder.",
+              streaming: false,
+            },
+          ],
+        }),
+        { type: "worktree.removed" },
+      );
+    }
+  }
+
+  /** A stopped turn pauses the queue, as locally; a finished one sends on. */
+  private afterTurn(id: string, cancelled: boolean): void {
+    if (this.closing) return;
+    const value = this.store.session(id);
+    if (!value.session.queuedMessages?.length) return;
+    if (cancelled) {
+      this.patch(id, (session) => ({ ...session, queueStatus: "paused" }), {
+        type: "queue.paused",
+      });
+      return;
+    }
+    setTimeout(() => this.dispatchQueued(id), 0);
+  }
+
+  private canSendNow(id: string): boolean {
+    const value = this.store.session(id);
+    return (
+      value.status !== "running" &&
+      !value.session.usageLimit &&
+      value.session.queueStatus !== "paused" &&
+      !value.session.queuedMessages?.length &&
+      !this.switchingProjects.has(value.projectId)
+    );
+  }
+
+  /** Sends the queue's head once the session is free, as the desktop does. */
+  private dispatchQueued(id: string): void {
+    if (this.closing) return;
+    const value = this.store.session(id);
+    const head = value.session.queuedMessages?.[0];
+    if (
+      !head ||
+      value.status === "running" ||
+      value.session.usageLimit ||
+      value.session.queueStatus === "paused" ||
+      this.switchingProjects.has(value.projectId)
+    )
+      return;
+    try {
+      this.command({
+        type: "send",
+        commandId: queuedSendId(head.id),
+        sessionId: id,
+        text: head.text,
+        ...(head.attachmentRefs?.length ? { attachments: head.attachmentRefs } : {}),
+        ...(head.intent === "plan" ? { intent: "plan" } : {}),
+        ...(head.prompt ? { prompt: head.prompt } : {}),
+      });
+    } catch (reason) {
+      const error = reason instanceof Error ? reason.message : String(reason);
+      this.patch(
+        id,
+        (session) => ({
+          ...session,
+          queueStatus: "paused",
+          queuedMessages: session.queuedMessages?.map((message) =>
+            message.id === head.id ? { ...message, error } : message,
+          ),
+        }),
+        { type: "queue.failed", messageId: head.id },
+      );
+    }
+  }
+
+  private async resendEdited(
+    command: Extract<HostCommand, { type: "editLast" }>,
+    session: HostSession["session"],
+    provider: HostProvider,
+    providerTurnId: string | undefined,
+  ): Promise<void> {
+    try {
+      await provider.rewind!({
+        sessionId: session.id,
+        cwd: session.cwd,
+        model: session.model,
+        modelSettings: session.modelSettings,
+        runtimeMode: session.runtimeMode,
+        onEvent: () => undefined,
+        ...(providerTurnId ? { providerTurnId } : {}),
+      });
+      this.patch(
+        session.id,
+        (latest) => ({
+          ...latest,
+          blocks: truncateBeforeLastEditableTurn(latest as Session),
+        }),
+        { type: "turn.rewound" },
+      );
+      this.command({
+        type: "send",
+        commandId: `${command.commandId}:send`,
+        sessionId: session.id,
+        text: command.text,
+        ...(command.attachments ? { attachments: command.attachments } : {}),
+        ...(command.prompt ? { prompt: command.prompt } : {}),
+      });
+    } catch (reason) {
+      this.note(
+        session.id,
+        `Could not edit the last message: ${reason instanceof Error ? reason.message : String(reason)}`,
+      );
+    }
+  }
+
+  private note(id: string, text: string): void {
+    this.patch(
+      id,
+      (session) => ({
+        ...session,
+        blocks: [
+          ...session.blocks,
+          { id: randomUUID(), role: "system", text, streaming: false },
+        ],
+      }),
+      { type: "note" },
+    );
+  }
+
+  /** Applies a host-initiated change to the latest saved state. */
+  private patch(
+    id: string,
+    change: (session: HostSession["session"]) => HostSession["session"],
+    event: unknown,
+  ): void {
+    this.flush(id);
+    const latest = this.store.session(id);
+    const saved = this.save({ ...latest, session: change(latest.session) }, event);
+    const live = this.live.get(id);
+    if (live) live.value = saved;
+  }
+
   accountSummaries() {
     return this.accounts?.summaries() ?? [];
   }
@@ -1082,6 +1433,8 @@ export class HostEngine {
     active.done = Promise.resolve()
       .then(async () => {
         let error: string | undefined;
+        if (prompt !== null)
+          await this.checkpoints?.begin(session.id, session.cwd).catch(() => undefined);
         try {
           const tried: string[] = [];
           while (!this.closing && !active.cancelled) {
@@ -1134,6 +1487,8 @@ export class HostEngine {
         // Keep the session running until the old process has stopped. Otherwise
         // a follow-up can race cleanup and have its newly spawned child killed.
         await provider.stop(session.id);
+        if (prompt !== null)
+          await this.checkpoints?.finish(session.id).catch(() => undefined);
         this.flush(session.id);
         this.live.delete(session.id);
         const latest = this.store.session(session.id);
@@ -1155,6 +1510,7 @@ export class HostEngine {
           );
         }
         this.running.delete(session.id);
+        if (latest.runId === runId) this.afterTurn(session.id, active.cancelled);
         // stop/forget releases callbacks and native resources; bind only retained
         // provider conversation identity for an explicit future follow-up.
         const persistedValue = this.store.session(session.id);
@@ -1242,6 +1598,35 @@ export class HostEngine {
     );
     await Promise.all([...this.running.values()].map((active) => active.done));
   }
+}
+
+function queuedSendId(id: string): string {
+  return id.length > 120 ? id : `${id}:send`;
+}
+
+function dropQueued<T extends { id: string }>(
+  queued: T[] | undefined,
+  commandId: string,
+): T[] | undefined {
+  if (!queued?.length) return queued;
+  const rest = queued.filter(
+    (message) => message.id !== commandId && queuedSendId(message.id) !== commandId,
+  );
+  return rest.length ? rest : undefined;
+}
+
+function withImageData(attachments: Session["blocks"][number]["attachments"] = []) {
+  return attachments.map((file) =>
+    isVisionImage(file.mimeType) && file.path && file.size <= 20 * 1024 * 1024
+      ? { ...file, data: readFileSync(file.path).toString("base64") }
+      : file,
+  );
+}
+
+function promptText(value: unknown): string {
+  if (typeof value !== "string" || value.length > 256_000 || value.includes("\0"))
+    throw new Error("Invalid prompt");
+  return value;
 }
 
 function providerPrompt(value: unknown): string {

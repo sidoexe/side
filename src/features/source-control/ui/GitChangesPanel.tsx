@@ -371,7 +371,7 @@ function ChangedFiles({
     !!index?.branch &&
     !!index.defaultBranch &&
     index.branch === index.defaultBranch;
-  const canGenerate = files.length > 0 && !busy && !isRemoteProjectPath(cwd);
+  const canGenerate = files.length > 0 && !busy;
   const canCommit =
     (staged.length > 0 || amend) && message.trim().length > 0 && !busy;
   const canCreatePr =

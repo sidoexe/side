@@ -1,6 +1,6 @@
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, realpathSync, statSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, realpath } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 
@@ -25,6 +25,7 @@ export type HostWorktree = {
   head: string;
   isMain: boolean;
   missing: boolean;
+  locked?: boolean;
 };
 export type HostWorktrees = { worktrees: HostWorktree[]; defaultRoot: string };
 
@@ -45,6 +46,8 @@ function parse(text: string): HostWorktree[] {
       tree.head = field.slice(5);
     } else if (tree && field.startsWith("branch refs/heads/")) {
       tree.branch = field.slice("branch refs/heads/".length);
+    } else if (tree && (field === "locked" || field.startsWith("locked "))) {
+      tree.locked = true;
     }
   }
   return trees;
@@ -238,4 +241,57 @@ export async function renameHostWorktreeBranch(
   if (!renamed)
     throw new Error("Branch renamed, but its worktree could not be found");
   return renamed;
+}
+
+/** The worktree a removal targets, refused for the cases the desktop refuses. */
+export async function removableHostWorktree(
+  root: string,
+  path: string,
+): Promise<HostWorktree> {
+  const target = await realpath(path).catch(() => path);
+  const tree = (await hostWorktrees(root)).worktrees.find(
+    (entry) => entry.path === target || entry.path === path,
+  );
+  if (!tree) throw new Error("This path is not a registered worktree of this repository");
+  if (tree.isMain) throw new Error("The main working copy cannot be deleted");
+  if (tree.locked)
+    throw new Error("This worktree is locked. Unlock it in Git before deleting it.");
+  if (!tree.branch)
+    throw new Error("Create a branch for this detached worktree before deleting it.");
+  return tree;
+}
+
+export async function checkHostWorktreeRemoval(
+  root: string,
+  path: string,
+  force: boolean,
+): Promise<HostWorktree> {
+  const tree = await removableHostWorktree(root, path);
+  if (!force && !tree.missing) {
+    const { stdout } = await exec(
+      "git",
+      ["status", "--porcelain", "--untracked-files=normal"],
+      options(tree.path),
+    );
+    if (stdout.trim())
+      throw new Error("This worktree has uncommitted or untracked changes.");
+  }
+  return tree;
+}
+
+export async function removeHostWorktree(
+  root: string,
+  path: string,
+  force: boolean,
+): Promise<void> {
+  const tree = await checkHostWorktreeRemoval(root, path, force);
+  if (tree.missing) {
+    await exec("git", ["worktree", "prune"], options(root));
+    return;
+  }
+  await exec(
+    "git",
+    ["worktree", "remove", ...(force ? ["--force"] : []), "--", tree.path],
+    options(root),
+  );
 }

@@ -1,3 +1,4 @@
+import type { RemoteAttachment } from "../../connections/model/protocol";
 import { dropContextWindow, type ContextUsage } from "./contextUsage";
 import type { UserQuestionPrompt } from "./userQuestion";
 import type { HandoffComposerCard } from "./handoff";
@@ -282,6 +283,9 @@ export type QueuedMessage = {
   monoSessionCompletion?: MonoSessionCompletion;
   /** Delivery failed; the message remains available to retry or edit. */
   error?: string;
+  /** Host queue only: the expanded provider prompt and uploaded files. */
+  prompt?: string;
+  attachmentRefs?: RemoteAttachment[];
 };
 
 export type MessageQueueStatus = "active" | "paused" | "resuming";

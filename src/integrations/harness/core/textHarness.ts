@@ -1,5 +1,7 @@
 import type { HarnessId } from "../../../features/sessions/model/session";
 import { isHarnessAvailable } from "./availability";
+import { invokeWorkspace } from "../../../platform/tauri/fs";
+import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 import type { PrContent } from "../../../features/source-control/model/gitText";
 import {
   generateHarnessCommitMessage,
@@ -37,6 +39,13 @@ export function generateCommitMessage(
   signal?: AbortSignal,
   paths?: readonly string[],
 ): Promise<string> {
+  // A project on another machine is staged there; its host writes the message.
+  if (cwd.startsWith(REMOTE_PATH_PREFIX))
+    return invokeWorkspace<string>("generate_commit_message", {
+      cwd,
+      harness: preferred ?? null,
+      ...(paths ? { paths: [...paths] } : {}),
+    });
   return generateHarnessCommitMessage(pickTextHarness(preferred), cwd, signal, paths);
 }
 

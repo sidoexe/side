@@ -15,7 +15,11 @@ import { tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { FileMtime, FsEntry, GitPr, ProjectFile } from "../src/platform/tauri/fs";
-import { hostWorktrees } from "./git-worktrees";
+import {
+  checkHostWorktreeRemoval,
+  hostWorktrees,
+  removeHostWorktree,
+} from "./git-worktrees";
 import { createHostBranch, hostBranches, switchHostBranch } from "./git-branches";
 import type { HostStore } from "./store";
 import {
@@ -30,6 +34,8 @@ import {
   workspacePath,
 } from "./workspace";
 import { listHostSkills } from "./skills";
+import type { StagedContext } from "./commit-message";
+import type { HostCheckpoints } from "./checkpoints";
 
 const exec = promisify(execFile);
 
@@ -81,6 +87,13 @@ export const WORKSPACE_COMMANDS = [
   "git_worktrees",
   "search_project",
   "list_skills",
+  "generate_commit_message",
+  "git_worktree_check_remove",
+  "git_worktree_remove",
+  "session_checkpoint_status",
+  "session_checkpoint_file_diff",
+  "session_checkpoint_undo",
+  "session_checkpoint_keep",
 ] as const;
 export type WorkspaceCommand = (typeof WORKSPACE_COMMANDS)[number];
 
@@ -111,7 +124,69 @@ export class WorkspaceCommands {
   constructor(
     private readonly store: HostStore,
     private readonly withIdleProject: <T>(projectId: string, action: () => Promise<T>) => Promise<T>,
+    private readonly writeCommitMessage?: (
+      cwd: string,
+      context: StagedContext,
+      preferred: unknown,
+    ) => Promise<string>,
+    private readonly worktreeSessions?: {
+      /** Sessions inside the path; throws when one of them is running. */
+      busy(path: string): string[];
+      release(ids: readonly string[], projectCwd: string, keep: boolean): void;
+    },
+    private readonly checkpoints?: HostCheckpoints,
   ) {}
+
+  private sessionId(input: unknown): string {
+    if (typeof input !== "string") throw new Error("Invalid session ID");
+    this.store.session(input);
+    return input;
+  }
+
+  private review(sessionId: unknown): HostCheckpoints {
+    if (!this.checkpoints) throw new Error("Turn review is unavailable on this host");
+    this.sessionId(sessionId);
+    return this.checkpoints;
+  }
+
+  private async worktreeTarget(cwd: unknown, path: unknown) {
+    const root = await this.gitRoot(cwd);
+    if (typeof path !== "string" || !isAbsolute(path)) throw new Error("Invalid worktree path");
+    const project = this.store
+      .projects()
+      .find((entry) => entry.cwd === root || relative(entry.cwd, root) === "");
+    return { root, path: resolve(path), projectCwd: project?.cwd ?? root };
+  }
+
+  private async checkWorktreeRemoval(cwd: unknown, path: unknown, force: unknown) {
+    const target = await this.worktreeTarget(cwd, path);
+    await checkHostWorktreeRemoval(target.root, target.path, force === true);
+    this.worktreeSessions?.busy(target.path);
+  }
+
+  private async removeWorktree(
+    cwd: unknown,
+    path: unknown,
+    force: unknown,
+    keepSessions: unknown,
+  ) {
+    const target = await this.worktreeTarget(cwd, path);
+    await checkHostWorktreeRemoval(target.root, target.path, force === true);
+    const sessionIds = this.worktreeSessions?.busy(target.path) ?? [];
+    await removeHostWorktree(target.root, target.path, force === true);
+    this.invalidateRoots();
+    this.worktreeSessions?.release(sessionIds, target.projectCwd, keepSessions === true);
+    return { sessionIds, projectCwd: target.projectCwd };
+  }
+
+  private async commitMessage(cwd: unknown, paths: unknown, preferred: unknown) {
+    if (!this.writeCommitMessage)
+      throw new Error("Commit message generation is unavailable on this host");
+    const context = (await this.gitStagedContext(cwd, paths)) as StagedContext;
+    if (!context.summary.trim() && !context.patch.trim())
+      throw new Error("Stage some changes first");
+    return this.writeCommitMessage(await this.gitRoot(cwd), context, preferred);
+  }
 
   run(command: unknown, args: unknown): Promise<unknown> {
     if (!WORKSPACE_COMMANDS.includes(command as WorkspaceCommand))
@@ -210,6 +285,34 @@ export class WorkspaceCommands {
         return this.searchProject(input.options);
       case "list_skills":
         return this.listSkills(input.cwd, input.disabledPaths);
+      case "generate_commit_message":
+        return this.commitMessage(input.cwd, input.paths, input.harness);
+      case "git_worktree_check_remove":
+        return this.checkWorktreeRemoval(input.cwd, input.path, input.force);
+      case "git_worktree_remove":
+        return this.removeWorktree(input.cwd, input.path, input.force, input.keepSessions);
+      case "session_checkpoint_status":
+        return this.review(input.sessionId).status(
+          this.sessionId(input.sessionId),
+          Array.isArray(input.editedPaths)
+            ? input.editedPaths.filter((path): path is string => typeof path === "string")
+            : undefined,
+        );
+      case "session_checkpoint_file_diff":
+        return this.review(input.sessionId).fileDiff(
+          this.sessionId(input.sessionId),
+          String(input.relative ?? ""),
+        );
+      case "session_checkpoint_undo":
+        return this.review(input.sessionId).undo(
+          this.sessionId(input.sessionId),
+          typeof input.relative === "string" ? input.relative : null,
+        );
+      case "session_checkpoint_keep":
+        return this.review(input.sessionId).keep(
+          this.sessionId(input.sessionId),
+          typeof input.relative === "string" ? input.relative : null,
+        );
     }
   }
 

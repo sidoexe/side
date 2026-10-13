@@ -200,6 +200,37 @@ export type HostCommand =
       attachments?: RemoteAttachment[];
     }
   | {
+      /** A follow-up: sent at once when the session is free, otherwise
+       * queued on the host and sent when the running turn ends. */
+      type: "queue";
+      commandId: string;
+      sessionId: string;
+      text: string;
+      attachments?: RemoteAttachment[];
+      intent?: "default" | "plan";
+      prompt?: string;
+    }
+  | {
+      type: "queueEdit";
+      commandId: string;
+      sessionId: string;
+      messageId: string;
+      text: string;
+      prompt?: string;
+    }
+  | { type: "queueRemove"; commandId: string; sessionId: string; messageId: string }
+  | { type: "queueSteer"; commandId: string; sessionId: string; messageId: string }
+  | { type: "queueResume"; commandId: string; sessionId: string }
+  | {
+      /** Rewind the provider past the last user turn and send `text` instead. */
+      type: "editLast";
+      commandId: string;
+      sessionId: string;
+      text: string;
+      attachments?: RemoteAttachment[];
+      prompt?: string;
+    }
+  | {
       type: "removeDraft";
       commandId: string;
       sessionId: string;

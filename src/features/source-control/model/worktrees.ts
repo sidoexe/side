@@ -98,7 +98,7 @@ export async function removeWorktree(
   force = false,
   keepSessions = false,
 ) {
-  const result = await invoke<{ sessionIds: string[]; projectCwd: string }>(
+  const result = await invokeWorkspace<{ sessionIds: string[]; projectCwd: string }>(
     "git_worktree_remove",
     { cwd, path, force, keepSessions },
   );
@@ -128,7 +128,7 @@ export async function removeOrchestrationBranch(
 
 /** Read-only preflight; final removal must still recheck for new blockers. */
 export const checkWorktreeRemoval: RemoveWorktree = (cwd, path, force) =>
-  invoke("git_worktree_check_remove", { cwd, path, force });
+  invokeWorkspace("git_worktree_check_remove", { cwd, path, force });
 
 /** Removed outside the app. A missing parent is more likely an unmounted volume. */
 export async function worktreeDeletedExternally(path: string) {

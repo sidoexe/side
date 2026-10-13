@@ -69,7 +69,13 @@ import {
 
 export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
   remoteSession: boolean;
-  remoteFeatures: { attachments: boolean; plan: boolean; draft: boolean };
+  remoteFeatures: {
+    attachments: boolean;
+    plan: boolean;
+    draft: boolean;
+    queue?: boolean;
+    editLast?: boolean;
+  };
   remoteSessionLoading: boolean;
   remoteSessionStarted: boolean;
   allowedModelHarnesses: readonly HarnessId[];
@@ -908,6 +914,92 @@ function ConnectedRemoteSession({
     }
   };
 
+  const canQueue = !!descriptor?.capabilities.includes("sessions.queue");
+  const canEditLast = !!descriptor?.capabilities.includes("sessions.editLast");
+
+  const providerPromptFor = async (text: string): Promise<string | undefined> => {
+    const prompt = await prepareRemotePrompt(text, {
+      harness: configuration.harness,
+      cwd: remotePath(machine.environmentId, executionCwd),
+    }).catch(() => text);
+    return prompt === text ? undefined : prompt;
+  };
+
+  /** Follow-ups typed during a turn wait on the host, which sends them when
+   * the turn ends even with this desktop closed. */
+  const queueFollowUp = (
+    id: string,
+    text: string,
+    attachments: Attachment[],
+    intent: "default" | "plan",
+  ): boolean => {
+    preparingRef.current = true;
+    void (async () => {
+      const refs = await uploadRemoteAttachments(machine.id, attachments);
+      const prompt = await providerPromptFor(text);
+      await run({
+        type: "queue",
+        commandId: crypto.randomUUID(),
+        sessionId: id,
+        text,
+        ...(refs.length ? { attachments: refs } : {}),
+        ...(intent === "plan" ? { intent } : {}),
+        ...(prompt ? { prompt } : {}),
+      });
+    })()
+      .catch((reason) => {
+        if (alive.current) setError(String(reason));
+      })
+      .finally(() => {
+        preparingRef.current = false;
+      });
+    return true;
+  };
+
+  const editLast = (id: string, text: string, attachments: Attachment[]) => {
+    preparingRef.current = true;
+    void (async () => {
+      const refs = await uploadRemoteAttachments(machine.id, attachments);
+      const prompt = await providerPromptFor(text);
+      await run({
+        type: "editLast",
+        commandId: crypto.randomUUID(),
+        sessionId: id,
+        text,
+        ...(refs.length ? { attachments: refs } : {}),
+        ...(prompt ? { prompt } : {}),
+      });
+    })()
+      .catch((reason) => {
+        if (alive.current) setError(String(reason));
+      })
+      .finally(() => {
+        preparingRef.current = false;
+      });
+    return true;
+  };
+
+  const queueAction = (
+    command:
+      | { type: "queueRemove" | "queueSteer"; messageId: string }
+      | { type: "queueEdit"; messageId: string; text: string }
+      | { type: "queueResume" },
+  ) => {
+    if (!hostSession || !online) return;
+    void (async () => {
+      const prompt =
+        command.type === "queueEdit" ? await providerPromptFor(command.text) : undefined;
+      await run({
+        ...command,
+        commandId: crypto.randomUUID(),
+        sessionId: hostSession.id,
+        ...(prompt ? { prompt } : {}),
+      } as HostCommand);
+    })().catch((reason) => {
+      if (alive.current) setError(String(reason));
+    });
+  };
+
   const submit = (
     text: string,
     attachments: Attachment[] = [],
@@ -915,6 +1007,40 @@ function ConnectedRemoteSession({
     asDraft = false,
     planBlockId?: string,
   ): boolean => {
+    const queued =
+      !!hostSession?.queuedMessages?.length || hostSession?.queueStatus === "paused";
+    if (
+      hostSession &&
+      canQueue &&
+      !asDraft &&
+      !planBlockId &&
+      !options?.draftBlockId &&
+      !options?.resendEdited &&
+      (busy || queued) &&
+      online &&
+      !sending &&
+      !preparingRef.current &&
+      !changes &&
+      (text.trim() || attachments.length)
+    )
+      return queueFollowUp(
+        hostSession.id,
+        text,
+        attachments,
+        options?.intent === "plan" ? "plan" : "default",
+      );
+    if (
+      options?.resendEdited &&
+      hostSession &&
+      canEditLast &&
+      online &&
+      !busy &&
+      !sending &&
+      !pending &&
+      !preparingRef.current &&
+      text.trim()
+    )
+      return editLast(hostSession.id, text, attachments);
     if (
       !online ||
       sending ||
@@ -1250,6 +1376,8 @@ function ConnectedRemoteSession({
       attachments: !!descriptor?.capabilities.includes("attachments.upload"),
       plan: !!descriptor?.capabilities.includes("sessions.plan"),
       draft: !!descriptor?.capabilities.includes("sessions.draft"),
+      queue: !!descriptor?.capabilities.includes("sessions.queue"),
+      editLast: !!descriptor?.capabilities.includes("sessions.editLast"),
     },
     remoteSessionLoading: !!sessionId && !hostSession && !session.blocks.length,
     remoteSessionStarted: !!sessionId,
@@ -1293,7 +1421,6 @@ function ConnectedRemoteSession({
       if (base) setDraftWorktreeBase(base);
     },
     onWorktreeBaseChange: (_, base) => setDraftWorktreeBase(base),
-    onManageWorktrees: undefined,
     onSaveDraft: (_, text, attachments) => saveDraft(text, attachments),
     onRemoveDraft: (_, draftBlockId) => {
       if (!hostSession || busy || pending || !online || removingDraft)
@@ -1313,11 +1440,14 @@ function ConnectedRemoteSession({
       return true;
     },
     onPlaceSessionInFolder: noop,
-    onDeleteQueuedMessage: noop,
-    onEditQueuedMessage: noop,
+    onDeleteQueuedMessage: (_, messageId) =>
+      queueAction({ type: "queueRemove", messageId }),
+    onEditQueuedMessage: (_, messageId, text) =>
+      queueAction({ type: "queueEdit", messageId, text }),
     onQueuedMessageEditingChange: noop,
-    onSteerQueuedMessage: noop,
-    onResumeQueue: noop,
+    onSteerQueuedMessage: (_, messageId) =>
+      queueAction({ type: "queueSteer", messageId }),
+    onResumeQueue: () => queueAction({ type: "queueResume" }),
     // The notice lives in the host session; the host also runs the timed
     // resume, so it fires with this desktop closed.
     onUsageLimitResume: () => {
@@ -1337,7 +1467,7 @@ function ConnectedRemoteSession({
     onNewTerminal: noop,
     onArchiveSession: undefined,
     onDeleteSession: undefined,
-    reviewUndoLocked: true,
+    reviewUndoLocked: !descriptor?.capabilities.includes("sessions.review"),
   };
 
   return (

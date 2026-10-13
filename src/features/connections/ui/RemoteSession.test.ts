@@ -1196,3 +1196,42 @@ it("arms the host's resume at reset and dismisses the notice on the host", async
   expect(sessionUpdates[1]).toEqual({ projectId: "project", sessionId: "host-session", usageLimit: null });
   expect(byLabel("Dismiss usage limit notice")).toBeNull();
 });
+
+it("queues a message typed during a turn on the host, and manages it from the queue", async () => {
+  extraCapabilities = ["sessions.queue"];
+  await render();
+  await send("First");
+  host = {
+    ...host!,
+    revision: host!.revision + 1,
+    status: "running",
+    runId: "run",
+    session: { ...host!.session, busy: true },
+  };
+  await vi.waitFor(() => expect(byLabel("Stop")).not.toBeNull(), { timeout: 4_000 });
+  await type("Next please");
+  await act(async () => byLabel("Send")!.click());
+  await vi.waitFor(() =>
+    expect(commands.at(-1)).toMatchObject({
+      type: "queue",
+      sessionId: "host-session",
+      text: "Next please",
+    }),
+  );
+  const queued = commands.at(-1)!;
+  host = {
+    ...host!,
+    revision: host!.revision + 1,
+    session: {
+      ...host!.session,
+      queuedMessages: [{ id: queued.commandId, text: "Next please", attachments: [] }],
+    },
+  };
+  await vi.waitFor(() => expect(byLabel("Remove queued message")).not.toBeNull(), {
+    timeout: 4_000,
+  });
+  await act(async () => byLabel("Remove queued message")!.click());
+  await vi.waitFor(() =>
+    expect(commands.at(-1)).toMatchObject({ type: "queueRemove", messageId: queued.commandId }),
+  );
+});

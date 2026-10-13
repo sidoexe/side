@@ -13,6 +13,9 @@ import type {
   SendTurnInput,
   CompactContextInput,
   ApprovalDecision,
+  RewindLastTurnInput,
+  RewindLastTurnResult,
+  SteerTurnInput,
 } from "../src/integrations/harness/core/types";
 import type { UserQuestionReply } from "../src/features/sessions/model/userQuestion";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
@@ -33,11 +36,20 @@ import {
   OMP_FLAVOR,
 } from "../src/integrations/harness/providers/pi/piFlavor";
 import { respondQuestion as respondPiQuestion } from "../src/integrations/harness/providers/pi/piFamily";
+import { runCodexTextPrompt } from "../src/integrations/harness/providers/codex/codexText";
+import { runClaudeTextPrompt } from "../src/integrations/harness/providers/claude/claudeText";
+import { runCursorTextPrompt } from "../src/integrations/harness/providers/cursor/cursorText";
+import { runGrokTextPrompt } from "../src/integrations/harness/providers/grok/grokText";
+import { runOpenCodeTextPrompt } from "../src/integrations/harness/providers/opencode/opencodeText";
 
 export interface HostProvider {
   send(input: SendTurnInput): Promise<void>;
   compact?(input: CompactContextInput): Promise<void>;
   cancel(id: string): Promise<void>;
+  /** Adds a message to the running turn; absent when the provider cannot. */
+  steer?(input: SteerTurnInput): Promise<void>;
+  /** Drops the last user turn from provider state, for edit-and-resend. */
+  rewind?(input: RewindLastTurnInput): Promise<RewindLastTurnResult>;
   stop(id: string): Promise<void>;
   bind(id: string, providerId: string, cwd: string, accountId?: string): void;
   approve(id: string, request: number, decision: ApprovalDecision): void;
@@ -48,10 +60,20 @@ export interface HostProvider {
     message: string;
   }): Promise<GeneratedSessionTitle | null>;
   generateBranchName?(cwd: string, message: string): Promise<string | null>;
+  /** One-shot text prompt, for commit messages. */
+  runText?(input: {
+    cwd: string;
+    prompt: string;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+  }): Promise<string>;
 }
 
 export const hostProviders: Record<RemoteProvider, HostProvider> = {
   codex: {
+    runText: runCodexTextPrompt,
+    steer: codex.steerCodexTurn,
+    rewind: codex.rewindCodexLastTurn,
     send: codex.sendCodexTurn,
     compact: codex.compactCodexContext,
     cancel: codex.cancelCodexTurn,
@@ -63,6 +85,8 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     generateBranchName: generateCodexBranchName,
   },
   claude: {
+    runText: runClaudeTextPrompt,
+    steer: claude.steerClaudeTurn,
     send: claude.sendClaudeTurn,
     compact: claude.compactClaudeContext,
     cancel: claude.cancelClaudeTurn,
@@ -74,6 +98,8 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     generateBranchName: generateClaudeBranchName,
   },
   cursor: {
+    runText: runCursorTextPrompt,
+    steer: cursor.steerCursorTurn,
     send: cursor.sendCursorTurn,
     cancel: cursor.cancelCursorTurn,
     stop: cursor.forgetCursorSession,
@@ -83,6 +109,7 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     generateTitle: generateCursorSessionTitle,
   },
   grok: {
+    runText: runGrokTextPrompt,
     send: grok.sendGrokTurn,
     compact: grok.compactGrokContext,
     cancel: grok.cancelGrokTurn,
@@ -93,6 +120,9 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     generateTitle: generateGrokSessionTitle,
   },
   opencode: {
+    runText: runOpenCodeTextPrompt,
+    steer: opencode.steerOpenCodeTurn,
+    rewind: opencode.rewindOpenCodeLastTurn,
     send: opencode.sendOpenCodeTurn,
     compact: opencode.compactOpenCodeContext,
     cancel: opencode.cancelOpenCodeTurn,
@@ -103,6 +133,8 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     generateTitle: generateOpenCodeSessionTitle,
   },
   pi: {
+    steer: pi.steerPiTurn,
+    rewind: pi.rewindPiLastTurn,
     send: pi.sendPiTurn,
     compact: pi.compactPiContext,
     cancel: pi.cancelPiTurn,
@@ -114,6 +146,8 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     generateTitle: generatePiSessionTitle,
   },
   omp: {
+    steer: omp.steerOmpTurn,
+    rewind: omp.rewindOmpLastTurn,
     send: omp.sendOmpTurn,
     compact: omp.compactOmpContext,
     cancel: omp.cancelOmpTurn,
@@ -133,6 +167,7 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     answer: unsupportedQuestion,
   },
   hermes: {
+    steer: hermes.steerHermesTurn,
     send: hermes.sendHermesTurn,
     cancel: hermes.cancelHermesTurn,
     stop: hermes.forgetHermesSession,

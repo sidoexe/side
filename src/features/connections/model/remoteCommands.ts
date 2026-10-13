@@ -1,5 +1,5 @@
 import { setRemoteCommandRunner } from "../../../platform/tauri/fs";
-import { remoteMachineFor, remoteRequest } from "./connections";
+import { remoteMachineFor, remoteRequest, remoteSessionFor } from "./connections";
 import { parseRemotePath, remotePath } from "./remoteProjects";
 
 /** File commands a connected machine answers exactly as this computer does
@@ -48,6 +48,13 @@ const HOST_COMMANDS = new Set([
   "git_worktrees",
   "search_project",
   "list_skills",
+  "generate_commit_message",
+  "git_worktree_check_remove",
+  "git_worktree_remove",
+  "session_checkpoint_status",
+  "session_checkpoint_file_diff",
+  "session_checkpoint_undo",
+  "session_checkpoint_keep",
 ]);
 /** Arguments that hold paths; everything else is passed through untouched. */
 const PATH_ARGS = ["path", "cwd", "parent", "from", "destParent", "paths"];
@@ -92,7 +99,7 @@ export async function runRemoteCommand(
   const hostArgs = Object.fromEntries(
     Object.entries(args).map(([key, value]) => [
       key,
-      PATH_ARGS.includes(key) && !(key === "paths" && (command === "git_commit" || command === "git_staged_context"))
+      PATH_ARGS.includes(key) && !(key === "paths" && (command === "git_commit" || command === "git_staged_context" || command === "generate_commit_message"))
         ? toHost(value)
         : key === "options" && value && typeof value === "object" && !Array.isArray(value)
           ? { ...value, cwd: toHost((value as Record<string, unknown>).cwd) }
@@ -103,6 +110,19 @@ export async function runRemoteCommand(
   const env = environmentId;
   // Disabled skills are saved as the paths the catalog showed, so only this
   // machine's `remote://` ones mean anything to its host.
+  if (command.startsWith("session_checkpoint_")) {
+    // The pane knows its tab; the host knows its own session.
+    const shellId = String(args.sessionId ?? "");
+    hostArgs.sessionId = remoteSessionFor(shellId) ?? shellId;
+    // Transcript paths are already the host's own; `remote://` ones are mapped.
+    if (Array.isArray(args.editedPaths))
+      hostArgs.editedPaths = args.editedPaths.flatMap((path: unknown) => {
+        if (typeof path !== "string") return [];
+        const parsed = parseRemotePath(path);
+        if (!parsed) return [path];
+        return parsed.environmentId === env ? [parsed.hostPath] : [];
+      });
+  }
   if (command === "list_skills" && Array.isArray(args.disabledPaths))
     hostArgs.disabledPaths = args.disabledPaths.flatMap((path: unknown) => {
       const parsed = typeof path === "string" ? parseRemotePath(path) : null;
@@ -161,6 +181,27 @@ export async function runRemoteCommand(
     const diff = result as { path: string };
     const root = String(hostArgs.cwd).replace(/[\\/]+$/, "");
     return { ...diff, path: fromHost(`${root}/${diff.path}`) };
+  }
+  if (
+    (command === "session_checkpoint_status" ||
+      command === "session_checkpoint_undo" ||
+      command === "session_checkpoint_keep") &&
+    result &&
+    typeof result === "object"
+  ) {
+    const status = result as { files: { path: string }[] };
+    return {
+      ...status,
+      files: status.files.map((file) => ({ ...file, path: fromHost(file.path) })),
+    };
+  }
+  if (command === "session_checkpoint_file_diff" && result && typeof result === "object") {
+    const diff = result as { path: string };
+    return { ...diff, path: fromHost(diff.path) };
+  }
+  if (command === "git_worktree_remove" && result && typeof result === "object") {
+    const removal = result as { sessionIds: string[]; projectCwd: string };
+    return { ...removal, projectCwd: fromHost(removal.projectCwd) };
   }
   if (command === "search_project" && result && typeof result === "object") {
     const search = result as { matches: { path: string }[] };

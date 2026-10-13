@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { HostStore } from "./store";
 import { WorkspaceCommands } from "./workspace-commands";
 
@@ -316,4 +316,64 @@ it("lists skills and reads a user skill outside every project", async () => {
   await expect(
     commands.run("list_skills", { cwd: userHome }),
   ).rejects.toThrow(/outside/);
+});
+
+it("deletes a host worktree with the desktop's checks and releases its sessions", async () => {
+  const { home, repo, commands: _unused } = fixture();
+  void _unused;
+  const { cwd, git } = repo();
+  const tree = join(home, "a-worktrees", "feature");
+  git("worktree", "add", "-q", "-b", "mc/feature", tree);
+  const store = new HostStore(join(home, "release.db"));
+  store.addProject(cwd, "a");
+  const busy = vi.fn((path: string) => (path === realpathSync.native(tree) ? ["s1"] : []));
+  const release = vi.fn();
+  const commands = new WorkspaceCommands(store, async (_id, action) => action(), undefined, {
+    busy,
+    release,
+  });
+  try {
+    await expect(
+      commands.run("git_worktree_remove", { cwd, path: cwd, force: false }),
+    ).rejects.toThrow("main working copy");
+    writeFileSync(join(tree, "dirty.txt"), "x");
+    await expect(
+      commands.run("git_worktree_check_remove", { cwd, path: tree, force: false }),
+    ).rejects.toThrow("uncommitted");
+    const removed = await commands.run("git_worktree_remove", {
+      cwd,
+      path: tree,
+      force: true,
+      keepSessions: true,
+    });
+    expect(removed).toEqual({ sessionIds: ["s1"], projectCwd: cwd });
+    expect(release).toHaveBeenCalledWith(["s1"], cwd, true);
+    expect(git("worktree", "list")).not.toContain("feature");
+    expect(git("branch", "--list", "mc/feature")).toContain("mc/feature");
+  } finally {
+    store.close();
+  }
+});
+
+it("refuses to delete a worktree a running session uses", async () => {
+  const { home, repo } = fixture();
+  const { cwd, git } = repo();
+  const tree = join(home, "a-worktrees", "busy");
+  git("worktree", "add", "-q", "-b", "mc/busy", tree);
+  const store = new HostStore(join(home, "busy.db"));
+  store.addProject(cwd, "a");
+  const commands = new WorkspaceCommands(store, async (_id, action) => action(), undefined, {
+    busy: () => {
+      throw new Error("Stop the sessions running in this worktree first.");
+    },
+    release: vi.fn(),
+  });
+  try {
+    await expect(
+      commands.run("git_worktree_remove", { cwd, path: tree, force: false }),
+    ).rejects.toThrow("Stop the sessions");
+    expect(git("worktree", "list")).toContain("busy");
+  } finally {
+    store.close();
+  }
 });

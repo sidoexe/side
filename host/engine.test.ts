@@ -1079,3 +1079,160 @@ it("dates a limit without a reset time from the window that filled up", async ()
   await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
   expect(store.session(id).session.usageLimit).toEqual({ resetsAt: reset });
 });
+
+describe("host follow-up queue", () => {
+  it("sends at once when free, queues during a turn and sends it when the turn ends", async () => {
+    const { engine, store, turns, id } = setup();
+    engine.command({ type: "queue", commandId: "first", sessionId: id, text: "First" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(store.session(id).session.queuedMessages).toBeUndefined();
+    engine.command({ type: "queue", commandId: "second", sessionId: id, text: "Second", prompt: "Second, expanded" });
+    expect(store.session(id).session.queuedMessages?.map((m) => m.text)).toEqual(["Second"]);
+    turns[0].finish();
+    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    expect(turns[1].input.text).toBe("Second, expanded");
+    const session = store.session(id).session;
+    expect(session.queuedMessages).toBeUndefined();
+    expect(session.blocks.filter((b) => b.role === "user").map((b) => b.text)).toEqual(["First", "Second"]);
+    turns[1].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+  });
+
+  it("pauses the queue when the turn is stopped, then resumes on request", async () => {
+    const { engine, store, turns, id } = setup();
+    engine.command({ type: "send", commandId: "run", sessionId: id, text: "Work" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    engine.command({ type: "queue", commandId: "later", sessionId: id, text: "Later" });
+    const runId = store.session(id).runId!;
+    engine.command({ type: "cancel", commandId: "stop", sessionId: id, runId });
+    await vi.waitFor(() => expect(store.session(id).session.queueStatus).toBe("paused"));
+    expect(turns).toHaveLength(1);
+    engine.command({ type: "queue", commandId: "more", sessionId: id, text: "More" });
+    expect(store.session(id).session.queuedMessages).toHaveLength(2);
+    engine.command({ type: "queueRemove", commandId: "rm", sessionId: id, messageId: "more" });
+    engine.command({ type: "queueEdit", commandId: "ed", sessionId: id, messageId: "later", text: "Later, edited" });
+    engine.command({ type: "queueResume", commandId: "go", sessionId: id });
+    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    expect(turns[1].input.text).toBe("Later, edited");
+    expect(store.session(id).session.queueStatus).toBeUndefined();
+    turns[1].finish();
+  });
+
+  it("steers a queued message into the running turn", async () => {
+    const { engine, store, turns, provider, id } = setup();
+    provider.steer = vi.fn(async () => undefined);
+    engine.command({ type: "send", commandId: "run", sessionId: id, text: "Work" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    engine.command({ type: "queue", commandId: "nudge", sessionId: id, text: "Also this" });
+    engine.command({ type: "queueSteer", commandId: "steer", sessionId: id, messageId: "nudge" });
+    await vi.waitFor(() => expect(provider.steer).toHaveBeenCalledWith(expect.objectContaining({ text: "Also this" })));
+    const session = store.session(id).session;
+    expect(session.queuedMessages).toBeUndefined();
+    expect(session.blocks.at(-1)).toMatchObject({ id: "nudge", role: "user", text: "Also this" });
+    turns[0].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    expect(turns).toHaveLength(1);
+  });
+
+  it("refuses to steer a provider that cannot take a message mid-turn", async () => {
+    const { engine, turns, id } = setup();
+    engine.command({ type: "send", commandId: "run", sessionId: id, text: "Work" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    engine.command({ type: "queue", commandId: "nudge", sessionId: id, text: "Also" });
+    expect(() =>
+      engine.command({ type: "queueSteer", commandId: "steer", sessionId: id, messageId: "nudge" }),
+    ).toThrow("cannot take a message");
+    turns[0].finish();
+  });
+});
+
+describe("host edit of the last message", () => {
+  it("rewinds the provider, drops the last turn and sends the edit", async () => {
+    const { engine, store, turns, provider, id } = setup();
+    provider.rewind = vi.fn(async () => ({ submitted: false }));
+    engine.command({ type: "send", commandId: "one", sessionId: id, text: "Keep" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    turns[0].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    engine.command({ type: "send", commandId: "two", sessionId: id, text: "Typo" });
+    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    turns[1].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+
+    engine.command({ type: "editLast", commandId: "edit", sessionId: id, text: "Fixed" });
+    await vi.waitFor(() => expect(turns).toHaveLength(3));
+    expect(provider.rewind).toHaveBeenCalledTimes(1);
+    expect(turns[2].input.text).toBe("Fixed");
+    expect(
+      store.session(id).session.blocks.filter((b) => b.role === "user").map((b) => b.text),
+    ).toEqual(["Keep", "Fixed"]);
+    turns[2].finish();
+  });
+
+  it("keeps the transcript and says why when the rewind fails", async () => {
+    const { engine, store, turns, provider, id } = setup();
+    provider.rewind = vi.fn(async () => {
+      throw new Error("no thread");
+    });
+    engine.command({ type: "send", commandId: "one", sessionId: id, text: "Original" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    turns[0].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    engine.command({ type: "editLast", commandId: "edit", sessionId: id, text: "Fixed" });
+    await vi.waitFor(() =>
+      expect(store.session(id).session.blocks.at(-1)?.text).toContain("Could not edit the last message: no thread"),
+    );
+    expect(store.session(id).session.blocks.some((b) => b.text === "Original")).toBe(true);
+    expect(turns).toHaveLength(1);
+  });
+
+  it("is refused for a provider without rewind", () => {
+    const { engine, id } = setup();
+    expect(() =>
+      engine.command({ type: "editLast", commandId: "edit", sessionId: id, text: "x" }),
+    ).toThrow("cannot edit");
+  });
+});
+
+describe("host worktree release", () => {
+  it("finds the sessions inside a worktree, then moves or deletes them", async () => {
+    const { engine, store, turns, directory, id } = setup();
+    expect(engine.worktreeSessions(directory)).toEqual([id]);
+    expect(engine.worktreeSessions(`${directory}-other`)).toEqual([]);
+    engine.command({ type: "send", commandId: "run", sessionId: id, text: "Work" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(() => engine.worktreeSessions(directory)).toThrow("Stop the sessions");
+    turns[0].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    engine.releaseWorktreeSessions([id], "/project", true);
+    expect(store.session(id).session.cwd).toBe("/project");
+    expect(store.session(id).session.blocks.at(-1)?.text).toContain("worktree was deleted");
+    engine.releaseWorktreeSessions([id], "/project", false);
+    expect(() => store.session(id)).toThrow();
+  });
+});
+
+describe("host turn review", () => {
+  it("snapshots the checkout before a turn and after it settles, not for compaction", async () => {
+    const { engine, store, turns, provider, directory, id } = setup();
+    const calls: string[] = [];
+    engine.checkpoints = {
+      begin: vi.fn(async (_id: string, cwd: string) => {
+        calls.push(`begin:${cwd === directory}`);
+      }),
+      finish: vi.fn(async () => {
+        calls.push("finish");
+      }),
+    } as never;
+    engine.command({ type: "send", commandId: "run", sessionId: id, text: "Edit" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(calls).toEqual(["begin:true"]);
+    turns[0].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    expect(calls).toEqual(["begin:true", "finish"]);
+    provider.compact = vi.fn(async () => undefined);
+    engine.command({ type: "compact", commandId: "squash", sessionId: id });
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    expect(calls).toHaveLength(2);
+  });
+});
