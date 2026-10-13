@@ -57,7 +57,7 @@ export function MonoSidebar({
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label={`Resize Mono ${kind}`}
+        aria-label={`Resize Employee ${kind}`}
         className={`absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none ${resize.dragging ? "bg-content/15" : "hover:bg-content/10"}`}
         onPointerDown={resize.onPointerDown}
         onDoubleClick={resize.onDoubleClick}

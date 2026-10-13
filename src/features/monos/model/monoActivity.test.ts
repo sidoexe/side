@@ -49,7 +49,7 @@ it("follows the selected live turn, including new steps and settled tool state",
   ).toBe(false);
 });
 
-it("retains an archived turn without borrowing another turn or Mono's activity", () => {
+it("retains an archived turn without borrowing another turn or Employee's activity", () => {
   expect(
     resolveMonoActivity(selection, {
       id: "mono",

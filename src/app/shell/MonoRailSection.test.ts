@@ -42,35 +42,35 @@ function render(props: Partial<Parameters<typeof MonoRailSection>[0]> = {}) {
   return onCreate;
 }
 
-const intro = () => document.body.querySelector('[aria-label="Meet Monos"]');
+const intro = () => document.body.querySelector('[aria-label="Meet Employees"]');
 const button = (label: string) =>
   [...document.body.querySelectorAll("button")].find(
     (entry) => entry.textContent === label,
   )!;
 
-it("shows the intro card in place of the list while there is no mono", () => {
+it("shows the intro card in place of the list while there is no employee", () => {
   const onCreate = render();
   expect(intro()).not.toBeNull();
-  expect(container.querySelector('[aria-label="New mono"]')).toBeNull();
+  expect(container.querySelector('[aria-label="New employee"]')).toBeNull();
 
-  act(() => button("Create mono").click());
+  act(() => button("Create employee").click());
   expect(onCreate).toHaveBeenCalledOnce();
 });
 
-it("turns monos off from the intro's switch", () => {
+it("turns employees off from the intro's switch", () => {
   render();
   act(() => container.querySelector<HTMLElement>('[role="switch"]')!.click());
   expect(loadMonosEnabled()).toBe(false);
 });
 
-it("lists monos once there are some, with the plus in the header", () => {
+it("lists employees once there are some, with the plus in the header", () => {
   createMono();
   render();
   expect(intro()).toBeNull();
-  expect(container.querySelectorAll('[aria-label="New mono"]')).toHaveLength(1);
+  expect(container.querySelectorAll('[aria-label="New employee"]')).toHaveLength(1);
 });
 
-it("counts a mono's unread replies, except the one open", () => {
+it("counts an employee's unread replies, except the one open", () => {
   const mono = createMono();
   const badge = () => container.querySelector("[data-mono-unread]");
   render({ unseenCounts: new Map([[mono.id, 3]]) });

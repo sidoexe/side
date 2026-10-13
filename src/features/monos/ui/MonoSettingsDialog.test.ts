@@ -192,7 +192,7 @@ it("lets the user choose every permission mode and reflects the saved choice", a
   }
 });
 
-it("explains when permissions take effect while the Mono is working", async () => {
+it("explains when permissions take effect while the Employee is working", async () => {
   await render("auto", true);
   expect(trigger().title).toContain("Changes apply to the next turn.");
   act(() => trigger().click());

@@ -91,7 +91,7 @@ describe("transcript turn cache", () => {
     expect(cache.group(blocks.slice())).toBe(before);
   });
 
-  it("caches Mono follow-ups together and updates when inline work changes", () => {
+  it("caches Employee follow-ups together and updates when inline work changes", () => {
     const cache = new TranscriptTurnCache();
     const blocks: Block[] = [
       { id: "u", role: "user", text: "Inspect this" },
@@ -111,7 +111,7 @@ describe("transcript turn cache", () => {
     expect(cache.group(blocks)).toHaveLength(2);
   });
 
-  it("keeps cached Mono narration distinct from ordinary and settled work", () => {
+  it("keeps cached Employee narration distinct from ordinary and settled work", () => {
     const cache = new TranscriptTurnCache();
     const turn: Block[] = [
       { id: "u", role: "user", text: "Inspect this" },
@@ -180,7 +180,7 @@ describe("transcript turn cache", () => {
     expect(managed[0]).toEqual({ type: "block", block: blocks[2] });
     expect(cache.turnItems(turns[1], true, { inlineWork: true })).toBe(visible);
   });
-  it("keeps each merged Mono run's answer when a later run did more work", () => {
+  it("keeps each merged Employee run's answer when a later run did more work", () => {
     const cache = new TranscriptTurnCache();
     const shell = (id: string): Block => ({
       id,

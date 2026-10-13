@@ -104,7 +104,7 @@ it("gives a standalone habit report its mascot, name, posting time and response 
 });
 
 it.each(["current", "older"])(
-  "continues the Mono's reply with a delivered completion report in %s saved chats",
+  "continues the Employee's reply with a delivered completion report in %s saved chats",
   async (version) => {
     let session = appendUser(newSession("codex", "/tmp"), "Review the API");
     session = applyHarnessEvent(session, {

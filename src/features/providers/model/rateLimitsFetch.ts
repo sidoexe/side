@@ -314,7 +314,7 @@ async function runCodexAccountRequest<T>(
           {
             clientInfo: {
               name: "monocode",
-              title: "MonoCode",
+              title: "sIDE",
               version: "0.1.0",
             },
             capabilities: { experimentalApi: true },

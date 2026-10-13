@@ -6,7 +6,7 @@ import { monoBackgroundKey, monoChatBackground } from "./monoBackground";
 
 afterEach(() => localStorage.clear());
 
-it("always shows a Mono's background as a dimmed Haze", () => {
+it("always shows an Employee's background as a dimmed Haze", () => {
   expect(monoChatBackground("a")).toBeNull();
   saveProjectChatBackgroundSettings(monoBackgroundKey("a"), {
     path: "/bg/mono.png",

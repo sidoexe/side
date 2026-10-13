@@ -849,7 +849,7 @@ function GeneralPage({
     <>
       <Group
         title="Alerts"
-        description="How MonoCode reaches you while you are looking somewhere else."
+        description="How sIDE reaches you while you are looking somewhere else."
       >
         <Row
           id="sounds"
@@ -865,7 +865,7 @@ function GeneralPage({
         <Row
           id="notifications"
           label="Notifications"
-          description="Notify when a reminder is due, or when an agent finishes or needs input in another session or while MonoCode is in the background. Click the notification to open that session."
+          description="Notify when a reminder is due, or when an agent finishes or needs input in another session or while sIDE is in the background. Click the notification to open that session."
         >
           {notificationsEnabled && notificationPermission === "denied" ? (
             <NotificationsBlocked />
@@ -924,7 +924,7 @@ function GeneralPage({
           <Row
             id="quick-composer"
             label="Quick composer"
-            description={`Press ${quickComposerShortcutLabel(loadQuickComposerShortcut())} in any app to float a prompt over it and start a session without switching to MonoCode. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.`}
+            description={`Press ${quickComposerShortcutLabel(loadQuickComposerShortcut())} in any app to float a prompt over it and start a session without switching to sIDE. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.`}
           >
             {quickComposerError ? (
               <span className="text-[12px] text-content/45">
@@ -1109,7 +1109,7 @@ function ChatPage() {
         <Row
           id="composer-autocorrect"
           label="Autocorrect"
-          description="Spell check and autocorrect prompts in session and mono composers. Turn this off to keep the text exactly as typed."
+          description="Spell check and autocorrect prompts in session and employee composers. Turn this off to keep the text exactly as typed."
         >
           <Toggle
             label="Autocorrect"
@@ -1315,7 +1315,7 @@ function GithubSettings() {
   }, [checkStatus]);
 
   const description = status?.connected
-    ? "GitHub CLI is installed and authenticated. MonoCode uses it for GitHub inbox items."
+    ? "GitHub CLI is installed and authenticated. sIDE uses it for GitHub inbox items."
     : status?.installed
       ? "Run gh auth login in a terminal, complete the sign-in flow, then check again."
       : "Install GitHub CLI from cli.github.com, run gh auth login in a terminal, then check again.";
@@ -1814,7 +1814,7 @@ function UpdateRow({
               ? (snapshot.error ?? "Update check failed.")
               : snapshot.packageManaged
                 ? packageManagerHint(snapshot.packageManaged)
-                : "MonoCode updates itself from the release feed.";
+                : "sIDE updates itself from the release feed.";
 
   return (
     <Row
@@ -2226,7 +2226,7 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
         description={
           glassDisabled
             ? "Light mode always uses an opaque window, so these are off. Your dark-mode values are preserved."
-            : "How much of the desktop shows through MonoCode. Blur costs more to composite the higher it goes."
+            : "How much of the desktop shows through sIDE. Blur costs more to composite the higher it goes."
         }
       >
         <Row
@@ -3044,7 +3044,7 @@ function ProviderBinaryControl({
               />
               <p className="mt-1.5 text-[10px] text-content/40">
                 Enter the absolute path to the CLI executable. Changes apply
-                after restarting MonoCode.
+                after restarting sIDE.
               </p>
               {error ? (
                 <span
@@ -3305,8 +3305,8 @@ function ProvidersPage({
         }
         description={
           project
-            ? `These defaults apply to ${projectName(project)} only. A provider with Show in picker off is also kept out of new conversations started in this project. CLI paths remain global for MonoCode.`
-            : "A provider is listed as installed once its CLI is found on your PATH. Uninstalled CLIs stay listed but are left out of the model picker, as are installed ones with Show in picker off. The model beside a provider is what its new conversations start with; Use by default picks the provider itself. CLI paths are global for MonoCode and apply to every project."
+            ? `These defaults apply to ${projectName(project)} only. A provider with Show in picker off is also kept out of new conversations started in this project. CLI paths remain global for sIDE.`
+            : "A provider is listed as installed once its CLI is found on your PATH. Uninstalled CLIs stay listed but are left out of the model picker, as are installed ones with Show in picker off. The model beside a provider is what its new conversations start with; Use by default picks the provider itself. CLI paths are global for sIDE and apply to every project."
         }
       >
         {HARNESSES.map((harness) => {
@@ -4055,21 +4055,21 @@ function MonosPage() {
 
   return (
     <>
-      <Group title="Monos">
+      <Group title="Employees">
         <Row
           id="monos-enabled"
-          label="Show monos"
+          label="Show employees"
           description="Agents of your own on the project rail. Each works on the projects you give it, remembers what matters and picks up habits it runs on its own. Turn this off to hide them."
         >
-          <Toggle label="Show monos" on={enabled} onChange={saveMonosEnabled} />
+          <Toggle label="Show employees" on={enabled} onChange={saveMonosEnabled} />
         </Row>
         <Row
           id="rail-monos-pinned"
-          label="Pin monos to the icon rail"
-          description="When the project rail is collapsed to icons, show each Mono at the top of the rail, above a divider, instead of inside the project picker."
+          label="Pin employees to the icon rail"
+          description="When the project rail is collapsed to icons, show each Employee at the top of the rail, above a divider, instead of inside the project picker."
         >
           <Toggle
-            label="Pin monos to the icon rail"
+            label="Pin employees to the icon rail"
             on={railPinned}
             onChange={saveRailMonosPinned}
             disabled={!enabled}
@@ -4079,7 +4079,7 @@ function MonosPage() {
           <Row
             id="mono-menu-bar-icon"
             label="Menu bar icon"
-            description="Chat with a Mono or open the quick composer from the macOS menu bar. Turn this off to hide the icon."
+            description="Chat with an Employee or open the quick composer from the macOS menu bar. Turn this off to hide the icon."
           >
             <Toggle
               label="Menu bar icon"
@@ -4091,14 +4091,14 @@ function MonosPage() {
       </Group>
       <Group
         id="mono-list"
-        title="Your monos"
-        description="Choose whether new sessions started by each Mono appear in the sidebar. Hidden sessions remain saved and can be opened from the Mono's chat. Add a Mono with the plus on the rail and choose its projects from its details."
+        title="Your employees"
+        description="Choose whether new sessions started by each Employee appear in the sidebar. Hidden sessions remain saved and can be opened from the Employee's chat. Add an Employee with the plus on the rail and choose its projects from its details."
       >
         {monos.length ? (
           monos.map((mono) => <MonoRow key={mono.id} mono={mono} />)
         ) : (
           <p className="px-4 py-3.5 text-[12px] text-content/45">
-            No monos yet.
+            No employees yet.
           </p>
         )}
       </Group>
@@ -4128,7 +4128,7 @@ function MonoRow({ mono }: { mono: Mono }) {
       }
     >
       <span className="text-[12px] leading-5 text-content/50">
-        Show Mono spawned session on the sidebar
+        Show Employee spawned session on the sidebar
       </span>
       <Toggle
         label={`Show sessions started by ${look.name} in sidebar`}
@@ -4141,11 +4141,11 @@ function MonoRow({ mono }: { mono: Mono }) {
         }
       />
       <ConfirmReset
-        label="Reset Mono"
+        label="Reset Employee"
         title={`Reset ${look.name} to its defaults?`}
         body={`Its soul goes back to the default and its name to ${defaultMonoName(look.mascot)}. Changes to its soul can't be recovered.`}
         kept="Its conversation, projects, memory and habits will be kept."
-        failure="Could not reset the Mono."
+        failure="Could not reset the Employee."
         onConfirm={() => resetMonoDefaults(mono.id)}
       >
         {(open, ref) => (

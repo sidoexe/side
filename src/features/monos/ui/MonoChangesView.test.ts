@@ -166,7 +166,7 @@ async function render(attachedProjects: string[] = []) {
         sessionId: session,
         cwd: "/home",
         request: {},
-        agentName: "Mono",
+        agentName: "Employee",
         attachedProjects,
       }),
     ),
@@ -360,7 +360,7 @@ it("reopens a session on its cached changes while they refresh", async () => {
   expect(active().querySelector('[title="extra.txt"]')).not.toBeNull();
 });
 
-it("offers the Mono's projects before the work changes anything", async () => {
+it("offers the Employee's projects before the work changes anything", async () => {
   vi.mocked(sessionCheckpointStatus).mockResolvedValue({ files: [] });
   locateAs(
     [],
@@ -378,13 +378,13 @@ it("offers the Mono's projects before the work changes anything", async () => {
   expect(active().querySelector("textarea")).not.toBeNull();
 });
 
-it("shows an empty state when the Mono has no projects", async () => {
+it("shows an empty state when the Employee has no projects", async () => {
   vi.mocked(sessionCheckpointStatus).mockResolvedValue({ files: [] });
   locateAs([]);
   await render();
   expect(container.querySelector("textarea")).toBeNull();
   expect(container.textContent).toContain(
-    "Give Mono a project to work on",
+    "Give Employee a project to work on",
   );
   expect(gitDiffIndex).not.toHaveBeenCalled();
 });

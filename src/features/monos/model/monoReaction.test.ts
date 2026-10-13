@@ -19,7 +19,7 @@ const reply = (id: string, text: string, extra: Partial<Block> = {}): Block => (
   ...extra,
 });
 
-describe("Mono reactions", () => {
+describe("Employee reactions", () => {
   it("reads a reply that is only one emoji in the tag", () => {
     expect(monoReaction("<reaction>👍</reaction>")).toBe("👍");
     expect(monoReaction(" <reaction> 👍🏽 </reaction>\n")).toBe("👍🏽");

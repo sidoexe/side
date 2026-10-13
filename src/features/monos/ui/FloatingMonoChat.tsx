@@ -210,8 +210,8 @@ export function FloatingMonoChat({ onShown }: { onShown: () => void }) {
           ) : null}
           <button
             type="button"
-            aria-label="Open in MonoCode"
-            title="Open in MonoCode"
+            aria-label="Open in sIDE"
+            title="Open in sIDE"
             disabled={loading}
             className={BUTTON}
             onClick={() => void action({ kind: "reveal" })}
@@ -305,7 +305,7 @@ function MonoRail({
   const [creating, setCreating] = useState(false);
   return (
     <nav
-      aria-label="Monos"
+      aria-label="Employees"
       data-floating-mono-rail
       data-tauri-drag-region
       // 17px puts the first mascot's center level with the header's: the
@@ -354,8 +354,8 @@ function MonoRail({
       })}
       <button
         type="button"
-        title="New mono"
-        aria-label="New mono"
+        title="New employee"
+        aria-label="New employee"
         disabled={creating || !currentId}
         onClick={() => {
           setCreating(true);
@@ -479,7 +479,7 @@ function FloatingConversation({
             className="text-accent hover:underline"
             onClick={() => void action({ kind: "reveal" })}
           >
-            Change model in MonoCode
+            Change model in sIDE
           </button>
         </div>
       ) : null}
@@ -597,8 +597,8 @@ function ArtifactSheet({
           ) : null}
           <button
             type="button"
-            aria-label="Open in MonoCode"
-            title="Open in MonoCode"
+            aria-label="Open in sIDE"
+            title="Open in sIDE"
             className={BUTTON}
             onClick={() => void action({ kind: "openArtifact", id })}
           >

@@ -128,7 +128,7 @@ it("says what it needs from you", () => {
   ).toEqual({ status: "needs-you", activity: "Approve git push" });
 });
 
-it("names an unnamed Mono after its mascot", () => {
+it("names an unnamed Employee after its mascot", () => {
   expect(defaultMonoName("crab")).toBe("MonoCrab");
   expect(defaultMonoName("mushroom")).toBe("MonoShroom");
 });

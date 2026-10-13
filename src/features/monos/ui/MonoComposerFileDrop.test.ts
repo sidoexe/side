@@ -80,7 +80,7 @@ async function native(payload: DragDropEvent) {
   });
 }
 
-it("attaches files dropped anywhere on the Mono chat", async () => {
+it("attaches files dropped anywhere on the Employee chat", async () => {
   await render();
   const layout = () =>
     container.querySelector<HTMLElement>("[data-layout]")!.dataset.layout;

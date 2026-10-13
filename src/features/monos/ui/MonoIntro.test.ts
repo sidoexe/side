@@ -27,7 +27,7 @@ function button(label: string) {
   )!;
 }
 
-it("brings every other mascot to line up behind the user's mono", () => {
+it("brings every other mascot to line up behind the user's employee", () => {
   const crowd = monoIntroCrowd(look);
   const names = [look.mascot, ...crowd.map((mascot) => mascot.name)];
 
@@ -35,7 +35,7 @@ it("brings every other mascot to line up behind the user's mono", () => {
   expect(crowd.map((mascot) => mascot.color)).not.toContain(look.color);
 });
 
-it("creates the first mono or hides monos", () => {
+it("creates the first employee or hides employees", () => {
   const onCreate = vi.fn();
   const onHide = vi.fn();
   act(() =>
@@ -48,12 +48,12 @@ it("creates the first mono or hides monos", () => {
     ),
   );
 
-  expect(document.body.textContent).toContain("Meet Monos");
+  expect(document.body.textContent).toContain("Meet Employees");
   expect(
     document.body.querySelectorAll("[data-mono-intro-stage] svg"),
   ).toHaveLength(PROJECT_MASCOTS.length);
 
-  act(() => button("Create mono").click());
+  act(() => button("Create employee").click());
   expect(onCreate).toHaveBeenCalledOnce();
   act(() =>
     document.body.querySelector<HTMLElement>('[role="switch"]')!.click(),

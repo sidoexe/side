@@ -719,7 +719,7 @@ describe("status blocks", () => {
     expect(session.blocks.map((block) => block.role)).toEqual(["user"]);
   });
 
-  it("keeps the same keyed status across pending and accepted Mono follow-ups", () => {
+  it("keeps the same keyed status across pending and accepted Employee follow-ups", () => {
     let session = appendUser(newSession("pi", "/tmp"), "go");
     session = applyHarnessEvent(session, {
       type: "status",
@@ -760,7 +760,7 @@ describe("status blocks", () => {
       .toBe(false);
   });
 
-  it("starts a new keyed status after a queued Mono message starts a new turn", () => {
+  it("starts a new keyed status after a queued Employee message starts a new turn", () => {
     let session = appendUser(newSession("pi", "/tmp"), "go");
     session = applyHarnessEvent(session, {
       type: "status",

@@ -73,10 +73,10 @@ describe("tool error disclosure", () => {
   });
 });
 
-describe("MonoCode CLI disclosure", () => {
+describe("sIDE CLI disclosure", () => {
   it("shows a compact row without a disclosure for a successful call", () => {
     const command =
-      "/repo/target/debug/MonoCode.app/Contents/MacOS/monocode app notes.list";
+      "/repo/target/debug/sIDE.app/Contents/MacOS/monocode app notes.list";
     const blocks: Block[] = [
       { id: "user", role: "user", text: "/monocode list notes" },
       {
@@ -121,7 +121,7 @@ describe("MonoCode CLI disclosure", () => {
     );
 
     const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Show error details for MonoCode: List notes"]',
+      'button[aria-label="Show error details for sIDE: List notes"]',
     );
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
     expect(container.textContent).not.toContain("Connection refused");

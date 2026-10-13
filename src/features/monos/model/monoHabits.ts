@@ -228,7 +228,7 @@ export function newHabit(draft: HabitDraft, now: number): Habit {
 export function addHabit(monoId: string, draft: HabitDraft): Promise<Habit> {
   return updateHabits(monoId, (list) => {
     if (list.length >= HABITS_MAX)
-      throw new Error(`A Mono can have at most ${HABITS_MAX} habits`);
+      throw new Error(`An Employee can have at most ${HABITS_MAX} habits`);
     const created = newHabit(draft, Date.now());
     return { habits: [...list, created], result: created };
   });

@@ -16,7 +16,7 @@ function stubStorage(entries: [string, string][]) {
   return stored;
 }
 
-it("turns each project's Mono into one of its own that works on that project", async () => {
+it("turns each project's Employee into one of its own that works on that project", async () => {
   const stored = stubStorage([
     ["monocode:project-agents", JSON.stringify({ "/code/app": "chat-1" })],
     [
@@ -49,7 +49,7 @@ it("turns each project's Mono into one of its own that works on that project", a
   ).toEqual([]);
 });
 
-it("migrates only once, so a deleted Mono stays deleted", async () => {
+it("migrates only once, so a deleted Employee stays deleted", async () => {
   stubStorage([["monocode:monos", JSON.stringify({ "/code/app": "chat-1" })]]);
   const mono = await import("./mono");
   const [only] = mono.listMonos();

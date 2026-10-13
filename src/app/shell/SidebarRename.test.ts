@@ -168,11 +168,11 @@ it("leaves the resident agent and its description out of the session list", () =
   expect(container.textContent).not.toContain("Resident agent description");
 });
 
-it("omits hidden Mono launches from history, open sessions and folders", () => {
+it("omits hidden Employee launches from history, open sessions and folders", () => {
   const hidden = {
     ...props.sessions[0],
     id: "hidden-launch",
-    title: "Mono background work",
+    title: "Employee background work",
     sidebarHidden: true,
   };
   props.sessions = [...props.sessions, hidden];
@@ -265,13 +265,13 @@ describe("worktree explorer visibility", () => {
   });
 });
 
-describe.each([false, true])("Mono rail selection (compact: %s)", (compact) => {
+describe.each([false, true])("Employee rail selection (compact: %s)", (compact) => {
   it.each([
     ["Inbox", "inboxActive", "onOpenInbox"],
     ["Notes", "notesActive", "onOpenNotes"],
     ["Automations", "automationsActive", "onOpenAutomations"],
     ["Search", "searchActive", "onSearch"],
-  ] as const)("selects only %s while it covers a Mono", async (label, active, open) => {
+  ] as const)("selects only %s while it covers an Employee", async (label, active, open) => {
     const mono = createMono();
     props = {
       ...props,
@@ -295,7 +295,7 @@ describe.each([false, true])("Mono rail selection (compact: %s)", (compact) => {
     await act(async () => render());
     const monoSelected = () => compact
       ? container.querySelector('[aria-label^="Switch project"]')!
-          .getAttribute("aria-label")!.includes("current mono")
+          .getAttribute("aria-label")!.includes("current employee")
       : !!container.querySelector('[data-mono-rail] [aria-current="true"]');
     expect(monoSelected()).toBe(true);
 
@@ -642,13 +642,13 @@ describe("sidebar session IDs", () => {
     const monocodeMenu = openCopyIdMenu("session-2");
     const copyMonoCodeId = Array.from(
       monocodeMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
-    ).find((item) => item.textContent === "MonoCode session ID")!;
+    ).find((item) => item.textContent === "sIDE session ID")!;
     expect(copyMonoCodeId.disabled).toBe(false);
     await act(async () => copyMonoCodeId.click());
     expect(copyText).toHaveBeenNthCalledWith(2, "session-2");
   });
 
-  it("keeps the MonoCode ID available before the harness supplies an ID", async () => {
+  it("keeps the sIDE ID available before the harness supplies an ID", async () => {
     act(() => render());
     const copyMenu = openCopyIdMenu("session-1");
     const copyHarnessId = Array.from(
@@ -656,7 +656,7 @@ describe("sidebar session IDs", () => {
     ).find((item) => item.textContent === "Harness session ID")!;
     const copyMonoCodeId = Array.from(
       copyMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
-    ).find((item) => item.textContent === "MonoCode session ID")!;
+    ).find((item) => item.textContent === "sIDE session ID")!;
     expect(copyHarnessId.disabled).toBe(true);
     expect(copyMonoCodeId.disabled).toBe(false);
     await act(async () => copyMonoCodeId.click());

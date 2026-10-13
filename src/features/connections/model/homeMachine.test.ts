@@ -69,7 +69,7 @@ const chat = (id: string, cwd: string, extra: Partial<Session> = {}): Session =>
   ...extra,
 });
 
-it("imports a project's saved chats and skips monos, drafts and blank ones", async () => {
+it("imports a project's saved chats and skips employees, drafts and blank ones", async () => {
   const summaries = [
     { id: "a", createdAt: 1, updatedAt: 2, pinned: true },
     { id: "b", createdAt: 3, updatedAt: 4 },

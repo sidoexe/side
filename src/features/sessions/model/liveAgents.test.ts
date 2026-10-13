@@ -28,7 +28,7 @@ function edit(id: string, path = "src/App.tsx", status = "in_progress"): Block {
 }
 
 describe("liveAgentsFromSessions", () => {
-  it("excludes Mono activity while keeping regular working and finished sessions", () => {
+  it("excludes Employee activity while keeping regular working and finished sessions", () => {
     const working = chat("/repo", { id: "working", busy: true });
     const done = chat("/repo", { id: "done" });
     const monoWorking = chat("~", { id: "mono-working", busy: true });

@@ -255,7 +255,7 @@ it("keeps a failed generation and its retry unsaved", async () => {
   ).toBe(true);
 });
 
-it("isolates Mono side questions from regular Codex threads and resumes them after restart", async () => {
+it("isolates Employee side questions from regular Codex threads and resumes them after restart", async () => {
   await runCodexTextPrompt({
     cwd: "/repo",
     ephemeral: false,
@@ -267,7 +267,7 @@ it("isolates Mono side questions from regular Codex threads and resumes them aft
     cwd: "/repo",
     ephemeral: false,
     codexStore: "mono",
-    prompt: "Mono side question",
+    prompt: "Employee side question",
   });
   expect(spawnChild.mock.calls[1][6]).toBe("mono");
   expect(threadStarts()[1].params).toMatchObject({

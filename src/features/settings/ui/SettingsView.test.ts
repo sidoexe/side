@@ -120,7 +120,7 @@ afterEach(async () => {
 });
 
 describe("settings pages", () => {
-  it("saves each Mono's session visibility and restores it when settings reopen", async () => {
+  it("saves each Employee's session visibility and restores it when settings reopen", async () => {
     const mono = createMono();
     const other = createMono();
     const toggle = (id: string) =>

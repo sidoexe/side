@@ -33,7 +33,7 @@ function limited(patch: Partial<Session> = {}): Session {
   };
 }
 
-describe("Mono usage recovery", () => {
+describe("Employee usage recovery", () => {
   it("continues the stopped work once when there are no queued messages", () => {
     const original = limited();
     const resumed = resumeMonoUsageLimit(original);

@@ -57,8 +57,8 @@ function groupedMessage() {
   return message;
 }
 
-describe("Mono session completion notifications", () => {
-  it("accepts immediately, then queues completion behind chat without steering a busy Mono", async () => {
+describe("Employee session completion notifications", () => {
+  it("accepts immediately, then queues completion behind chat without steering a busy Employee", async () => {
     let mono: Session = {
       ...newSession("codex", "/code/project"),
       busy: true,
@@ -258,7 +258,7 @@ describe("Mono session completion notifications", () => {
     );
   });
 
-  it("bounds long results and points the Mono to the source conversation", () => {
+  it("bounds long results and points the Employee to the source conversation", () => {
     const message = monoSessionCompletionMessage({
       ...options,
       outcome: { status: "completed", text: "x".repeat(15_000) },

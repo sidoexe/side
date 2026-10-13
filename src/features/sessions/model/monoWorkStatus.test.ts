@@ -9,7 +9,7 @@ const tool = (kind: string): Block => ({
   tool: { kind, status: "in_progress" },
 });
 
-describe("Mono work status", () => {
+describe("Employee work status", () => {
   it.each([
     ["shell", "Running command…"],
     ["edit", "Editing file…"],

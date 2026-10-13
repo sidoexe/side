@@ -31,13 +31,13 @@ it("doesn't send on the Enter that picks an IME candidate", async () => {
       root.render(
         createElement(MonoComposer, {
           sessionId: "mono-ime-test",
-          name: "Mono",
+          name: "Employee",
           onSubmit,
         }),
       ),
     );
     const field = container.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Message Mono"]',
+      'textarea[aria-label="Message Employee"]',
     )!;
     const setValue = Object.getOwnPropertyDescriptor(
       HTMLTextAreaElement.prototype,

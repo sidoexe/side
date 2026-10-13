@@ -122,7 +122,7 @@ export async function deliverFloatingMonoRequest(
   accept: () => Promise<boolean>,
 ): Promise<Session | undefined> {
   const session = await host.open(request.monoId);
-  if (!session) throw new Error("That Mono is no longer available.");
+  if (!session) throw new Error("That Employee is no longer available.");
   if (!(await accept())) return undefined;
   const action = request.action;
   switch (action.kind) {
@@ -160,7 +160,7 @@ export async function deliverFloatingMonoRequest(
       host.resume(session.id);
       break;
     case "create":
-      if (!host.create) throw new Error("New Monos are unavailable here.");
+      if (!host.create) throw new Error("New Employees are unavailable here.");
       await host.create(request.monoId);
       break;
     default:

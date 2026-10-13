@@ -29,7 +29,7 @@ function result(
   });
 }
 
-describe("Mono completion batches", () => {
+describe("Employee completion batches", () => {
   it("waits for the launching turn and all children, even when a fast child finishes before the others launch", () => {
     const ready = vi.fn();
     const batches = new MonoSessionCompletionBatches(ready);
@@ -94,7 +94,7 @@ describe("Mono completion batches", () => {
     expect(message.text).toContain('"status":"completed"');
   });
 
-  it("keeps later requests and other Monos independent of a slow earlier batch", () => {
+  it("keeps later requests and other Employees independent of a slow earlier batch", () => {
     const ready = vi.fn();
     const batches = new MonoSessionCompletionBatches(ready);
     const slow = batches.watch(origin, "slow");
@@ -112,7 +112,7 @@ describe("Mono completion batches", () => {
     expect(ready).toHaveBeenCalledTimes(2);
   });
 
-  it("queues one consolidated report behind chat and never steers a busy Mono", () => {
+  it("queues one consolidated report behind chat and never steers a busy Employee", () => {
     let mono: Session = {
       ...newSession("codex", "/code/project"),
       busy: true,
@@ -177,7 +177,7 @@ describe("Mono completion batches", () => {
     );
   });
 
-  it("dismisses the calling Mono's pending cancellation without losing other session results", () => {
+  it("dismisses the calling Employee's pending cancellation without losing other session results", () => {
     const ready = vi.fn();
     const batches = new MonoSessionCompletionBatches(ready);
     const stopped = batches.watch(origin, "stop-request", "stopped-session");
@@ -196,7 +196,7 @@ describe("Mono completion batches", () => {
     expect(ready.mock.calls[0][1].text).not.toContain("stopped-session");
   });
 
-  it("keeps other Monos and future monitored turns on the same session independent", () => {
+  it("keeps other Employees and future monitored turns on the same session independent", () => {
     const ready = vi.fn();
     const batches = new MonoSessionCompletionBatches(ready);
     const cancelled = batches.watch(origin, "request", "worker");
@@ -261,7 +261,7 @@ describe("Mono completion batches", () => {
   });
 
   it.each([false, true])(
-    "does not deliver a rejected submission when the Mono becomes idle before acceptance (throws: %s)",
+    "does not deliver a rejected submission when the Employee becomes idle before acceptance (throws: %s)",
     async (throws) => {
       const ready = vi.fn();
       const batches = new MonoSessionCompletionBatches(ready);

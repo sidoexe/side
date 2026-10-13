@@ -956,7 +956,7 @@ pub fn harness_spawn(
             Some(Arc::new(store))
         }
         Some(_) => {
-            return Err("Private Mono storage is only supported for Codex app-server".into())
+            return Err("Private Employee storage is only supported for Codex app-server".into())
         }
     };
 
@@ -1748,7 +1748,7 @@ struct ProcessSnapshot {
     harness_parent: Option<u32>,
 }
 
-/// Kill harness trees left behind by a previous MonoCode that exited
+/// Kill harness trees left behind by a previous sIDE that exited
 /// before SIGKILL ran (crash, force-quit, or the detached escalate thread).
 /// Off-thread: the sweep shells out to `ps` and then waits on a SIGKILL, and
 /// launch would otherwise hold the first window for both. Nothing this run

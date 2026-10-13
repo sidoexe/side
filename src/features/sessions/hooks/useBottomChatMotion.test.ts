@@ -206,7 +206,7 @@ afterEach(() => {
 });
 
 describe("bottom chat motion", () => {
-  it("glides through a whole Mono reply without skipping most of its height", () => {
+  it("glides through a whole Employee reply without skipping most of its height", () => {
     const blocks: Block[] = [{ id: "user", role: "user", text: "Hello" }];
     render(blocks, true, true, undefined, true);
     const view = viewport();
@@ -223,7 +223,7 @@ describe("bottom chat motion", () => {
     expect(top).toBe(940);
   });
 
-  it("hands off a large Mono reveal at its visible position when scrolling up", () => {
+  it("hands off a large Employee reveal at its visible position when scrolling up", () => {
     scrollHeight = 1000;
     const blocks: Block[] = [{ id: "user", role: "user", text: "Hello" }];
     render(blocks, true, true, undefined, true);

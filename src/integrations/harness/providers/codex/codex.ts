@@ -664,7 +664,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     await rpc.request("initialize", {
       clientInfo: {
         name: "monocode",
-        title: "MonoCode",
+        title: "sIDE",
         version: "0.1.0",
       },
       capabilities: {
@@ -717,7 +717,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       } catch (error) {
         if (store?.hasThread)
           throw new Error(
-            "The saved Mono Codex context could not be resumed. Retry to keep its saved context.",
+            "The saved Employee Codex context could not be resumed. Retry to keep its saved context.",
           );
         if (!isRecoverableThreadResumeError(error)) throw error;
         threadId = undefined;
@@ -1452,7 +1452,7 @@ async function handleServerRequest(
       if (!live.cancelled && !live.muteUpdates)
         live.onEvent({
           type: "status",
-          text: "This MCP server requested a form or browser sign-in that MonoCode does not support yet. Complete it in the server's own interface.",
+          text: "This MCP server requested a form or browser sign-in that sIDE does not support yet. Complete it in the server's own interface.",
         });
       await live.rpc.respond(id, {
         action: "cancel",

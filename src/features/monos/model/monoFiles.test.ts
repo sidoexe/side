@@ -116,7 +116,7 @@ it("says how to keep memory and update the soul only at the user's request", () 
     ],
   };
   const full = monoContext(look, files(), { soul: true, memory: true });
-  expect(full).toContain("You are Skull, a Mono in MonoCode");
+  expect(full).toContain("You are Skull, an Employee in sIDE");
   expect(full).toContain("these 2 projects (monocode and site)");
   expect(full).toContain("- site: /code/site");
   expect(full).toContain("Be brief.");
@@ -192,7 +192,7 @@ it("seeds SOUL.md once, moving the old instructions into it", async () => {
   expect(findMono(id)?.instructions).toBeUndefined();
 });
 
-it("resets a Mono to the default soul and name, over the soul it loaded", async () => {
+it("resets an Employee to the default soul and name, over the soul it loaded", async () => {
   const { id } = createMono();
   updateMono(id, (mono) => ({ ...mono, name: "Broski" }));
   invoke.mockImplementation(async (command: string) =>
@@ -213,7 +213,7 @@ it("resets a Mono to the default soul and name, over the soul it loaded", async 
   expect(findMono(id)?.name).toBeUndefined();
 });
 
-it("reads a migrated Mono's old project folder once, then its own", async () => {
+it("reads a migrated Employee's old project folder once, then its own", async () => {
   const { id } = createMono(["/code/app"]);
   updateMono(id, (mono) => ({ ...mono, legacyProject: "/code/app" }));
   invoke.mockImplementation(async () => ({ ...files(), soul: "# Soul" }));

@@ -215,7 +215,7 @@ it("shows launched sessions as cards with live status, only in their turn", () =
   ).toBe("true");
 });
 
-it("keeps launched sessions under the reply that started them when the Mono reports back", () => {
+it("keeps launched sessions under the reply that started them when the Employee reports back", () => {
   const launch = {
     sessionId: "app-mono-article",
     cwd: "/repo",
@@ -263,7 +263,7 @@ it("keeps launched sessions under the reply that started them when the Mono repo
   ).toBeTruthy();
 });
 
-it("keeps launched session cards in place while the Mono's report back arrives", () => {
+it("keeps launched session cards in place while the Employee's report back arrives", () => {
   const launch = {
     sessionId: "app-mono-article",
     cwd: "/repo",
@@ -331,7 +331,7 @@ it("keeps launched session cards in place while the Mono's report back arrives",
   ).toBeTruthy();
 });
 
-it("shows reused sessions in the requesting Mono after its handoff reply, before its completion report", () => {
+it("shows reused sessions in the requesting Employee after its handoff reply, before its completion report", () => {
   const launches = [
     {
       id: "app-other-mono-one",
@@ -854,7 +854,7 @@ it("marks the compact group for search without expanding its commands or narrati
   expect(container.querySelector("[data-mono-work] button")).toBeNull();
 });
 
-it("keeps interrupted Mono messages together above one working indicator", () => {
+it("keeps interrupted Employee messages together above one working indicator", () => {
   const blocks: Block[] = [
     {
       id: "first-message",
@@ -907,7 +907,7 @@ it("keeps interrupted Mono messages together above one working indicator", () =>
   expect(container.querySelectorAll(".transcript-turn")).toHaveLength(2);
 });
 
-it("stacks the next message onto one the Mono only reacted to", () => {
+it("stacks the next message onto one the Employee only reacted to", () => {
   const props = {
     agentName: "Captain",
     agentMascot: { mascot: "cat" as const, color: "#6ba" },

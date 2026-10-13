@@ -342,7 +342,7 @@ describe("persisting a subagent's trail", () => {
 });
 
 describe("sanitizeSessionForPersist", () => {
-  it("persists accepted Mono launches on user turns and fingerprints their addition", () => {
+  it("persists accepted Employee launches on user turns and fingerprints their addition", () => {
     const session = newSession("codex", "/repo");
     session.blocks = [{ id: "user", role: "user", text: "Review" }];
     const before = persistFingerprint(session);
@@ -721,7 +721,7 @@ describe("sanitizeSessionForPersist", () => {
       {
         id: "i1",
         role: "system",
-        text: "Turn interrupted when MonoCode quit.",
+        text: "Turn interrupted when sIDE quit.",
         notice: "interrupt",
       },
       {

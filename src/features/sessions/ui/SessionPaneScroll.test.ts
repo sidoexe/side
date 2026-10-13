@@ -149,7 +149,7 @@ function props(transcriptPool?: TranscriptPool): SessionPaneProps {
   };
 }
 
-it("routes a Mono footer activity click to its session and selected turn", () => {
+it("routes an Employee footer activity click to its session and selected turn", () => {
   const pane = props();
   pane.session.blocks = [
     { id: "user", role: "user", text: "Inspect", durationMs: 23000 },
@@ -193,7 +193,7 @@ it("routes a Mono footer activity click to its session and selected turn", () =>
   ).toBe("true");
 });
 
-it("routes a launched session's card to the Mono, its turn and the session", () => {
+it("routes a launched session's card to the Employee, its turn and the session", () => {
   const pane = props();
   pane.session.blocks[0] = {
     ...pane.session.blocks[0],
@@ -248,7 +248,7 @@ it("routes a launched session's card to the Mono, its turn and the session", () 
   ).toBe("true");
 });
 
-it("renders older replies immediately when scrolling up loads a Mono page", async () => {
+it("renders older replies immediately when scrolling up loads an Employee page", async () => {
   const pane = props();
   pane.session.monoTranscript = { before: 20, firstBlockId: "user" };
   vi.mocked(getMonoTranscriptPage).mockResolvedValueOnce({

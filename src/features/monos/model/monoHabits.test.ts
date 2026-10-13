@@ -111,7 +111,7 @@ it("stays silent when the run has nothing to say", () => {
   );
 });
 
-it("hands the Mono what its habits posted since the user last wrote", () => {
+it("hands the Employee what its habits posted since the user last wrote", () => {
   const post = (id: string, text: string): Block => ({
     id,
     role: "assistant",
@@ -133,7 +133,7 @@ it("hands the Mono what its habits posted since the user last wrote", () => {
   expect(habitPostsContext([])).toBe("");
 });
 
-it("routes an answer in the Mono's chat back to the run that asked", () => {
+it("routes an answer in the Employee's chat back to the run that asked", () => {
   const id = relayApproval({
     monoId: "mono",
     runId: "run",

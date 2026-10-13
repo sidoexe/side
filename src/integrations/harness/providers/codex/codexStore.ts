@@ -116,7 +116,7 @@ async function prepare(
       "codex",
     );
     await request("initialize", {
-      clientInfo: { name: "monocode", title: "MonoCode", version: "0.1.0" },
+      clientInfo: { name: "monocode", title: "sIDE", version: "0.1.0" },
       capabilities: { experimentalApi: true },
     });
     await rpc.notify("initialized", undefined);
@@ -144,7 +144,7 @@ async function prepare(
         throw error;
       }
       if (!root.path)
-        throw new Error("Codex did not return the saved Mono context");
+        throw new Error("Codex did not return the saved Employee context");
       const descendants = new Map<string, Thread>();
       for (const archived of [false, true]) {
         let cursor: string | undefined;
@@ -186,7 +186,7 @@ async function prepare(
           includeTurns: false,
         });
         if (!retained.thread.path)
-          throw new Error("Codex did not retain a Mono thread file");
+          throw new Error("Codex did not retain an Employee thread file");
         paths.push(retained.thread.path);
       }
       await copyMonoCodexThreads(

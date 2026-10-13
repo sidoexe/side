@@ -1214,7 +1214,7 @@ function SidebarComponent({
               {
                 kind: "item" as const,
                 id: "copy-monocode-session-id",
-                label: "MonoCode session ID",
+                label: "sIDE session ID",
               },
             ],
           },
@@ -2690,7 +2690,7 @@ function CompactProjectRail({
           <>
             <div
               role="group"
-              aria-label="Monos"
+              aria-label="Employees"
               data-compact-rail-monos
               className="flex flex-col items-center gap-1.5"
             >

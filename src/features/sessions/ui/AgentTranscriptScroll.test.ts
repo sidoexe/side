@@ -42,10 +42,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("Mono transcript pages", () => {
+describe("Employee transcript pages", () => {
   const messages = (start: number, count: number): Block[] => Array.from({ length: count }, (_, i) => ({ id: `user-${start + i}`, role: "user", text: `Message ${start + i}` }));
 
-  it("renders ten Mono turns while ordinary sessions retain twenty", () => {
+  it("renders ten Employee turns while ordinary sessions retain twenty", () => {
     const blocks = messages(0, 30);
     act(() => root.render(createElement(AgentTranscript, { key: "normal", blocks })));
     expect(container.querySelectorAll(".transcript-turn")).toHaveLength(20);
@@ -429,7 +429,7 @@ describe("transcript scrolling", () => {
     expect(geometry.top).toBe(700);
   });
 
-  it("keeps an opening Mono pinned through scroll events queued before layout settles", () => {
+  it("keeps an opening Employee pinned through scroll events queued before layout settles", () => {
     const showJump = vi.fn();
     act(() => root.render(createElement(AgentTranscript, {
       blocks: Array.from({ length: 10 }, (_, i): Block => ({ id: `u${i}`, role: "user", text: `Question ${i}` })),
@@ -461,7 +461,7 @@ describe("transcript scrolling", () => {
   });
 
   it.each([false, true])(
-    "keeps manual Mono scrolling near the bottom unpinned (busy: %s)",
+    "keeps manual Employee scrolling near the bottom unpinned (busy: %s)",
     (busy) => {
       const blocks: Block[] = [
         { id: "user", role: "user", text: "Explain auth" },

@@ -195,7 +195,7 @@ fn valid_id(id: &str) -> bool {
 /// was a project's own takes over that project's folder the first time.
 fn agent_dir(root: &Path, mono: &str, legacy_project: Option<&str>) -> Result<PathBuf, String> {
     if !valid_id(mono) {
-        return Err("Not a Mono id".into());
+        return Err("Not an Employee id".into());
     }
     std::fs::create_dir_all(root).map_err(|e| format!("{}: {e}", root.display()))?;
     let dir = root.join(mono);

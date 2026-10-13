@@ -56,9 +56,9 @@ describe("AgentTranscript collapsed work", () => {
     expect(legacy).not.toContain("/monocode");
   });
 
-  it("shows MonoCode CLI actions instead of their long shell commands", () => {
+  it("shows sIDE CLI actions instead of their long shell commands", () => {
     const command =
-      "/repo/target/debug/MonoCode.app/Contents/MacOS/monocode";
+      "/repo/target/debug/sIDE.app/Contents/MacOS/monocode";
     const markup = render(
       [
         { id: "user", role: "user", text: "/monocode list my notes" },
@@ -77,7 +77,7 @@ describe("AgentTranscript collapsed work", () => {
       ],
       true,
     );
-    expect(markup).toContain("Using MonoCode");
+    expect(markup).toContain("Using sIDE");
     expect(markup).toContain('data-monocode-tool-call="--help"');
     expect(markup).toContain('data-monocode-tool-call="notes.list"');
     expect(markup).toContain("monocode app --help");
@@ -85,10 +85,10 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).toContain("Ran");
     expect(markup).toContain("Running");
     expect(markup).not.toContain("Contents/MacOS/monocode");
-    expect(markup).not.toContain("Show error details for MonoCode");
+    expect(markup).not.toContain("Show error details for sIDE");
   });
 
-  it("shows the full command before approving a MonoCode CLI call", () => {
+  it("shows the full command before approving a sIDE CLI call", () => {
     const command = "monocode app sessions.send --json '{\"prompt\":\"private-marker\"}'";
     const markup = renderToStaticMarkup(
       createElement(AgentTranscript, {
@@ -131,7 +131,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(compound).toContain("Allow</button>");
   });
 
-  it("keeps a failed MonoCode call compact until its error is opened", () => {
+  it("keeps a failed sIDE call compact until its error is opened", () => {
     const markup = render([
       { id: "user", role: "user", text: "/monocode list notes" },
       {
@@ -144,7 +144,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).toContain('data-monocode-tool-call="notes.list"');
     expect(markup).toContain("Ran");
     expect(markup).toContain("monocode app notes.list");
-    expect(markup).toContain("Show error details for MonoCode: List notes");
+    expect(markup).toContain("Show error details for sIDE: List notes");
     expect(markup).not.toContain("Connection refused");
   });
 
@@ -324,7 +324,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).not.toContain("Claude Opus 5 worked for 9s");
   });
 
-  it("credits a Mono's turns to the Mono, whichever model ran them", () => {
+  it("credits an Employee's turns to the Employee, whichever model ran them", () => {
     const blocks: Block[] = [
       {
         id: "user",
@@ -352,7 +352,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).not.toContain("Claude Sonnet 5 worked for 9s");
   });
 
-  it("marks when a Mono's messages were sent, and keeps its footer to copy, note and time", () => {
+  it("marks when an Employee's messages were sent, and keeps its footer to copy, note and time", () => {
     const now = new Date(2026, 9, 5, 12).getTime();
     vi.setSystemTime(now);
     const turn = (id: string, startedAt: number): Block[] => [
@@ -833,7 +833,7 @@ describe("AgentTranscript collapsed work", () => {
   });
 });
 
-describe("Mono inline work", () => {
+describe("Employee inline work", () => {
   function renderMono(blocks: Block[], busy = false) {
     return renderToStaticMarkup(
       createElement(AgentTranscript, {
@@ -985,7 +985,7 @@ describe("worker assignment prompts", () => {
             id: "u1",
             role: "user",
             internal: true,
-            text: "Review the current branch against main.\n\n<monocode_assignment>\nYou are a worker managed by a MonoCode lead. Your assigned write scope is: src/App.tsx.\n</monocode_assignment>",
+            text: "Review the current branch against main.\n\n<monocode_assignment>\nYou are a worker managed by a sIDE lead. Your assigned write scope is: src/App.tsx.\n</monocode_assignment>",
           },
           { id: "a1", role: "assistant", text: "Looking now" },
         ],
@@ -994,6 +994,6 @@ describe("worker assignment prompts", () => {
     expect(markup).toContain("Review the current branch against main.");
     expect(markup).toContain("Looking now");
     expect(markup).not.toContain("monocode_assignment");
-    expect(markup).not.toContain("You are a worker managed by a MonoCode lead");
+    expect(markup).not.toContain("You are a worker managed by a sIDE lead");
   });
 });

@@ -51,7 +51,7 @@ function saved(session: Session) {
   return { ...session, createdAt: 1, updatedAt: 2 };
 }
 
-describe("Mono database pagination and writes", () => {
+describe("Employee database pagination and writes", () => {
   it("keeps document and visual references on the source turn after saving and reopening", async () => {
     let session = await load();
     const card = {
@@ -299,7 +299,7 @@ describe("Mono database pagination and writes", () => {
     expect(page.blocks[0].monoHabit).toEqual(monoHabit);
   });
 
-  it("preserves a Mono after removing its only loaded draft and appends to the saved tail", async () => {
+  it("preserves an Employee after removing its only loaded draft and appends to the saved tail", async () => {
     const session = await load();
     session.blocks = [];
     call.mockResolvedValueOnce(saved(session));
@@ -321,7 +321,7 @@ describe("Mono database pagination and writes", () => {
     );
   });
 
-  it("uses the Mono command and requests older pages by cursor", async () => {
+  it("uses the Employee command and requests older pages by cursor", async () => {
     const session = await load();
     expect(call).toHaveBeenCalledWith("mono_session_get", {
       sessionId: session.id,

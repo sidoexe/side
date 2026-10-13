@@ -29,7 +29,7 @@ vi.mock("../../features/monos/model/mono", () => ({
   findMono: (id: string) => ({ id, sessionId: `chat-${id}` }),
   listMonos: () =>
     ["first", "second"].map((id) => ({ id, sessionId: `chat-${id}` })),
-  monoLook: () => ({ name: "Mono", mascot: "crab", color: "#aaf" }),
+  monoLook: () => ({ name: "Employee", mascot: "crab", color: "#aaf" }),
   monoState: (session: Session) => ({
     status: session.busy ? "working" : "idle",
   }),
@@ -95,7 +95,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("streams each open Mono on transcript commits without waiting for a poll", async () => {
+it("streams each open Employee on transcript commits without waiting for a poll", async () => {
   await act(async () => root.render(createElement(Harness, { sessions })));
   const sync = native.invoke.mock.calls.find(
     ([command]) => command === "mono_chat_sync",
@@ -149,7 +149,7 @@ it("streams each open Mono on transcript commits without waiting for a poll", as
   });
 });
 
-it("stops publishing when Monos are disabled", async () => {
+it("stops publishing when Employees are disabled", async () => {
   await act(async () => root.render(createElement(Harness, { sessions })));
   native.invoke.mockClear();
   sessions = sessions.map((session) => ({ ...session, busy: false }));
@@ -163,7 +163,7 @@ it("stops publishing when Monos are disabled", async () => {
   ).toBe(false);
 });
 
-it("resyncs the roster with each Mono's status for the rail", async () => {
+it("resyncs the roster with each Employee's status for the rail", async () => {
   await act(async () => root.render(createElement(Harness, { sessions })));
   native.invoke.mockClear();
   sessions = sessions.map((session, index) =>

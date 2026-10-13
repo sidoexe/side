@@ -25,7 +25,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-it("gives each new Mono a mascot and color the others are not using", () => {
+it("gives each new Employee a mascot and color the others are not using", () => {
   const first = createMono();
   const second = createMono();
   expect(second.mascot).not.toBe(first.mascot);
@@ -44,7 +44,7 @@ it("adds each project once and takes one away by its path", () => {
   expect(findMono(id)?.projects).toEqual(["/code/site"]);
 });
 
-it("keeps the rail's order and forgets a removed Mono", () => {
+it("keeps the rail's order and forgets a removed Employee", () => {
   const a = createMono();
   const b = createMono();
   const c = createMono();
@@ -63,7 +63,7 @@ it("names its projects the way a sentence would", () => {
   ).toBe("app, site and api");
 });
 
-it("forgets its background along with the Mono", () => {
+it("forgets its background along with the Employee", () => {
   const mono = createMono();
   saveProjectChatBackgroundSettings(monoBackgroundKey(mono.id), {
     path: "/bg/mono.png",

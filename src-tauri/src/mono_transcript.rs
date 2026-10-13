@@ -422,7 +422,7 @@ pub fn mono_session_upsert(
         || !session.model_settings.is_object()
         || !session.blocks.is_array()
     {
-        return Err("Invalid Mono session".into());
+        return Err("Invalid Employee session".into());
     }
     let conn = store.lock_conn()?;
     upsert_with_mode(

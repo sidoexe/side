@@ -125,7 +125,7 @@ describe("groupMonoChatTurns", () => {
     durationMs: 25_000,
   });
 
-  it("continues the message above with a reply the Mono sends on its own", () => {
+  it("continues the message above with a reply the Employee sends on its own", () => {
     const blocks: Block[] = [
       { id: "thanks", role: "user", text: "thanks :)", startedAt: at },
       note("welcome", "You're welcome!"),

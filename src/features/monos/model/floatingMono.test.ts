@@ -21,8 +21,8 @@ function host(): FloatingMonoHost {
   };
 }
 
-describe("floating Mono delivery", () => {
-  it("asks the workspace to add a Mono for the chat that requested it", async () => {
+describe("floating Employee delivery", () => {
+  it("asks the workspace to add an Employee for the chat that requested it", async () => {
     const runtime = host();
     runtime.create = vi.fn().mockResolvedValue(undefined);
     await deliverFloatingMonoRequest(
@@ -32,7 +32,7 @@ describe("floating Mono delivery", () => {
     );
     expect(runtime.create).toHaveBeenCalledWith("mono");
   });
-  it("opens the selected document in the main Mono conversation", async () => {
+  it("opens the selected document in the main Employee conversation", async () => {
     const runtime = host();
     runtime.openArtifact = vi.fn();
     await deliverFloatingMonoRequest(
@@ -76,7 +76,7 @@ describe("floating Mono delivery", () => {
     expect(runtime.approval).toHaveBeenCalledWith(session.id, 7, "deny");
   });
 
-  it("does not deliver a request that expired while its Mono was loading", async () => {
+  it("does not deliver a request that expired while its Employee was loading", async () => {
     const runtime = host();
     await deliverFloatingMonoRequest(
       {

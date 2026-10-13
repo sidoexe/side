@@ -7,7 +7,7 @@ $forceUpgrade = $env:MONOCODE_HOST_FORCE_UPGRADE -eq '1'
 $hostPort = if ($env:MONOCODE_HOST_PORT) { [int] $env:MONOCODE_HOST_PORT } else { 3774 }
 @@ACL@@
 
-function Download-MonoCode([string] $Url, [string] $Destination) {
+function Download-sIDE([string] $Url, [string] $Destination) {
   Add-Type -AssemblyName System.Net.Http
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
   $handler = New-Object Net.Http.HttpClientHandler
@@ -55,7 +55,7 @@ try {
     switch ($arch.ToUpperInvariant()) {
       'AMD64' { $target = 'win32-x64' }
       'ARM64' { $target = 'win32-arm64' }
-      default { throw 'MonoCode Host requires x64 or ARM64 Windows.' }
+      default { throw 'sIDE Host requires x64 or ARM64 Windows.' }
     }
     $filename = "monocode-host-$target.zip"
     $runtimeRoot = Join-Path $base 'runtime'
@@ -65,16 +65,16 @@ try {
     $archive = Join-Path $temporary $filename
     $checksum = Join-Path $temporary 'checksum'
     try {
-      Download-MonoCode "$release/$filename" $archive
-      Download-MonoCode "$release/$filename.sha256" $checksum
+      Download-sIDE "$release/$filename" $archive
+      Download-sIDE "$release/$filename.sha256" $checksum
     } catch { throw "The Windows host package for version $version could not be downloaded. Install a release with host packages. $($_.Exception.Message)" }
     $expected = ((Get-Content -LiteralPath $checksum -Raw).Trim() -split '\s+')[0]
     if ($expected -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid host package checksum.' }
-    if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expected) { throw 'MonoCode Host package checksum mismatch.' }
+    if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expected) { throw 'sIDE Host package checksum mismatch.' }
     $unpacked = Join-Path $temporary 'unpacked'
     Expand-Archive -LiteralPath $archive -DestinationPath $unpacked
     $actual = & (Join-Path $unpacked 'node.exe') (Join-Path $unpacked 'host.mjs') --version
-    if ($LASTEXITCODE -ne 0 -or $actual -ne $version) { throw 'MonoCode Host version mismatch.' }
+    if ($LASTEXITCODE -ne 0 -or $actual -ne $version) { throw 'sIDE Host version mismatch.' }
     $runtime = Join-Path $runtimeRoot ("$version-$target-" + [Guid]::NewGuid().ToString('N'))
     Move-Item -LiteralPath $unpacked -Destination $runtime
     $bin = Join-Path $base 'bin'

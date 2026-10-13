@@ -175,7 +175,7 @@ struct MonoChatState(Mutex<Inner>);
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
     app.manage(MonoChatState::default());
     let mut tray = TrayIconBuilder::with_id(TRAY)
-        .tooltip("Chat with a Mono")
+        .tooltip("Chat with an Employee")
         .menu(&menu(app, &[], &[])?)
         .icon_as_template(true)
         .on_menu_event(|app, event| {
@@ -274,13 +274,13 @@ fn menu(
     monos: &[MonoEntry],
     mascots: &[menu_bar::MenuMascot],
 ) -> tauri::Result<Menu<tauri::Wry>> {
-    let header = MenuItemBuilder::with_id("mono-chat-header", "Monos")
+    let header = MenuItemBuilder::with_id("mono-chat-header", "Employees")
         .enabled(false)
         .build(app)?;
     let mut builder = MenuBuilder::new(app).item(&header).separator();
     if monos.is_empty() {
         let empty =
-            MenuItemBuilder::with_id("mono-chat-empty", "Create a Mono in MonoCode to chat here")
+            MenuItemBuilder::with_id("mono-chat-empty", "Create an Employee in sIDE to chat here")
                 .enabled(false)
                 .build(app)?;
         builder = builder.item(&empty);
@@ -290,7 +290,7 @@ fn menu(
             if let Some(icon) = menu_bar::icon_for(&mono.id, mascots) {
                 item = item.icon(icon);
             } else {
-                eprintln!("monocode: missing menu portrait for Mono {}", mono.id);
+                eprintln!("monocode: missing menu portrait for Employee {}", mono.id);
             }
             let item = item.build(app)?;
             builder = builder.item(&item);
@@ -374,7 +374,7 @@ pub fn mono_chat_sync(
         .iter()
         .any(|m| m.id.is_empty() || !m.id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-'))
     {
-        return Err("Invalid Mono identity.".into());
+        return Err("Invalid Employee identity.".into());
     }
     let (roster_changed, menu_changed) = {
         let state = app.state::<MonoChatState>();
@@ -396,7 +396,7 @@ pub fn mono_chat_sync(
             view.monos = monos.clone();
             if !monos.iter().any(|m| m.id == *id) {
                 view.session = None;
-                view.error = Some("That Mono is no longer available.".into());
+                view.error = Some("That Employee is no longer available.".into());
             }
         }
         inner.monos = monos;
@@ -435,7 +435,7 @@ fn owner(app: &AppHandle, mono_id: &str) -> Result<String, String> {
     let state = app.state::<MonoChatState>();
     let inner = state.0.lock().unwrap();
     if !inner.monos.iter().any(|m| m.id == mono_id) {
-        return Err("That Mono is no longer available.".into());
+        return Err("That Employee is no longer available.".into());
     }
     if let Some(label) = inner
         .owners
@@ -477,7 +477,7 @@ pub fn open(app: &AppHandle, mono_id: String) -> Result<(), String> {
     let handle = app.clone();
     app.run_on_main_thread(move || {
         if let Err(error) = select(&handle, &mono_id) {
-            eprintln!("monocode: open floating Mono: {error}");
+            eprintln!("monocode: open floating Employee: {error}");
             handle
                 .state::<MonoChatState>()
                 .0
@@ -559,7 +559,7 @@ pub fn mono_chat_switch(
     } else if panel(&app, &window)? == from {
         Some(window)
     } else {
-        return Err("This action belongs to a different Mono.".into());
+        return Err("This action belongs to a different Employee.".into());
     };
     let handle = app.clone();
     app.run_on_main_thread(move || {
@@ -568,7 +568,7 @@ pub fn mono_chat_switch(
             None => select(&handle, &to),
         };
         if let Err(error) = result {
-            eprintln!("monocode: switch floating Mono: {error}");
+            eprintln!("monocode: switch floating Employee: {error}");
             handle
                 .state::<MonoChatState>()
                 .0
@@ -607,7 +607,7 @@ fn build(app: &AppHandle, mono_id: &str) -> tauri::Result<WebviewWindow> {
         label(mono_id),
         WebviewUrl::App("mono-chat.html".into()),
     )
-    .title("Mono chat")
+    .title("Employee chat")
     .inner_size(WIDTH, height)
     .min_inner_size(370.0, 420.0)
     .resizable(true)
@@ -820,7 +820,7 @@ pub async fn mono_chat_action(
     action: Value,
 ) -> Result<(), String> {
     if panel(&app, &window)? != mono_id {
-        return Err("This action belongs to a different Mono.".into());
+        return Err("This action belongs to a different Employee.".into());
     }
     let kind = action
         .get("kind")
@@ -852,7 +852,7 @@ pub async fn mono_chat_action(
             .owners
             .get(&mono_id)
             .cloned()
-            .ok_or("The Mono is still opening.")?;
+            .ok_or("The Employee is still opening.")?;
         let id = inner.enqueue(owner.clone(), mono_id, action, Some(sender));
         (id, owner)
     };
@@ -877,7 +877,7 @@ pub async fn mono_chat_action(
             if accepted {
                 Ok(())
             } else {
-                Err("The Mono did not respond. Your message is still in the composer.".into())
+                Err("The Employee did not respond. Your message is still in the composer.".into())
             }
         }
     }
@@ -913,7 +913,7 @@ pub fn window_closed(app: &AppHandle, label: &str) {
         .map(|p| p.request.id)
         .collect();
     for id in ids {
-        inner.finish(id, label, Err("The Mono's workspace closed.".into()));
+        inner.finish(id, label, Err("The Employee's workspace closed.".into()));
     }
 }
 

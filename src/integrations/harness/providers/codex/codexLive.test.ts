@@ -323,7 +323,7 @@ describe("codex live turn sequence", () => {
     await turn;
   });
 
-  it("persists Monos privately and resumes the same native thread after parking", async () => {
+  it("persists Employees privately and resumes the same native thread after parking", async () => {
     const first = await startTurn("codex-live", { codexStore: "mono" });
     expect(spawnChild.mock.calls[0][6]).toBe("mono");
     const params = parse().find((m) => m.method === "thread/start")?.params;
@@ -357,7 +357,7 @@ describe("codex live turn sequence", () => {
     await next.turn;
   });
 
-  it("resumes a saved Mono after restart without rebuilding its context", async () => {
+  it("resumes a saved Employee after restart without rebuilding its context", async () => {
     const { turn } = await startTurn("codex-live", {
       codexStore: "mono",
       resume: true,
@@ -379,7 +379,7 @@ describe("codex live turn sequence", () => {
     await turn;
   });
 
-  it("does not discard a retained private Mono when resume fails", async () => {
+  it("does not discard a retained private Employee when resume fails", async () => {
     bindCodexSession("codex-live", "thr_1", "/repo");
     const turn = sendCodexTurn({
       sessionId: "codex-live",
@@ -391,7 +391,7 @@ describe("codex live turn sequence", () => {
       onEvent: () => undefined,
     });
     const rejected = expect(turn).rejects.toThrow(
-      "saved Mono Codex context could not be resumed",
+      "saved Employee Codex context could not be resumed",
     );
     await waitFor(
       () => parse().some((m) => m.method === "initialize"),

@@ -50,7 +50,7 @@ it("loads an existing resident conversation without creating a session", async (
   expect(host.add).not.toHaveBeenCalled();
 });
 
-it("starts a new Mono's conversation with Auto permissions in the home folder, once", async () => {
+it("starts a new Employee's conversation with Auto permissions in the home folder, once", async () => {
   const monoId = createMono(["/project"]).id;
   const host = {
     home: vi.fn().mockResolvedValue("/home"),
@@ -69,7 +69,7 @@ it("starts a new Mono's conversation with Auto permissions in the home folder, o
   expect(host.add).toHaveBeenCalledOnce();
 });
 
-it("opens nothing for a Mono that no longer exists", async () => {
+it("opens nothing for an Employee that no longer exists", async () => {
   const host = {
     home: vi.fn().mockResolvedValue("/home"),
     load: vi.fn(),
@@ -80,7 +80,7 @@ it("opens nothing for a Mono that no longer exists", async () => {
   expect(host.create).not.toHaveBeenCalled();
 });
 
-it("shares concurrent first opens of the same Mono", async () => {
+it("shares concurrent first opens of the same Employee", async () => {
   const monoId = createMono().id;
   let resolveHome!: (path: string) => void;
   const home = new Promise<string>((resolve) => {
@@ -119,7 +119,7 @@ it("allows retrying an open after the home lookup fails", async () => {
   expect(host.add).toHaveBeenCalledOnce();
 });
 
-it("deletes the Mono's chat before replacing it with an empty provider session", async () => {
+it("deletes the Employee's chat before replacing it with an empty provider session", async () => {
   const current = {
     ...chat("resident"),
     runtimeMode: "auto-accept-edits" as const,

@@ -16,7 +16,7 @@ function message(id: string): QueuedMessage {
   return { id, text: id, attachments: [] };
 }
 
-describe("optimistic Mono messages", () => {
+describe("optimistic Employee messages", () => {
   it("shows older saved outboxes as stable bubbles and recovers pending image previews", () => {
     const session = {
       ...newSession("codex", "/tmp"),

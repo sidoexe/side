@@ -192,7 +192,7 @@ it("requires a successful submission and trustworthy session details to recover 
   ).toEqual([]);
 });
 
-it("keeps a reused session in both Monos without moving or duplicating its original card", () => {
+it("keeps a reused session in both Employees without moving or duplicating its original card", () => {
   const first = {
     ...newSession("codex", "/repo"),
     blocks: [{ id: "first", role: "user" as const, text: "Start" }],

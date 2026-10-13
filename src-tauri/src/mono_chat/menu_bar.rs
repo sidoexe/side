@@ -48,7 +48,7 @@ pub(super) const ACTIONS: [Action; 2] = [
     },
     Action {
         id: "mono-chat-quit",
-        title: "Quit MonoCode",
+        title: "Quit sIDE",
         symbol: "power",
         destructive: true,
     },
@@ -107,7 +107,7 @@ pub(super) fn decorate(tray: &tauri::tray::TrayIcon) -> tauri::Result<()> {
                 }
             }
         }))
-        .map_err(|exception| format!("Could not style the Mono menu: {exception:?}"))
+        .map_err(|exception| format!("Could not style the Employee menu: {exception:?}"))
     })?
     .map_err(|error| std::io::Error::other(error).into())
 }
@@ -256,7 +256,7 @@ fn style_menu(menu: &NSMenu, mtm: MainThreadMarker) {
         NSView::alloc(mtm),
         NSRect::new(NSPoint::ZERO, NSSize::new(WIDTH, 30.0)),
     );
-    let title = NSTextField::labelWithString(&NSString::from_str("Monos"), mtm);
+    let title = NSTextField::labelWithString(&NSString::from_str("Employees"), mtm);
     title.setFont(Some(&NSFont::systemFontOfSize_weight(13.0, unsafe {
         NSFontWeightSemibold
     })));

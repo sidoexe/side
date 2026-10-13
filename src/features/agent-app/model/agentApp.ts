@@ -259,7 +259,7 @@ function completionRecipient(
     return undefined;
   if (!isMono)
     throw new Error(
-      "Completion notifications are only available in a Mono's chat",
+      "Completion notifications are only available in an Employee's chat",
     );
   if (input.draft === true)
     throw new Error("An unsent draft cannot send a completion notification");
@@ -305,7 +305,7 @@ function requireProject(
   const mono = host.monoOf?.(source.id);
   const named = optionalString(input.project, "project", 4096);
   if (!mono) {
-    if (named) throw new Error("project is only for a Mono");
+    if (named) throw new Error("project is only for an Employee");
     if (!looksLikeProject(source.cwd))
       throw new Error("Choose a project folder in this session first");
     return source.cwd;
@@ -407,7 +407,7 @@ function startLaunch(
     throw new Error("Unknown harness; run models.list for available providers");
   const chosenHarness = harness as HarnessId;
   if (!isHarnessAvailable(chosenHarness))
-    throw new Error(`${chosenHarness} is not available in MonoCode`);
+    throw new Error(`${chosenHarness} is not available in sIDE`);
   const requestedModel = optionalString(input.model, "model");
   const model = requestedModel
     ? modelsFor(chosenHarness).find((entry) => entry.id === requestedModel)
@@ -508,7 +508,7 @@ async function handleSoul(
     ? host.monoOf?.(source.id)?.id
     : undefined;
   if (!monoId)
-    throw new Error("Only a Mono's own conversation can manage its soul");
+    throw new Error("Only an Employee's own conversation can manage its soul");
   if (action === "soul.read") {
     const files = await host.agentFiles(monoId);
     return { file: "SOUL.md", text: files.soul, hash: files.soulHash };
@@ -595,7 +595,7 @@ async function handleMemory(
   host: AgentAppHost,
 ): Promise<unknown> {
   const monoId = host.monoOf?.(source.id)?.id;
-  if (!monoId) throw new Error("Memory belongs to the Mono's conversation");
+  if (!monoId) throw new Error("Memory belongs to the Employee's conversation");
   const path = memoryPath(input.topic);
   const date = memoryDate(host.now?.() ?? new Date());
   const until = optionalString(input.until, "until", 10);
@@ -723,7 +723,7 @@ async function handleHabits(
     ? host.monoOf?.(source.id)?.id
     : undefined;
   if (!habits || !monoId)
-    throw new Error("Only a Mono's own conversation can manage its habits");
+    throw new Error("Only an Employee's own conversation can manage its habits");
   const now = host.now?.() ?? new Date();
   const find = (list: Habit[]) => {
     const id = requiredString(input.id, "id", 128);
@@ -740,7 +740,7 @@ async function handleHabits(
       const schedule = habitSchedule(input.schedule);
       const habit = await habits.update(monoId, (list) => {
         if (list.length >= HABITS_MAX)
-          throw new Error(`A Mono can have at most ${HABITS_MAX} habits`);
+          throw new Error(`An Employee can have at most ${HABITS_MAX} habits`);
         const created = newHabit(
           { name, instructions, schedule },
           now.getTime(),
@@ -836,7 +836,7 @@ async function handleArtifacts(
   host: AgentAppHost,
 ): Promise<unknown> {
   if (!(host.isMono(source.id) || host.isHabitRun?.(source.id)))
-    throw new Error("Only a Mono can create or read artifacts");
+    throw new Error("Only an Employee can create or read artifacts");
   if (!host.artifact) throw new Error("Artifacts are unavailable");
   if (action === "artifacts.list") {
     if (!host.artifacts) throw new Error("Artifacts are unavailable");
@@ -958,7 +958,7 @@ export async function handleAgentApp(
       !host.postCard ||
       !(host.isMono(source.id) || host.isHabitRun?.(source.id))
     )
-      throw new Error("Only a Mono can put cards in its chat");
+      throw new Error("Only an Employee can put cards in its chat");
     const card = parseCard(input);
     host.postCard(source.id, card);
     return {
