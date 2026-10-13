@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "sIDE",
   "version": "0.13.0",
-  "identifier": "com.monocode.desktop",
+  "identifier": "dev.sidoexe.side",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -71,8 +71,8 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "",
-      "endpoints": []
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUwNEIxMTUzRTVGNjE1NjkKUldScEZmYmxVeEZMNEgzL2h0QjNZRnBwdWZxek4vMEZISkFPNGN0UndYV2tqLzgzVlZUcC82TkYK",
+      "endpoints": ["https://github.com/sidoexe/side/releases/latest/download/latest.json"]
     }
   }
 }

@@ -4,8 +4,8 @@ version.workspace = true
 edition.workspace = true
 description = "sIDE — one UI for every agent harness"
 authors = ["Nick"]
-repository = "https://github.com/hardbeat920/monocode"
-homepage = "https://usemono.dev"
+repository = "https://github.com/sidoexe/side"
+homepage = "https://github.com/sidoexe/side"
 license.workspace = true
 
 [lib]

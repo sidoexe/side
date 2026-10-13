@@ -70,6 +70,16 @@ Prerelease tags such as `v0.9.1-beta.1` publish to `beta/latest.json`, and beta 
 
 To trial AppImage updates, install a beta AppImage in a writable directory, publish a newer beta, and verify the update downloads, installs, and relaunches successfully before publishing a stable version.
 
-The [release workflow](../.github/workflows/release.yml) packages the platform builds and publishes the updater feed. [scripts/release-channel.cjs](../scripts/release-channel.cjs) selects the stable or beta feed.
+The [release workflow](../.github/workflows/release.yml) builds the Apple Silicon app and the host packages, and publishes them as a GitHub release with the updater feed (`latest.json`) that installed copies poll. Running it from the Actions tab builds without publishing.
+
+### Publishing a release
+
+1. `npm run set-version -- 0.14.0` updates `package.json`, the lockfile, `Cargo.toml` and `tauri.conf.json` together.
+2. Commit, then tag and push: `git tag v0.14.0 && git push origin main v0.14.0`.
+3. The workflow publishes `sIDE_<version>_aarch64.dmg`, `sIDE.app.tar.gz` and its signature, `latest.json`, and the `monocode-host-*` archives. A tag with a suffix (`v0.14.0-beta.1`) is published as a prerelease, which installed copies do not update to.
+
+Installed copies check `https://github.com/sidoexe/side/releases/latest/download/latest.json` and only install an archive signed with the updater key. Its public half is in `tauri.conf.json`; the private half is the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets, kept in `~/.side-release` on the release maintainer's Mac. Losing it means installed copies can no longer update themselves.
+
+The app is signed ad hoc, without an Apple Developer ID, so macOS asks to confirm its first launch: open it once with right-click → **Open**, or run `xattr -dr com.apple.quarantine /Applications/sIDE.app`. Later updates install without asking.
 
 Read [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines and checks. The experimental remote host has its own [build and packaging instructions](remote-access.md#release-packaging).

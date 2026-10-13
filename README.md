@@ -18,15 +18,11 @@ Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCod
 
 Install and sign in to at least one supported agent first. See [provider setup](docs/providers.md) for instructions.
 
-sIDE is built from source for now, there are no published downloads yet:
+Download `sIDE_<version>_aarch64.dmg` from the [latest release](https://github.com/sidoexe/side/releases/latest) (Apple Silicon Macs), open it and drag sIDE to Applications. The app is not signed with an Apple Developer ID, so confirm its first launch with right-click → **Open**. sIDE then updates itself from the same releases.
 
-```bash
-git clone https://github.com/sidoexe/side.git && cd side
-npm ci
-npm run tauri build
-```
+On its first launch, sIDE starts from a copy of MonoCode's sessions, settings and employees when MonoCode is installed; MonoCode keeps its own and both can stay installed.
 
-The app bundle lands in `src-tauri/target/release/bundle/`. See [Linux setup](docs/install.md) for Linux dependencies.
+To build it yourself instead, see [build setup](docs/building.md).
 
 ## Get started
 

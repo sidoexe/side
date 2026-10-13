@@ -10,6 +10,7 @@ mod codex_mono_store;
 mod control;
 pub mod control_cli;
 mod cursor_store;
+mod data_migration;
 mod devin_config;
 mod devin_usage;
 mod external_editor;
@@ -231,6 +232,16 @@ fn should_request_quit(code: Option<i32>) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before any window or database opens: they would create empty folders.
+    #[cfg(target_os = "macos")]
+    if let Some(home) = dirs_home() {
+        let library = std::path::Path::new(&home).join("Library");
+        if let Err(error) =
+            data_migration::adopt_monocode_data(&library, data_migration::IDENTIFIER)
+        {
+            eprintln!("Could not copy MonoCode's data: {error}");
+        }
+    }
     #[cfg(target_os = "macos")]
     macos::register_spellcheck_default();
     #[cfg(windows)]
