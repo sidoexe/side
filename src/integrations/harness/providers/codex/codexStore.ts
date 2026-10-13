@@ -144,7 +144,7 @@ async function prepare(
         throw error;
       }
       if (!root.path)
-        throw new Error("Codex did not return the saved Employee context");
+        throw new Error("Codex did not return the saved Colleague context");
       const descendants = new Map<string, Thread>();
       for (const archived of [false, true]) {
         let cursor: string | undefined;
@@ -186,7 +186,7 @@ async function prepare(
           includeTurns: false,
         });
         if (!retained.thread.path)
-          throw new Error("Codex did not retain an Employee thread file");
+          throw new Error("Codex did not retain a Colleague thread file");
         paths.push(retained.thread.path);
       }
       await copyMonoCodexThreads(

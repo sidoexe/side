@@ -717,7 +717,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       } catch (error) {
         if (store?.hasThread)
           throw new Error(
-            "The saved Employee Codex context could not be resumed. Retry to keep its saved context.",
+            "The saved Colleague Codex context could not be resumed. Retry to keep its saved context.",
           );
         if (!isRecoverableThreadResumeError(error)) throw error;
         threadId = undefined;

@@ -122,7 +122,7 @@ async function render() {
   );
 }
 
-it("shows this window's Employee with its status beneath the name", async () => {
+it("shows this window's Colleague with its status beneath the name", async () => {
   await render();
   expect(container.textContent).toContain("Captain's conversation");
   expect(container.querySelector("select")).toBeNull();
@@ -137,7 +137,7 @@ it("shows this window's Employee with its status beneath the name", async () => 
   ).not.toBeNull();
 });
 
-it("lists every Employee beside the chat and switches or adds from there", async () => {
+it("lists every Colleague beside the chat and switches or adds from there", async () => {
   await render();
   const rail = container.querySelector("[data-floating-mono-rail]")!;
   const current = rail.querySelector('[aria-current="true"]');
@@ -150,7 +150,7 @@ it("lists every Employee beside the chat and switches or adds from there", async
     to: "second",
   });
   await act(async () =>
-    rail.querySelector<HTMLButtonElement>('[aria-label="New employee"]')!.click(),
+    rail.querySelector<HTMLButtonElement>('[aria-label="New colleague"]')!.click(),
   );
   expect(native.invoke).toHaveBeenCalledWith("mono_chat_action", {
     monoId: "first",
@@ -158,7 +158,7 @@ it("lists every Employee beside the chat and switches or adds from there", async
   });
 });
 
-it("switches Employees inside the same frame, loading only the conversation", async () => {
+it("switches Colleagues inside the same frame, loading only the conversation", async () => {
   await render();
   const frame = container.querySelector("[data-floating-mono]");
   const rail = container.querySelector("[data-floating-mono-rail]");
@@ -293,7 +293,7 @@ it("ignores a stale initial snapshot after a newer update arrives", async () => 
   expect(container.textContent).toContain("Scout's conversation");
 });
 
-it("reads an Employee's document in a sheet over the chat and slides it away", async () => {
+it("reads a Colleague's document in a sheet over the chat and slides it away", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   native.invoke.mockImplementation(async (command) => {
     if (command === "mono_chat_state") return snapshot(0);

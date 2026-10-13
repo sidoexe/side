@@ -37,20 +37,20 @@ export function MonoIntroCard({ look, onCreate, onHide }: Props) {
 
   return (
     <section
-      aria-label="Meet Employees"
+      aria-label="Meet Colleagues"
       data-mono-intro
       className="mx-2 overflow-hidden rounded-lg bg-content/[0.03]"
     >
       <div className="flex items-center gap-2 pl-2.5 pr-2 pt-2">
         <h3 className="min-w-0 flex-1 truncate text-[13px] font-medium text-content">
-          Meet Employees
+          Meet Colleagues
         </h3>
         <button
           type="button"
           role="switch"
           aria-checked
-          aria-label="Show employees"
-          title="Hide employees from the rail. Turn them back on in Settings › Employees."
+          aria-label="Show colleagues"
+          title="Hide colleagues from the rail. Turn them back on in Settings › Colleagues."
           onClick={() => {
             onHide();
             playCue("switch");
@@ -117,7 +117,7 @@ export function MonoIntroCard({ look, onCreate, onHide }: Props) {
           onClick={onCreate}
           className="h-7 w-full cursor-default rounded-md bg-content text-[12px] font-medium text-background-base hover:bg-content/85 active:scale-[0.98]"
         >
-          Create employee
+          Create colleague
         </button>
       </div>
     </section>

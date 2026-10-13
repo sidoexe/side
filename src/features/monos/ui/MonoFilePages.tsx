@@ -409,7 +409,7 @@ export function useMonoFiles(
           if (live) setFiles(next);
         })
         .catch((error) =>
-          console.warn("Could not load the Employee's files", error),
+          console.warn("Could not load the Colleague's files", error),
         );
     };
     refresh();

@@ -168,11 +168,11 @@ it("leaves the resident agent and its description out of the session list", () =
   expect(container.textContent).not.toContain("Resident agent description");
 });
 
-it("omits hidden Employee launches from history, open sessions and folders", () => {
+it("omits hidden Colleague launches from history, open sessions and folders", () => {
   const hidden = {
     ...props.sessions[0],
     id: "hidden-launch",
-    title: "Employee background work",
+    title: "Colleague background work",
     sidebarHidden: true,
   };
   props.sessions = [...props.sessions, hidden];
@@ -265,13 +265,13 @@ describe("worktree explorer visibility", () => {
   });
 });
 
-describe.each([false, true])("Employee rail selection (compact: %s)", (compact) => {
+describe.each([false, true])("Colleague rail selection (compact: %s)", (compact) => {
   it.each([
     ["Inbox", "inboxActive", "onOpenInbox"],
     ["Notes", "notesActive", "onOpenNotes"],
     ["Automations", "automationsActive", "onOpenAutomations"],
     ["Search", "searchActive", "onSearch"],
-  ] as const)("selects only %s while it covers an Employee", async (label, active, open) => {
+  ] as const)("selects only %s while it covers a Colleague", async (label, active, open) => {
     const mono = createMono();
     props = {
       ...props,
@@ -295,7 +295,7 @@ describe.each([false, true])("Employee rail selection (compact: %s)", (compact) 
     await act(async () => render());
     const monoSelected = () => compact
       ? container.querySelector('[aria-label^="Switch project"]')!
-          .getAttribute("aria-label")!.includes("current employee")
+          .getAttribute("aria-label")!.includes("current colleague")
       : !!container.querySelector('[data-mono-rail] [aria-current="true"]');
     expect(monoSelected()).toBe(true);
 

@@ -28,9 +28,9 @@ describe("resolveAppShortcut", () => {
     });
   });
 
-  it("toggles the employee with Mod+I", () => {
+  it("toggles the colleague with Mod+I", () => {
     expect(resolveAppShortcut(key({ key: "i", metaKey: true }))).toBe(
-      "App: Toggle Employee",
+      "App: Toggle Colleague",
     );
     expect(
       resolveAppShortcut(key({ key: "I", metaKey: true, shiftKey: true })),

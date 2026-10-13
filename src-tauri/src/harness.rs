@@ -956,7 +956,7 @@ pub fn harness_spawn(
             Some(Arc::new(store))
         }
         Some(_) => {
-            return Err("Private Employee storage is only supported for Codex app-server".into())
+            return Err("Private Colleague storage is only supported for Codex app-server".into())
         }
     };
 

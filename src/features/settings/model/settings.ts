@@ -119,10 +119,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   {
     id: "monos",
     group: "agents",
-    label: "Employees",
+    label: "Colleagues",
     description:
       "The resident agent beside your tabs, and which projects have one.",
-    keywords: "employee resident agent mascot claim project title bar",
+    keywords: "colleague resident agent mascot claim project title bar",
   },
   {
     id: "inbox",
@@ -187,21 +187,21 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   {
     id: "monos-enabled",
     section: "monos",
-    label: "Show employees",
-    keywords: "employee agent rail hide",
+    label: "Show colleagues",
+    keywords: "colleague agent rail hide",
   },
   {
     id: "rail-monos-pinned",
     section: "monos",
-    label: "Pin employees to the icon rail",
-    keywords: "employee rail compact collapsed icons top divider project picker",
+    label: "Pin colleagues to the icon rail",
+    keywords: "colleague rail compact collapsed icons top divider project picker",
   },
   {
     id: "mono-list",
     section: "monos",
-    label: "Your employees",
+    label: "Your colleagues",
     keywords:
-      "employee reset soul name projects sessions sidebar visibility hidden show",
+      "colleague reset soul name projects sessions sidebar visibility hidden show",
   },
   {
     id: "project-worktrees",
@@ -1092,7 +1092,7 @@ export const KEYBINDINGS: KeybindingRow[] = [
     when: "Always",
   },
   { command: "App: Switch Model", keys: `${MOD}.`, when: "Always" },
-  { command: "App: Toggle Employee", keys: `${MOD}I`, when: "Project with an employee" },
+  { command: "App: Toggle Colleague", keys: `${MOD}I`, when: "Project with a colleague" },
   {
     command: "Composer: Toggle Workspace",
     keys: `${MOD}${SHIFT}G`,

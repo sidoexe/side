@@ -138,10 +138,10 @@ describe("remote host API", () => {
     expect(s.store.summaries(s.project.id)).toEqual([]);
   });
 
-  it("shares employees' files and roster between desktops", async () => {
+  it("shares colleagues' files and roster between desktops", async () => {
     const s = await setup();
     expect((await s.call("employees.load", { mono: "e1" })).value.error).toBe(
-      "Employees are unavailable on this host",
+      "Colleagues are unavailable on this host",
     );
     s.engine.employees = new HostEmployees(join(s.directory, "employees"));
     const described = await s.call("environment.describe");
@@ -166,7 +166,7 @@ describe("remote host API", () => {
       revision: 1, roster: [{ id: "e1" }],
     });
     const chat = { id: "chat-1", cwd: "/Users/me", harness: "claude", model: "claude:opus",
-      modelSettings: {}, runtimeMode: "auto", title: "Employee" };
+      modelSettings: {}, runtimeMode: "auto", title: "Colleague" };
     await s.call("employees.sessionUpsert", {
       session: { ...chat, blocks: [{ id: "u", role: "user", text: "Hello there" }] },
       blocksChanged: true,

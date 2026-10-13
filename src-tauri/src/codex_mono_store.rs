@@ -180,7 +180,7 @@ fn prepare_files(source: &Path, home: &Path) -> Result<(), String> {
     std::fs::create_dir_all(source)
         .map_err(|e| format!("Could not open the Codex account directory: {e}"))?;
     std::fs::create_dir_all(home)
-        .map_err(|e| format!("Could not create Employee Codex storage: {e}"))?;
+        .map_err(|e| format!("Could not create Colleague Codex storage: {e}"))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -190,11 +190,13 @@ fn prepare_files(source: &Path, home: &Path) -> Result<(), String> {
     let source = source.canonicalize().map_err(|e| e.to_string())?;
     let canonical_home = home.canonicalize().map_err(|e| e.to_string())?;
     if canonical_home.starts_with(&source) || source.starts_with(&canonical_home) {
-        return Err("Employee Codex storage must be separate from the normal Codex home".into());
+        return Err("Colleague Codex storage must be separate from the normal Codex home".into());
     }
     for name in STATE_NAMES {
         if std::fs::symlink_metadata(home.join(name)).is_ok_and(|m| m.file_type().is_symlink()) {
-            return Err("Employee Codex state must remain in its private storage directory".into());
+            return Err(
+                "Colleague Codex state must remain in its private storage directory".into(),
+            );
         }
     }
     for entry in std::fs::read_dir(&source).map_err(|e| e.to_string())? {
@@ -224,13 +226,13 @@ fn link_entry(source: &Path, target: &Path) -> Result<(), String> {
             return Ok(());
         }
         return Err(format!(
-            "Unexpected link in Employee Codex storage: {}",
+            "Unexpected link in Colleague Codex storage: {}",
             target.display()
         ));
     }
     if target.exists() {
         return Err(format!(
-            "Unexpected entry in Employee Codex storage: {}",
+            "Unexpected entry in Colleague Codex storage: {}",
             target.display()
         ));
     }
@@ -265,7 +267,7 @@ fn read_keyring(service: &str, key: &str) -> Result<Option<String>, String> {
 fn write_keyring(service: &str, key: &str, value: &str) -> Result<(), String> {
     keyring::Entry::new(service, key)
         .and_then(|e| e.set_password(value))
-        .map_err(|_| "Could not share Codex credentials with Employee storage".into())
+        .map_err(|_| "Could not share Codex credentials with Colleague storage".into())
 }
 
 fn prepare_keyring(source: &Path, home: &Path) -> Result<Vec<KeyringMirror>, String> {
@@ -317,7 +319,7 @@ fn prepare_keyring(source: &Path, home: &Path) -> Result<Vec<KeyringMirror>, Str
         } else if let Ok(entry) = keyring::Entry::new(service, &private_key) {
             match entry.delete_credential() {
                 Ok(()) | Err(keyring::Error::NoEntry) => {}
-                Err(_) => return Err("Could not clear the previous Employee Codex login".into()),
+                Err(_) => return Err("Could not clear the previous Colleague Codex login".into()),
             }
         }
         mirrors.push(KeyringMirror {
@@ -394,7 +396,7 @@ fn copy_rollouts_with_edges(
 ) -> Result<(), String> {
     validate_thread_id(thread_id)?;
     if paths.is_empty() {
-        return Err("Codex did not return a saved Employee thread".into());
+        return Err("Codex did not return a saved Colleague thread".into());
     }
     let source = source.canonicalize().map_err(|e| e.to_string())?;
     let allowed_roots = [source.join("sessions"), source.join("archived_sessions")]
@@ -496,7 +498,7 @@ fn copy_rollouts_with_edges(
     if !root_name.ends_with(&format!("-{thread_id}.jsonl"))
         && !root_name.ends_with(&format!("-{thread_id}.jsonl.zst"))
     {
-        return Err("The saved Employee root does not match its thread id".into());
+        return Err("The saved Colleague root does not match its thread id".into());
     }
     let pending_dir = home.join(".monocode-migrations");
     std::fs::create_dir_all(&pending_dir).map_err(|e| e.to_string())?;
@@ -611,7 +613,7 @@ fn restore_agent_edges(home: &Path, thread_id: &str) -> Result<(), String> {
         Err(e) => return Err(e.to_string()),
     };
     let edges: Vec<AgentEdge> = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    let path = state_db(home)?.ok_or("Codex has not initialized the private Employee index")?;
+    let path = state_db(home)?.ok_or("Codex has not initialized the private Colleague index")?;
     let mut db =
         rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
             .map_err(|e| e.to_string())?;

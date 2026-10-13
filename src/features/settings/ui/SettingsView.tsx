@@ -1088,7 +1088,7 @@ function ChatPage() {
         <Row
           id="composer-autocorrect"
           label="Autocorrect"
-          description="Spell check and autocorrect prompts in session and employee composers. Turn this off to keep the text exactly as typed."
+          description="Spell check and autocorrect prompts in session and colleague composers. Turn this off to keep the text exactly as typed."
         >
           <Toggle
             label="Autocorrect"
@@ -4034,21 +4034,21 @@ function MonosPage() {
 
   return (
     <>
-      <Group title="Employees">
+      <Group title="Colleagues">
         <Row
           id="monos-enabled"
-          label="Show employees"
+          label="Show colleagues"
           description="Agents of your own on the project rail. Each works on the projects you give it, remembers what matters and picks up habits it runs on its own. Turn this off to hide them."
         >
-          <Toggle label="Show employees" on={enabled} onChange={saveMonosEnabled} />
+          <Toggle label="Show colleagues" on={enabled} onChange={saveMonosEnabled} />
         </Row>
         <Row
           id="rail-monos-pinned"
-          label="Pin employees to the icon rail"
-          description="When the project rail is collapsed to icons, show each Employee at the top of the rail, above a divider, instead of inside the project picker."
+          label="Pin colleagues to the icon rail"
+          description="When the project rail is collapsed to icons, show each Colleague at the top of the rail, above a divider, instead of inside the project picker."
         >
           <Toggle
-            label="Pin employees to the icon rail"
+            label="Pin colleagues to the icon rail"
             on={railPinned}
             onChange={saveRailMonosPinned}
             disabled={!enabled}
@@ -4058,7 +4058,7 @@ function MonosPage() {
           <Row
             id="mono-menu-bar-icon"
             label="Menu bar icon"
-            description="Chat with an Employee or open the quick composer from the macOS menu bar. Turn this off to hide the icon."
+            description="Chat with a Colleague or open the quick composer from the macOS menu bar. Turn this off to hide the icon."
           >
             <Toggle
               label="Menu bar icon"
@@ -4070,14 +4070,14 @@ function MonosPage() {
       </Group>
       <Group
         id="mono-list"
-        title="Your employees"
-        description="Choose whether new sessions started by each Employee appear in the sidebar. Hidden sessions remain saved and can be opened from the Employee's chat. Add an Employee with the plus on the rail and choose its projects from its details."
+        title="Your colleagues"
+        description="Choose whether new sessions started by each Colleague appear in the sidebar. Hidden sessions remain saved and can be opened from the Colleague's chat. Add a Colleague with the plus on the rail and choose its projects from its details."
       >
         {monos.length ? (
           monos.map((mono) => <MonoRow key={mono.id} mono={mono} />)
         ) : (
           <p className="px-4 py-3.5 text-[12px] text-content/45">
-            No employees yet.
+            No colleagues yet.
           </p>
         )}
       </Group>
@@ -4107,7 +4107,7 @@ function MonoRow({ mono }: { mono: Mono }) {
       }
     >
       <span className="text-[12px] leading-5 text-content/50">
-        Show Employee spawned session on the sidebar
+        Show Colleague spawned session on the sidebar
       </span>
       <Toggle
         label={`Show sessions started by ${look.name} in sidebar`}
@@ -4120,11 +4120,11 @@ function MonoRow({ mono }: { mono: Mono }) {
         }
       />
       <ConfirmReset
-        label="Reset Employee"
+        label="Reset Colleague"
         title={`Reset ${look.name} to its defaults?`}
         body={`Its soul goes back to the default and its name to ${defaultMonoName(look.mascot)}. Changes to its soul can't be recovered.`}
         kept="Its conversation, projects, memory and habits will be kept."
-        failure="Could not reset the Employee."
+        failure="Could not reset the Colleague."
         onConfirm={() => resetMonoDefaults(mono.id)}
       >
         {(open, ref) => (

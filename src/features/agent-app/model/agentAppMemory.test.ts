@@ -95,12 +95,12 @@ it("retries over an edit the user saved in between", async () => {
   expect(files.get("MEMORY.md")).toBe("User note\n- 2026-10-04 · uses pnpm\n");
 });
 
-it("redacts secrets and refuses sessions that are not the Employee", async () => {
+it("redacts secrets and refuses sessions that are not the Colleague", async () => {
   const { files, run } = fixture();
   await run("memory.add", { fact: "deploy token=abc123secretvalue" });
   expect(files.get("MEMORY.md")).not.toContain("abc123secretvalue");
   await expect(fixture(false).run("memory.read")).rejects.toThrow(
-    "Employee",
+    "Colleague",
   );
 });
 
@@ -144,7 +144,7 @@ function habitsFixture(mono = true) {
   return { run, habits: () => stored };
 }
 
-it("lets the Employee add, pause, try and remove its habits", async () => {
+it("lets the Colleague add, pause, try and remove its habits", async () => {
   const { run, habits } = habitsFixture();
   const added = (await run("habits.add", {
     name: "Morning CI check",
@@ -171,9 +171,9 @@ it("lets the Employee add, pause, try and remove its habits", async () => {
   await expect(run("habits.remove", { id })).rejects.toThrow("No habit");
 });
 
-it("keeps habits to the Employee's own conversation", async () => {
+it("keeps habits to the Colleague's own conversation", async () => {
   await expect(habitsFixture(false).run("habits.list")).rejects.toThrow(
-    "Only an Employee",
+    "Only a Colleague",
   );
 });
 
@@ -209,7 +209,7 @@ function projectFixture(projects: string[], cwd = "/Users/me") {
   return { run, sessions };
 }
 
-it("lets an Employee choose which of its projects an action works in", async () => {
+it("lets a Colleague choose which of its projects an action works in", async () => {
   const { run, sessions } = projectFixture(["/code/app", "/code/site"]);
   await expect(run("sessions.list")).rejects.toThrow(
     'Pass "project" to choose one. Yours: app (/code/app), site (/code/site)',
@@ -229,7 +229,7 @@ it("lets an Employee choose which of its projects an action works in", async () 
   ]);
 });
 
-it("uses an Employee's only project, or the one its chat started in", async () => {
+it("uses a Colleague's only project, or the one its chat started in", async () => {
   expect(await projectFixture(["/code/app"]).run("sessions.list")).toMatchObject({
     cwd: "/code/app",
   });

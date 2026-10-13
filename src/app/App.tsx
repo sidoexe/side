@@ -1802,7 +1802,7 @@ function Workspace({
           }
         } catch (error) {
           // Keep the original context intact; the next native operation retries.
-          console.warn("Could not migrate saved Employee Codex context", error);
+          console.warn("Could not migrate saved Colleague Codex context", error);
         }
       }
     })();
@@ -4785,7 +4785,7 @@ function Workspace({
         (session) => session.id === sessionId,
       );
       if (!current || !isMonoSession(sessionId))
-        throw new Error("This Employee's conversation is no longer available.");
+        throw new Error("This Colleague's conversation is no longer available.");
       if (removingSessionIds.current.has(sessionId))
         throw new Error("This conversation is already being reset.");
 
@@ -12262,7 +12262,7 @@ function Workspace({
           run("toggle_sidebar", a.onToggleSidebar);
         else if (shortcut === "App: Toggle Session Sidebar")
           run("toggle_session_sidebar", a.onToggleSessionSidebar);
-        else if (shortcut === "App: Toggle Employee")
+        else if (shortcut === "App: Toggle Colleague")
           run("toggle_mono", a.onToggleMono);
         else if (shortcut === "App: Go to File")
           run("go_to_file", a.onGoToFile);

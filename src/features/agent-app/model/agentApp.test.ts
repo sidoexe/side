@@ -125,7 +125,7 @@ function fixture() {
 
 describe("agent app commands", () => {
   it.each([undefined, true, false])(
-    "uses the Employee's sidebar preference for both submitted and draft sessions: %s",
+    "uses the Colleague's sidebar preference for both submitted and draft sessions: %s",
     async (showStartedSessionsInSidebar) => {
       const { source, host } = fixture();
       host.isMono = () => true;
@@ -148,7 +148,7 @@ describe("agent app commands", () => {
     },
   );
 
-  it("uses the owning Employee's preference when a habit starts a session", async () => {
+  it("uses the owning Colleague's preference when a habit starts a session", async () => {
     const { source, host } = fixture();
     host.isHabitRun = () => true;
     host.monoOf = () => ({
@@ -166,7 +166,7 @@ describe("agent app commands", () => {
     );
   });
 
-  it("files an Employee's sessions into a folder named after it", async () => {
+  it("files a Colleague's sessions into a folder named after it", async () => {
     const { source, host } = fixture();
     host.isMono = () => true;
     host.monoOf = () => ({
@@ -189,7 +189,7 @@ describe("agent app commands", () => {
     ]);
   });
 
-  it("leaves a hidden Employee session out of its folder", async () => {
+  it("leaves a hidden Colleague session out of its folder", async () => {
     const { source, host } = fixture();
     host.isMono = () => true;
     host.monoOf = () => ({
@@ -238,7 +238,7 @@ describe("agent app commands", () => {
       }
     });
 
-    it("lets an Employee manage sessions in a selected assigned project", async () => {
+    it("lets a Colleague manage sessions in a selected assigned project", async () => {
       const { source, host } = fixture();
       source.cwd = "/home/user";
       host.isMono = (id) => id === source.id;
@@ -318,7 +318,7 @@ describe("agent app commands", () => {
       expect(host.remove).not.toHaveBeenCalled();
     });
 
-    it("does not manage Employee chats, habit runs or orchestration workers", async () => {
+    it("does not manage Colleague chats, habit runs or orchestration workers", async () => {
       const { source, host } = fixture();
       host.isMono = () => true;
       await expect(
@@ -373,7 +373,7 @@ describe("agent app commands", () => {
     });
   });
 
-  it("allows session inspection in an Employee's projects when its chat lives at home", () => {
+  it("allows session inspection in a Colleague's projects when its chat lives at home", () => {
     const { source } = fixture();
     source.cwd = "/home/user";
     const projects = ["/code/app", "/code/site"];
@@ -388,7 +388,7 @@ describe("agent app commands", () => {
     expect(canAccessAgentAppProject(source, "/code/app")).toBe(false);
   });
 
-  it.each([undefined, true])("reports completion of Employee launches with notifyOnComplete=%s", async (notifyOnComplete) => {
+  it.each([undefined, true])("reports completion of Colleague launches with notifyOnComplete=%s", async (notifyOnComplete) => {
     const { source, host } = fixture();
     host.isMono = (id) => id === source.id;
     expect(
@@ -427,7 +427,7 @@ describe("agent app commands", () => {
     );
   });
 
-  it("does not monitor an Employee's unsent draft by default", async () => {
+  it("does not monitor a Colleague's unsent draft by default", async () => {
     const { source, host } = fixture();
     host.isMono = (id) => id === source.id;
     const result = await handleAgentApp(
@@ -462,7 +462,7 @@ describe("agent app commands", () => {
     );
   });
 
-  it("reports completion of a sent follow-up to its calling Employee", async () => {
+  it("reports completion of a sent follow-up to its calling Colleague", async () => {
     const { source, host } = fixture();
     host.isMono = (id) => id === source.id;
     expect(
@@ -492,7 +492,7 @@ describe("agent app commands", () => {
     { reveal: true, notifyOnComplete: true },
     { reveal: true, draft: true },
     { reveal: true, placement: "right", besideSessionId: "other" },
-  ])("keeps Employee-launched sessions in the background for %j", async (options) => {
+  ])("keeps Colleague-launched sessions in the background for %j", async (options) => {
     const { source, host } = fixture();
     host.isMono = (id) => id === source.id;
     await handleAgentApp(
@@ -557,7 +557,7 @@ describe("agent app commands", () => {
           { ...input, notifyOnComplete: true },
           host,
         ),
-      ).rejects.toThrow("only available in an Employee");
+      ).rejects.toThrow("only available in a Colleague");
       expect(host.start).not.toHaveBeenCalled();
       expect(host.send).not.toHaveBeenCalled();
       await handleAgentApp(
@@ -589,10 +589,10 @@ describe("agent app commands", () => {
     expect(host.start).not.toHaveBeenCalled();
   });
 
-  it("lets an Employee page its own chat without requiring a project", async () => {
+  it("lets a Colleague page its own chat without requiring a project", async () => {
     const { source, host } = fixture();
     host.isMono = (id) => id === source.id;
-    host.readConversation = vi.fn(async () => ({ sessionId: source.id, title: "Employee", busy: false, hasDraft: false, turns: [], nextBefore: "older" }));
+    host.readConversation = vi.fn(async () => ({ sessionId: source.id, title: "Colleague", busy: false, hasDraft: false, turns: [], nextBefore: "older" }));
     const options = { before: "cursor", limit: 3, maxChars: 1200 };
     expect(await handleAgentApp(source, "own-chat", "sessions.read", { sessionId: source.id, ...options }, host)).toMatchObject({ nextBefore: "older" });
     expect(host.readConversation).toHaveBeenCalledWith(source, options);
@@ -858,7 +858,7 @@ describe("agent app commands", () => {
     expect(launch.worktreeCwd).toBe(expectedWorktree);
   });
 
-  it("validates an explicit worktree in the Employee's selected project", async () => {
+  it("validates an explicit worktree in the Colleague's selected project", async () => {
     const { source, host } = fixture();
     source.worktreeCwd = "/tmp/project-worktrees/source";
     host.isMono = () => true;
@@ -1315,7 +1315,7 @@ describe("agent app commands", () => {
     expect(host.saveArtifact).toHaveBeenCalledTimes(1);
   });
 
-  it("restricts artifact actions to Employees and lists only document metadata", async () => {
+  it("restricts artifact actions to Colleagues and lists only document metadata", async () => {
     const { source, host } = fixture();
     await expect(
       handleAgentApp(
@@ -1325,7 +1325,7 @@ describe("agent app commands", () => {
         { body: "Report" },
         host,
       ),
-    ).rejects.toThrow("Only an Employee");
+    ).rejects.toThrow("Only a Colleague");
     host.isMono = () => true;
     host.artifact = vi.fn(async () => artifact);
     host.artifacts = vi.fn(async () => [{ ...artifact, id: "artifact-1" }]);

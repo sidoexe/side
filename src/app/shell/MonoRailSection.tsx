@@ -95,12 +95,12 @@ export function MonoRailSection({
     <div className="mb-2 shrink-0" data-mono-rail>
       <div className="flex items-center gap-1 px-3 pb-1.5 pt-1">
         <span className="min-w-0 flex-1 truncate px-1 text-xs leading-5 text-content/50">
-          Employees
+          Colleagues
         </span>
         <button
           type="button"
-          title="New employee"
-          aria-label="New employee"
+          title="New colleague"
+          aria-label="New colleague"
           onClick={onCreate}
           className="grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content"
         >
@@ -202,7 +202,7 @@ export function MonoRailSection({
               <button
                 type="button"
                 data-no-drag
-                title="Employee options"
+                title="Colleague options"
                 aria-label={`${look.name} options`}
                 aria-haspopup="menu"
                 onPointerDown={(event) => event.stopPropagation()}
@@ -293,7 +293,7 @@ function MonoMenu({
         onClose();
       }}
       role="menu"
-      aria-label="Employee options"
+      aria-label="Colleague options"
       onContextMenu={(event) => event.preventDefault()}
       className="p-2"
     >
@@ -302,7 +302,7 @@ function MonoMenu({
         value={name}
         placeholder={defaultMonoName(mono.mascot)}
         maxLength={40}
-        aria-label="Employee name"
+        aria-label="Colleague name"
         onChange={(event) => setName(event.target.value)}
         onBlur={commitName}
         onKeyDown={(event) => {
@@ -345,7 +345,7 @@ function MonoMenu({
         className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-red-400 hover:bg-content/8"
       >
         <Trash2 className="size-3.5 shrink-0" strokeWidth={1.75} />
-        Delete employee…
+        Delete colleague…
       </button>
     </Popover>
   );

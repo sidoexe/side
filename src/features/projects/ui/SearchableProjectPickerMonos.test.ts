@@ -47,7 +47,7 @@ function render(activeId?: string) {
   return { trigger, onSelectProject, onOpen };
 }
 
-it("lists employees above the projects and opens one", () => {
+it("lists colleagues above the projects and opens one", () => {
   const { trigger, onOpen } = render();
   expect(trigger.getAttribute("aria-label")).toContain("current project app");
   const mono = document.body.querySelector<HTMLButtonElement>(
@@ -58,9 +58,9 @@ it("lists employees above the projects and opens one", () => {
   expect(onOpen).toHaveBeenCalledWith("m1");
 });
 
-it("shows the open employee, and lets the current project lead back out of it", () => {
+it("shows the open colleague, and lets the current project lead back out of it", () => {
   const { trigger, onSelectProject } = render("m1");
-  expect(trigger.getAttribute("aria-label")).toContain("current employee MonoCat");
+  expect(trigger.getAttribute("aria-label")).toContain("current colleague MonoCat");
   const project = [...document.body.querySelectorAll("button")].find(
     (button) => button.title === "/code/app",
   )!;

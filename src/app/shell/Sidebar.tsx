@@ -2690,7 +2690,7 @@ function CompactProjectRail({
           <>
             <div
               role="group"
-              aria-label="Employees"
+              aria-label="Colleagues"
               data-compact-rail-monos
               className="flex flex-col items-center gap-1.5"
             >

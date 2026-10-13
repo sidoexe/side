@@ -163,7 +163,7 @@ export function createHostServer(
     engine.checkpoints,
   );
   const employees = () => {
-    if (!engine.employees) throw new Error("Employees are unavailable on this host");
+    if (!engine.employees) throw new Error("Colleagues are unavailable on this host");
     return engine.employees;
   };
   const automations = () => {

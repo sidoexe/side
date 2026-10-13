@@ -198,7 +198,7 @@ export class HostEmployees {
       if (typeof id !== "string" || !ID.test(id)) throw new Error("Invalid employee roster");
     }
     const text = JSON.stringify(roster);
-    if (Buffer.byteLength(text) > ROSTER_MAX) throw new Error("Employee roster is too large");
+    if (Buffer.byteLength(text) > ROSTER_MAX) throw new Error("Colleague roster is too large");
     const current = this.roster();
     if (expectedRevision !== current.revision) throw new Error(EMPLOYEE_CONFLICT);
     const next = { revision: current.revision + 1, roster };

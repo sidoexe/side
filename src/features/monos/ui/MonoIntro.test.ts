@@ -48,12 +48,12 @@ it("creates the first employee or hides employees", () => {
     ),
   );
 
-  expect(document.body.textContent).toContain("Meet Employees");
+  expect(document.body.textContent).toContain("Meet Colleagues");
   expect(
     document.body.querySelectorAll("[data-mono-intro-stage] svg"),
   ).toHaveLength(PROJECT_MASCOTS.length);
 
-  act(() => button("Create employee").click());
+  act(() => button("Create colleague").click());
   expect(onCreate).toHaveBeenCalledOnce();
   act(() =>
     document.body.querySelector<HTMLElement>('[role="switch"]')!.click(),

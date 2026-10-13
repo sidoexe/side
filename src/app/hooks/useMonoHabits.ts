@@ -294,7 +294,7 @@ export function useMonoHabits(host: MonoHabitHost, enabled = true) {
           }
         }
       } catch (error) {
-        console.warn("Could not check Employee habits", error);
+        console.warn("Could not check Colleague habits", error);
       } finally {
         running = false;
         if (checkAgain && !stopped) void tick();

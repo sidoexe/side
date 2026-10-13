@@ -107,14 +107,14 @@ it.each(["habit", "session"] as const)(
   async (kind) => {
     const { run, write, agentFiles } = fixture(kind);
     await expect(run("soul.read")).rejects.toThrow(
-      "Only an Employee's own conversation",
+      "Only a Colleague's own conversation",
     );
     await expect(
       run("soul.update", {
         text: "# Soul\n",
         expectedHash: "soul@0",
       }),
-    ).rejects.toThrow("Only an Employee's own conversation");
+    ).rejects.toThrow("Only a Colleague's own conversation");
     expect(agentFiles).not.toHaveBeenCalled();
     expect(write).not.toHaveBeenCalled();
   },

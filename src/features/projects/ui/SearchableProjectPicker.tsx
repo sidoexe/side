@@ -151,7 +151,7 @@ export function SearchableProjectPicker({
         }
         aria-label={
           activeMono
-            ? `${action}, current employee ${activeMono.name}, ${MONO_STATUS_LABEL[activeMono.status ?? "idle"]}`
+            ? `${action}, current colleague ${activeMono.name}, ${MONO_STATUS_LABEL[activeMono.status ?? "idle"]}`
             : inProject
               ? `${action}, current project ${label}`
               : "Choose project for note"
@@ -389,7 +389,7 @@ export function ProjectPickerPopover({
           }}
           placeholder={
             monos?.items.length
-              ? "Search employees and projects..."
+              ? "Search colleagues and projects..."
               : "Search projects..."
           }
           className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/35"
@@ -428,7 +428,7 @@ export function ProjectPickerPopover({
             <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
               {mono.name}
             </span>
-            <span className="shrink-0 text-[11px] text-content/40">Employee</span>
+            <span className="shrink-0 text-[11px] text-content/40">Colleague</span>
           </button>
         ))}
         {filteredProjects.length > 0 ? (
@@ -521,7 +521,7 @@ export function ProjectPickerPopover({
               className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-content/75 hover:bg-content/8 hover:text-content"
             >
               <Plus className="size-4 shrink-0" strokeWidth={1.75} />
-              <span>New employee</span>
+              <span>New colleague</span>
             </button>
           ) : null}
           {onOpenProject ? (
