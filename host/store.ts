@@ -328,6 +328,14 @@ export class HostStore {
     );
   }
 
+  /** The paired desktop a credential belongs to. */
+  deviceId(token: string): string | undefined {
+    const row = this.db
+      .prepare("SELECT id FROM devices WHERE hash=?")
+      .get(this.hash(token));
+    return row ? String(row.id) : undefined;
+  }
+
   authenticated(token: string): boolean {
     return !!this.db
       .prepare("SELECT id FROM devices WHERE hash=?")

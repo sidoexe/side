@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import { loadRemoteMachines, remoteRequest } from "../../connections/model/connections";
-import { resolveHomeMachine } from "../../connections/model/homeMachine";
-import type { HostDescriptor, RemoteMachine } from "../../connections/model/protocol";
+import { remoteRequest } from "../../connections/model/connections";
+import { homeWith } from "../../connections/model/homeCapability";
+import type { RemoteMachine } from "../../connections/model/protocol";
 
 /**
  * Where employees' files live. With a home machine whose host keeps them,
@@ -25,22 +25,10 @@ export type EmployeeFilesRecord = {
 export type EmployeeFileRecord = { text: string | null; hash: string };
 
 const IMPORTED_KEY = "side.employeesImported.v1";
-const capable = new Map<string, Promise<boolean>>();
 
 /** The home machine, when its host keeps employees. */
-export async function employeeHome(): Promise<RemoteMachine | undefined> {
-  const home = resolveHomeMachine(await loadRemoteMachines());
-  if (!home) return undefined;
-  let check = capable.get(home.id);
-  if (!check) {
-    check = remoteRequest<HostDescriptor>(home.id, "environment.describe").then(
-      (descriptor) => descriptor.capabilities?.includes("employees") === true,
-    );
-    capable.set(home.id, check);
-    // An unreachable host is asked again next time rather than written off.
-    check.catch(() => capable.delete(home.id));
-  }
-  return (await check) ? home : undefined;
+export function employeeHome(): Promise<RemoteMachine | undefined> {
+  return homeWith("employees");
 }
 
 /** The host's refusal of a stale save reads as the local store's. */

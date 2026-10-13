@@ -404,6 +404,16 @@ fn supported_remote_method(method: &str) -> bool {
             | "employees.sessionPage"
             | "employees.sessionFind"
             | "employees.sessionDelete"
+            | "automations.list"
+            | "automations.upsert"
+            | "automations.import"
+            | "automations.delete"
+            | "automations.runs"
+            | "automations.recover"
+            | "automations.runNow"
+            | "automations.claimDue"
+            | "automations.claimEvent"
+            | "automations.updateRun"
     )
 }
 

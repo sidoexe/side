@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { HostCheckpoints } from "./checkpoints";
 import { HostEmployees } from "./employees";
+import { HostAutomations } from "./automations";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -244,6 +245,7 @@ Connect another computer using an SSH forward to the loopback port.`);
     const engine = new HostEngine(store, hostProviders, accounts);
     engine.checkpoints = new HostCheckpoints(join(directory, "checkpoints"));
     engine.employees = new HostEmployees(join(directory, "employees"));
+    engine.automations = new HostAutomations(join(directory, "automations.db"));
     const secret = randomBytes(32).toString("base64url");
     let stopping = false;
     let stop: () => Promise<void>;
@@ -311,6 +313,7 @@ Connect another computer using an SSH forward to the loopback port.`);
     cleanup = () => {
       rmSync(statePath, { force: true });
       engine.employees?.close();
+      engine.automations?.close();
       store.close();
       releaseOwner();
     };

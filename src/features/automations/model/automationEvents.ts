@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { automationCall } from "./automationStore";
 import {
   automationTriggers,
   listAutomations,
@@ -168,8 +168,7 @@ export async function claimInboxAutomationRuns(
   const failed = new Set<string>();
   for (const match of matches) {
     try {
-      const result = await invoke<DueAutomationRun | null>(
-        "automations_claim_event",
+      const result = await automationCall<DueAutomationRun | null>("automations_claim_event",
         {
           automationId: match.automation.id,
           claim: {

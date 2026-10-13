@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { automationCall } from "./automationStore";
 import { listen } from "@tauri-apps/api/event";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
 
@@ -448,8 +448,13 @@ export function peekAutomations(): Automation[] | null {
 }
 
 export async function listAutomations(): Promise<Automation[]> {
-  const next = await invoke<Automation[]>("automations_list");
+  const next = await automationCall<Automation[]>("automations_list");
+  // Another desktop's edits reach this one only through a fresh list.
+  const changed =
+    cachedAutomations !== null &&
+    JSON.stringify(cachedAutomations) !== JSON.stringify(next);
   cachedAutomations = next;
+  if (changed) window.dispatchEvent(new Event(LOCAL_CHANGED));
   return next;
 }
 
@@ -462,7 +467,7 @@ export async function saveAutomation(
     id: synced.id ?? crypto.randomUUID(),
     nextRunAt: nextTriggersRunAt(synced.triggers),
   };
-  const saved = await invoke<Automation>("automations_upsert", { automation });
+  const saved = await automationCall<Automation>("automations_upsert", { automation });
   emitLocalChange();
   return saved;
 }
@@ -475,27 +480,27 @@ export async function setAutomationEnabled(
 }
 
 export async function deleteAutomation(id: string): Promise<void> {
-  await invoke("automations_delete", { id });
+  await automationCall("automations_delete", { id });
   emitLocalChange();
 }
 
 export function listAutomationRuns(
   automationId: string,
 ): Promise<AutomationRun[]> {
-  return invoke("automation_runs_list", { automationId });
+  return automationCall("automation_runs_list", { automationId });
 }
 
 export function recoverAutomationRuns(
   startedBefore: number,
   now = Date.now(),
 ): Promise<DueAutomationRun[]> {
-  return invoke("automation_runs_recover", { startedBefore, now });
+  return automationCall("automation_runs_recover", { startedBefore, now });
 }
 
 export async function createManualAutomationRun(
   automationId: string,
 ): Promise<AutomationRun> {
-  const run = await invoke<AutomationRun>("automation_run_now", {
+  const run = await automationCall<AutomationRun>("automation_run_now", {
     automationId,
     now: Date.now(),
   });
@@ -525,8 +530,7 @@ export async function claimDueAutomations(
     )) {
       let result: DueAutomationRun | null;
       try {
-        result = await invoke<DueAutomationRun | null>(
-          "automations_claim_due",
+        result = await automationCall<DueAutomationRun | null>("automations_claim_due",
           {
             automationId: automation.id,
             expectedNextRunAt: occurrence.scheduledFor,
@@ -552,7 +556,7 @@ export async function updateAutomationRun(
   status: AutomationRunStatus,
   options: { sessionId?: string; error?: string } = {},
 ): Promise<AutomationRun> {
-  const run = await invoke<AutomationRun>("automation_run_update", {
+  const run = await automationCall<AutomationRun>("automation_run_update", {
     runId,
     status,
     sessionId: options.sessionId ?? null,

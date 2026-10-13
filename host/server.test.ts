@@ -14,6 +14,7 @@ import { request } from "node:http";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
 import { HostEmployees } from "./employees";
+import { HostAutomations } from "./automations";
 import { createHostServer } from "./server";
 import { HostChildBackend } from "./child-backend";
 import { configureChildBackend } from "../src/integrations/harness/core/child";
@@ -180,6 +181,35 @@ describe("remote host API", () => {
     await s.call("employees.sessionDelete", { sessionId: "chat-1" });
     expect((await s.call("employees.sessionGet", { sessionId: "chat-1" })).value.result).toBeNull();
     s.engine.employees.close();
+  });
+
+  it("lets only one desktop claim an automation's occurrence, and recover only its own runs", async () => {
+    const s = await setup();
+    s.engine.automations = new HostAutomations(join(s.directory, "automations.db"));
+    expect((await s.call("environment.describe")).value.result.capabilities).toContain("automations");
+    const nextRunAt = Date.now() + 60_000;
+    const automation = {
+      id: "auto-1", name: "Audit", prompt: "Review", harness: "codex", model: "codex:test",
+      modelSettings: {}, cwd: s.project.cwd, workspaceMode: "current", runtimeMode: "auto",
+      triggerKind: "time", scheduleKind: "daily", minute: 0, time: "09:00", dayOfWeek: 1,
+      missedRunGraceMinutes: 60, enabled: true, nextRunAt,
+    };
+    expect((await s.call("automations.upsert", { automation })).value.result.id).toBe("auto-1");
+    const claim = { automationId: "auto-1", expectedNextRunAt: nextRunAt, nextRunAt: nextRunAt + 1, now: nextRunAt };
+    const [first, second] = await Promise.all([
+      s.call("automations.claimDue", claim),
+      s.call("automations.claimDue", claim, s.second.token),
+    ]);
+    const winners = [first, second].filter((response) => response.value.result);
+    expect(winners).toHaveLength(1);
+    const winnerToken = winners[0] === first ? s.first.token : s.second.token;
+    const loserToken = winners[0] === first ? s.second.token : s.first.token;
+    const later = nextRunAt + 10;
+    expect((await s.call("automations.recover", { startedBefore: later, now: later }, loserToken)).value.result)
+      .toEqual([]);
+    expect((await s.call("automations.recover", { startedBefore: later, now: later }, winnerToken)).value.result)
+      .toHaveLength(1);
+    s.engine.automations.close();
   });
 
   it("imports a desktop's local session once, idle, and lists it", async () => {

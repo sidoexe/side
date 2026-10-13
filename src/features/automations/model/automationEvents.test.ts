@@ -397,6 +397,7 @@ describe("inbox automation events", () => {
     });
     let rejectClaim = true;
     invoke.mockImplementation(async (command: string) => {
+      if (command === "remote_machines") return [];
       if (command === "automations_list") return [review];
       if (command === "automations_claim_event") {
         if (rejectClaim) throw new Error("database busy");

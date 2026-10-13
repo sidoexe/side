@@ -164,6 +164,10 @@ export function createHostServer(
     if (!engine.employees) throw new Error("Employees are unavailable on this host");
     return engine.employees;
   };
+  const automations = () => {
+    if (!engine.automations) throw new Error("Automations are unavailable on this host");
+    return engine.automations;
+  };
   const models = async (projectId?: unknown) => {
     const cwd =
       typeof projectId === "string"
@@ -316,6 +320,7 @@ export function createHostServer(
                 "sessions.editLast",
                 ...(engine.checkpoints ? ["sessions.review"] : []),
                 ...(engine.employees ? ["employees"] : []),
+                ...(engine.automations ? ["automations"] : []),
                 "accounts",
               ],
             };
@@ -687,6 +692,37 @@ export function createHostServer(
           case "employees.sessionDelete":
             employees().transcripts.delete(params.sessionId);
             result = null;
+            break;
+          case "automations.list":
+            result = automations().list();
+            break;
+          case "automations.upsert":
+            result = automations().upsert(params.automation);
+            break;
+          case "automations.import":
+            result = automations().upsert(params.automation, Date.now(), true);
+            break;
+          case "automations.delete":
+            automations().delete(params.id);
+            result = null;
+            break;
+          case "automations.runs":
+            result = automations().runs(params.automationId);
+            break;
+          case "automations.recover":
+            result = automations().recover(params.startedBefore, params.now, engine.store.deviceId(token));
+            break;
+          case "automations.runNow":
+            result = automations().runNow(params.automationId, params.now, engine.store.deviceId(token));
+            break;
+          case "automations.claimDue":
+            result = automations().claimDue(params, engine.store.deviceId(token));
+            break;
+          case "automations.claimEvent":
+            result = automations().claimEvent(params, engine.store.deviceId(token));
+            break;
+          case "automations.updateRun":
+            result = automations().updateRun(params);
             break;
           default:
             throw new Error("Unsupported host method");

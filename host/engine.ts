@@ -33,6 +33,7 @@ import type { HostProvider } from "./providers";
 import { HostStore } from "./store";
 import type { HostCheckpoints } from "./checkpoints";
 import type { HostEmployees } from "./employees";
+import type { HostAutomations } from "./automations";
 import { CONTINUE_PROMPT } from "../src/features/sessions/model/inFlight";
 import { usageLimitResumeDue } from "../src/features/sessions/model/usageLimit";
 import {
@@ -329,6 +330,7 @@ export class HostEngine {
   /** Turn review snapshots; absent in tests that do not exercise them. */
   checkpoints?: HostCheckpoints;
   employees?: HostEmployees;
+  automations?: HostAutomations;
   private switchingProjects = new Set<string>();
   private running = new Map<
     string,
