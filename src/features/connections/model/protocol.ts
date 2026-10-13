@@ -188,6 +188,9 @@ export type HostCommand =
       intent?: "default" | "plan" | "build";
       draftBlockId?: string;
       planBlockId?: string;
+      /** What the provider receives when it differs from the shown `text`:
+       * skill bodies and `@` references expanded on the desktop. */
+      prompt?: string;
     }
   | {
       type: "draft";

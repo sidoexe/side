@@ -259,6 +259,19 @@ beforeEach(() => {
         branches: ["main", "dev", ...(createdBranch ? [createdBranch] : [])],
       };
     }
+    if (operation === "list_skills")
+      return [
+        {
+          name: "ship",
+          description: "Ship it",
+          path: "/home/me/repo/.agents/skills/ship/SKILL.md",
+          scope: "project",
+          source: "agents",
+        },
+      ];
+    if (operation === "read_text_file" && commandParams.path === "/home/me/repo/.agents/skills/ship/SKILL.md")
+      return "Run the release checklist.";
+    if (operation === "list_project_files") return [];
     if (method === "sessions.sync") {
       if (syncDelay) await syncDelay;
       return { kind: "snapshot", value: host };
@@ -606,6 +619,16 @@ it("creates the host session with the chosen settings on the first message", asy
   });
   expect(remoteSessionFor("shell")).toBe("host-session");
   expect(container.textContent).toContain("Fix the tests");
+});
+
+it("expands a host skill for the provider and keeps the typed text", async () => {
+  await render();
+  await send("/ship now");
+  expect(commands[1]).toMatchObject({ type: "send", text: "/ship now" });
+  expect((commands[1] as { prompt?: string }).prompt).toContain(
+    "Run the release checklist.",
+  );
+  expect(container.textContent).not.toContain("Run the release checklist.");
 });
 
 it("keeps a new session on its selected remote provider", async () => {

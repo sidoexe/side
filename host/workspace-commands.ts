@@ -29,6 +29,7 @@ import {
   searchHostContent,
   workspacePath,
 } from "./workspace";
+import { listHostSkills } from "./skills";
 
 const exec = promisify(execFile);
 
@@ -79,6 +80,7 @@ export const WORKSPACE_COMMANDS = [
   "git_stash",
   "git_worktrees",
   "search_project",
+  "list_skills",
 ] as const;
 export type WorkspaceCommand = (typeof WORKSPACE_COMMANDS)[number];
 
@@ -206,6 +208,8 @@ export class WorkspaceCommands {
         return this.gitWorktrees(input.cwd);
       case "search_project":
         return this.searchProject(input.options);
+      case "list_skills":
+        return this.listSkills(input.cwd, input.disabledPaths);
     }
   }
 
@@ -280,6 +284,31 @@ export class WorkspaceCommands {
     }));
   }
 
+  private skillFiles = new Set<string>();
+
+  private async listSkills(cwd: unknown, disabledPaths: unknown) {
+    const { path } = await this.existing(cwd, true);
+    const disabled = Array.isArray(disabledPaths)
+      ? disabledPaths.filter((entry): entry is string => typeof entry === "string")
+      : [];
+    const skills = await listHostSkills(path, { disabledPaths: disabled });
+    for (const skill of skills) this.skillFiles.add(skill.path);
+    return skills;
+  }
+
+  /** A user skill (`~/.claude/skills/...`) lives outside every project, yet a
+   * remote turn must still read its body. Only files skill discovery returned
+   * for a registered project are let through. */
+  private async isSkillFile(input: unknown): Promise<boolean> {
+    if (typeof input !== "string" || !/[\\/]skill\.md$/i.test(input)) return false;
+    const path = resolve(input);
+    if (this.skillFiles.has(path)) return true;
+    for (const project of this.store.projects())
+      for (const skill of await listHostSkills(project.cwd).catch(() => []))
+        this.skillFiles.add(skill.path);
+    return this.skillFiles.has(path);
+  }
+
   private async listProjectFiles(input: unknown): Promise<ProjectFile[]> {
     const { path } = await this.existing(input, true);
     const cwd = input as string;
@@ -302,7 +331,9 @@ export class WorkspaceCommands {
   }
 
   private async readText(input: unknown): Promise<string> {
-    const bytes = await this.file(input, MAX_TEXT_FILE, "edit");
+    const bytes = (await this.isSkillFile(input))
+      ? await readFile(resolve(input as string))
+      : await this.file(input, MAX_TEXT_FILE, "edit");
     if (bytes.includes(0)) throw new Error("Binary files cannot be edited.");
     try {
       return new TextDecoder("utf-8", { fatal: true }).decode(bytes);

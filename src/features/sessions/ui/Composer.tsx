@@ -488,10 +488,11 @@ export function Composer({
   const [createError, setCreateError] = useState<string | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
   const remote = remoteSession;
-  // Local indexes (files, skills) must never read a remote session's path.
-  const localCwd = remote ? "" : executionCwd;
+  // A remote session's `remote://` path routes file and skill indexing to its
+  // host. Native command catalogs probe a local CLI, so they stay local-only.
+  const skillCwd = remote && hasNativeCommands(harness) ? "" : executionCwd;
   const [files, setFiles] = useState<ProjectFile[]>(
-    () => peekProjectFiles(localCwd) ?? [],
+    () => peekProjectFiles(executionCwd) ?? [],
   );
   const notesEnabled = useSyncExternalStore(
     subscribeNotesEnabled,
@@ -522,7 +523,7 @@ export function Composer({
   attachmentsRef.current = attachments;
 
   const mentionOpen =
-    !remote && mention !== null && (looksLikeProject(cwd) || notesEnabled);
+    mention !== null && (looksLikeProject(cwd) || notesEnabled);
   const navigationEmpty =
     draft.length === 0 &&
     attachments.length === 0 &&
@@ -533,15 +534,24 @@ export function Composer({
   const pickerOpen = skillPickerOpen || sessionFolderOpen || mcpPickerOpen;
   const skillCatalog = useComposerSkills({
     harness,
-    executionCwd: localCwd,
+    executionCwd: skillCwd,
     sessionId,
-    pickerOpen: pickerOpen && !remote,
+    pickerOpen: pickerOpen && !!skillCwd,
   });
   const skills = skillCatalog.skills;
   const slashItems = useMemo(
     () =>
       remote
-        ? [...(remoteFeatures?.plan ? [PLAN_COMMAND] : []), COMPACT_COMMAND]
+        ? [
+            ...(remoteFeatures?.plan ? [PLAN_COMMAND] : []),
+            COMPACT_COMMAND,
+            ...skills.filter(
+              (skill) =>
+                skill.kind === "file" &&
+                skill.name !== PLAN_COMMAND.name &&
+                skill.name !== COMPACT_COMMAND.name,
+            ),
+          ]
         : [
             SESSION_FOLDER_COMMAND,
             MCP_COMMAND,
@@ -846,21 +856,21 @@ export function Composer({
     const apply = (next: ProjectFile[]) => {
       if (!cancelled) setFiles(next);
     };
-    const cached = peekProjectFiles(localCwd);
+    const cached = peekProjectFiles(executionCwd);
     apply(cached ?? []);
-    if (!localCwd) return;
-    void loadProjectFiles(localCwd, mentionOpen)
+    if (!executionCwd) return;
+    void loadProjectFiles(executionCwd, mentionOpen)
       .then(apply)
       .catch(() => undefined);
     const unsub = subscribeProjectFiles(() => {
-      const next = peekProjectFiles(localCwd);
+      const next = peekProjectFiles(executionCwd);
       if (next) apply(next);
     });
     return () => {
       cancelled = true;
       unsub();
     };
-  }, [localCwd, mentionOpen]);
+  }, [executionCwd, mentionOpen]);
 
   useEffect(() => {
     if (!mentionOpen || !notesEnabled) return;

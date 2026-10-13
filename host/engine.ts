@@ -201,6 +201,9 @@ export function parseCommand(input: unknown): HostCommand {
       ...(v.type === "send" && v.planBlockId !== undefined
         ? { planBlockId: text(v.planBlockId, "plan block ID") }
         : {}),
+      ...(v.type === "send" && v.prompt !== undefined
+        ? { prompt: providerPrompt(v.prompt) }
+        : {}),
     };
   }
   if (v.type === "removeDraft")
@@ -777,7 +780,9 @@ export class HostEngine {
           effect = (saved) => {
             this.run(
               saved,
-              command.type === "compact" ? null : command.text,
+              command.type === "compact"
+                ? null
+                : (command.prompt ?? command.text),
               command.type === "send" ? command.intent : undefined,
               attachments,
             );
@@ -1238,3 +1243,11 @@ export class HostEngine {
     await Promise.all([...this.running.values()].map((active) => active.done));
   }
 }
+
+function providerPrompt(value: unknown): string {
+  if (typeof value !== "string" || value.length > 512_000 || value.includes("\0"))
+    throw new Error("Invalid prompt");
+  return value;
+}
+
+

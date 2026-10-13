@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { prepareRemotePrompt } from "../../sessions/model/promptPreparation";
 import type { SessionPaneProps } from "../../sessions/ui/SessionPane";
 import type {
   Attachment,
@@ -737,6 +738,21 @@ function ConnectedRemoteSession({
       });
   });
 
+  /** Skill bodies and `@` references go to the provider only; the turn keeps
+   * showing what was typed. */
+  const withProviderPrompt = async <C extends HostCommand>(
+    command: C,
+    cwd: string,
+    harness: HarnessId,
+  ): Promise<C> => {
+    if (command.type !== "send") return command;
+    const prompt = await prepareRemotePrompt(command.text, {
+      harness,
+      cwd: remotePath(machine.environmentId, cwd),
+    }).catch(() => command.text);
+    return prompt === command.text ? command : { ...command, prompt };
+  };
+
   const dispatchTurn = async (
     id: string,
     turn: OptimisticTurn,
@@ -748,7 +764,7 @@ function ConnectedRemoteSession({
       : (uploaded ??
         (await uploadRemoteAttachments(machine.id, turn.attachments)));
     if (!alive.current || version !== bindingVersion.current) return undefined;
-    return run(
+    const command = await withProviderPrompt(
       turn.draft
         ? {
             type: "draft",
@@ -766,8 +782,11 @@ function ConnectedRemoteSession({
             turn.draftBlockId,
             turn.planBlockId,
           ),
-      turn,
+      executionCwd,
+      configuration.harness,
     );
+    if (!alive.current || version !== bindingVersion.current) return undefined;
+    return run(command, turn);
   };
 
   const startSession = async (turn: OptimisticTurn) => {
@@ -809,9 +828,14 @@ function ConnectedRemoteSession({
           return;
         }
       }
-      const followup: Exclude<HostCommand, { type: "create" }> = turn.draft
-        ? { type: "draft", commandId: turn.commandId, sessionId: "", text: turn.text, attachments: uploaded }
-        : message("", turn.text, turn.commandId, uploaded, turn.intent, turn.draftBlockId, turn.planBlockId);
+      const followup: Exclude<HostCommand, { type: "create" }> = await withProviderPrompt(
+        turn.draft
+          ? { type: "draft", commandId: turn.commandId, sessionId: "", text: turn.text, attachments: uploaded }
+          : message("", turn.text, turn.commandId, uploaded, turn.intent, turn.draftBlockId, turn.planBlockId),
+        worktreeCwd,
+        draft.harness,
+      );
+      if (version !== bindingVersion.current) return;
       const receipt = await run({
         type: "create",
         commandId: crypto.randomUUID(),

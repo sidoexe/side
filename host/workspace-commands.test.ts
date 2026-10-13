@@ -284,3 +284,36 @@ it.skipIf(process.platform === "win32")(
     ).rejects.toThrow();
   },
 );
+
+it("lists skills and reads a user skill outside every project", async () => {
+  const { home, commands, repo } = fixture();
+  const { cwd } = repo();
+  const userHome = join(home, "user-home");
+  const previous = process.env.HOME;
+  process.env.HOME = userHome;
+  cleanups.push(() => {
+    if (previous === undefined) delete process.env.HOME;
+    else process.env.HOME = previous;
+  });
+  const write = (dir: string, body: string) => {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), body);
+    return join(dir, "SKILL.md");
+  };
+  const project = write(join(cwd, ".agents/skills/ship"), "---\nname: ship\n---\nShip it.\n");
+  const user = write(join(userHome, ".claude/skills/notes"), "---\nname: notes\n---\nWrite notes.\n");
+  const secret = join(userHome, "secret.md");
+  writeFileSync(secret, "no");
+
+  const skills = (await commands.run("list_skills", { cwd })) as Array<{ name: string; path: string }>;
+  expect(skills.map((skill) => [skill.name, skill.path])).toEqual([
+    ["notes", user],
+    ["ship", project],
+  ]);
+  expect(await commands.run("read_text_file", { path: user })).toContain("Write notes.");
+  expect(await commands.run("read_text_file", { path: project })).toContain("Ship it.");
+  await expect(commands.run("read_text_file", { path: secret })).rejects.toThrow(/outside/);
+  await expect(
+    commands.run("list_skills", { cwd: userHome }),
+  ).rejects.toThrow(/outside/);
+});

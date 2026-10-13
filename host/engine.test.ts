@@ -172,6 +172,25 @@ describe("headless session ownership", () => {
     turns[0].finish();
   });
 
+  it("sends the expanded prompt to the provider and keeps the typed text", async () => {
+    const { engine, store, turns, id } = setup("claude");
+    const command = parseCommand({
+      type: "send",
+      commandId: "skill-turn",
+      sessionId: id,
+      text: "/ship now",
+      prompt: "## /ship\n\nShip it.\n\n---\n\n/ship now",
+    });
+    engine.command(command);
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(turns[0].input.text).toContain("Ship it.");
+    expect(store.session(id).session.blocks.at(-1)?.text).toBe("/ship now");
+    expect(() =>
+      parseCommand({ type: "send", commandId: "bad", sessionId: id, text: "x", prompt: 3 }),
+    ).toThrow("Invalid prompt");
+    turns[0].finish();
+  });
+
   it("removes a remote draft without starting the provider", () => {
     const { engine, store, provider, id } = setup();
     engine.command({

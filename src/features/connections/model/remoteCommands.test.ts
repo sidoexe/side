@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeLocal }));
 
 import { runRemoteCommand } from "./remoteCommands";
 import { parseRemotePath, remotePath } from "./remoteProjects";
-import { gitCommit, gitLocateFiles, gitStagedContext, listDir, readBinaryFile, readTextFile, statFiles, writeTextFile } from "../../../platform/tauri/fs";
+import { gitCommit, gitLocateFiles, listSkills, gitStagedContext, listDir, readBinaryFile, readTextFile, statFiles, writeTextFile } from "../../../platform/tauri/fs";
 
 beforeEach(() => {
   remoteRequest.mockReset();
@@ -174,4 +174,35 @@ it("refuses what the host cannot do and explains outdated hosts", async () => {
     runRemoteCommand("list_dir", { path: "remote://env/home/me" }),
   ).rejects.toThrow("Update MonoCode Host");
   expect(remoteRequest).toHaveBeenCalledTimes(1);
+});
+
+it("lists a machine's skills with its own disabled paths only", async () => {
+  remoteRequest.mockResolvedValue([
+    {
+      name: "notes",
+      description: "",
+      path: "/home/me/.claude/skills/notes/SKILL.md",
+      scope: "user",
+      source: "claude",
+    },
+  ]);
+  expect(
+    await listSkills("remote://env/home/me/repo", [
+      "remote://env/home/me/.agents/skills/ship/SKILL.md",
+      "remote://other/home/me/x/SKILL.md",
+      "/Users/me/.claude/skills/local/SKILL.md",
+    ]),
+  ).toEqual([
+    expect.objectContaining({
+      name: "notes",
+      path: "remote://env/home/me/.claude/skills/notes/SKILL.md",
+    }),
+  ]);
+  expect(remoteRequest).toHaveBeenCalledWith("machine", "workspace.run", {
+    command: "list_skills",
+    args: {
+      cwd: "/home/me/repo",
+      disabledPaths: ["/home/me/.agents/skills/ship/SKILL.md"],
+    },
+  });
 });
