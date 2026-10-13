@@ -15,6 +15,7 @@ import { HostEngine } from "./engine";
 import { HostStore } from "./store";
 import { HostEmployees } from "./employees";
 import { HostAutomations } from "./automations";
+import { HostAppBridge } from "./app-bridge";
 import { createHostServer } from "./server";
 import { HostChildBackend } from "./child-backend";
 import { configureChildBackend } from "../src/integrations/harness/core/child";
@@ -210,6 +211,46 @@ describe("remote host API", () => {
     expect((await s.call("automations.recover", { startedBefore: later, now: later }, winnerToken)).value.result)
       .toHaveLength(1);
     s.engine.automations.close();
+  });
+
+  it("relays an agent's app CLI call to the desktop that takes it", async () => {
+    const s = await setup();
+    const running = new Set<string>();
+    s.engine.app = new HostAppBridge(join(s.directory, "app-access.json"), (id) => running.has(id));
+    const describe = (await s.call("environment.describe")).value.result;
+    expect(describe.capabilities).toContain("app");
+    s.engine.app.enable("host-session");
+    running.add("host-session");
+    const cli = fetch(s.url.replace("/rpc", "/app"), {
+      method: "POST",
+      body: JSON.stringify({ token: s.engine.app.token("host-session"), action: "notes.list", input: {}, requestId: "r1" }),
+    }).then((response) => response.json());
+    let taken: any[] = [];
+    await vi.waitFor(async () => {
+      taken = (await s.call("app.take", { sessionId: "host-session" })).value.result;
+      expect(taken).toHaveLength(1);
+    });
+    expect((await s.call("app.take", { sessionId: "host-session" }, s.second.token)).value.result).toEqual([]);
+    expect((await s.call("app.reply", { id: taken[0].id, response: { ok: true, result: ["note"] } })).value.result)
+      .toEqual({ delivered: true });
+    expect(await cli).toEqual({ ok: true, result: ["note"] });
+    // A browser page cannot reach it.
+    const blocked = await fetch(s.url.replace("/rpc", "/app"), {
+      method: "POST", headers: { Origin: "https://evil.example" }, body: "{}",
+    });
+    expect(blocked.status).toBe(403);
+  });
+
+  it("turns app access on for a thread whose turn was sent with it", async () => {
+    const s = await setup();
+    s.engine.app = new HostAppBridge(join(s.directory, "app-access.json"), () => true);
+    const created = await s.call("commands.dispatch", { type: "create", commandId: "c1", projectId: s.project.id,
+      harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+    const sessionId = created.value.result.sessionId;
+    expect(s.engine.app.enabledFor(sessionId)).toBe(false);
+    await s.call("commands.dispatch", { type: "send", commandId: "c2", sessionId, text: "hi", appAccess: true });
+    expect(s.engine.app.enabledFor(sessionId)).toBe(true);
+    s.finish();
   });
 
   it("imports a desktop's local session once, idle, and lists it", async () => {

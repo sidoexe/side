@@ -34,6 +34,7 @@ import { HostStore } from "./store";
 import type { HostCheckpoints } from "./checkpoints";
 import type { HostEmployees } from "./employees";
 import type { HostAutomations } from "./automations";
+import type { HostAppBridge } from "./app-bridge";
 import { CONTINUE_PROMPT } from "../src/features/sessions/model/inFlight";
 import { usageLimitResumeDue } from "../src/features/sessions/model/usageLimit";
 import {
@@ -211,6 +212,7 @@ export function parseCommand(input: unknown): HostCommand {
       ...(v.type === "send" && v.prompt !== undefined
         ? { prompt: providerPrompt(v.prompt) }
         : {}),
+      ...(v.type === "send" && v.appAccess === true ? { appAccess: true } : {}),
     } as HostCommand;
   }
   if (v.type === "queue" || v.type === "editLast") {
@@ -227,6 +229,7 @@ export function parseCommand(input: unknown): HostCommand {
       ...(attachments.length ? { attachments } : {}),
       ...(v.type === "queue" && v.intent ? { intent: v.intent as "default" | "plan" } : {}),
       ...(v.prompt !== undefined ? { prompt: providerPrompt(v.prompt) } : {}),
+      ...(v.type === "queue" && v.appAccess === true ? { appAccess: true } : {}),
     } as HostCommand;
   }
   if (v.type === "queueEdit")
@@ -331,6 +334,12 @@ export class HostEngine {
   checkpoints?: HostCheckpoints;
   employees?: HostEmployees;
   automations?: HostAutomations;
+  app?: HostAppBridge;
+
+  /** Whether a turn of this session is running now. */
+  isRunning(sessionId: string): boolean {
+    return this.running.has(sessionId);
+  }
   private switchingProjects = new Set<string>();
   private running = new Map<
     string,
@@ -611,6 +620,8 @@ export class HostEngine {
     if (previous) return previous;
     // Commands apply to the latest state, including batched stream output.
     if (command.type !== "create") this.flush(command.sessionId);
+    if ((command.type === "send" || command.type === "queue") && command.appAccess)
+      this.app?.enable(command.sessionId);
     if (command.type === "queue" && this.canSendNow(command.sessionId))
       return this.command({
         type: "send",

@@ -25,6 +25,8 @@ export type HostDescriptor = {
   providers: RemoteProvider[];
   capabilities: string[];
   platform?: "win32" | "darwin" | "linux";
+  /** How an agent on the host calls the app CLI, with the `app` capability. */
+  appCli?: string;
 };
 export type HostProject = { id: string; cwd: string; name: string };
 /** A provider account the host can run sessions on. `auto` is the
@@ -191,6 +193,8 @@ export type HostCommand =
       /** What the provider receives when it differs from the shown `text`:
        * skill bodies and `@` references expanded on the desktop. */
       prompt?: string;
+      /** /operator was used in this thread: its agent may call the app CLI. */
+      appAccess?: boolean;
     }
   | {
       type: "draft";
@@ -209,6 +213,7 @@ export type HostCommand =
       attachments?: RemoteAttachment[];
       intent?: "default" | "plan";
       prompt?: string;
+      appAccess?: boolean;
     }
   | {
       type: "queueEdit";

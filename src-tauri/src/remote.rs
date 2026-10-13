@@ -432,6 +432,8 @@ fn supported_remote_method(method: &str) -> bool {
             | "automations.claimDue"
             | "automations.claimEvent"
             | "automations.updateRun"
+            | "app.take"
+            | "app.reply"
     )
 }
 

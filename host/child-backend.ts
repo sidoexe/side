@@ -101,6 +101,8 @@ function loopbackUrl(value: unknown): string {
 
 /** Native process implementation for the headless execution proof. */
 export class HostChildBackend implements ChildBackend {
+  /** Variables one session's provider is started with, such as its app CLI credential. */
+  sessionEnv?: (sessionId: string) => Record<string, string>;
   private events = new EventEmitter();
   private children = new Map<string, ChildProcessWithoutNullStreams>();
   private streams = new Map<string, AbortController>();
@@ -337,7 +339,12 @@ export class HostChildBackend implements ChildBackend {
     if (account?.id && account.id !== DEFAULT_ACCOUNT && !named)
       throw new Error("Named provider accounts are not configured on this host");
     const accountVars = accountEnv(named);
-    const env: NodeJS.ProcessEnv = { ...process.env, ...accountVars.set, MONOCODE_HOST: "1" };
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      ...accountVars.set,
+      ...this.sessionEnv?.(id),
+      MONOCODE_HOST: "1",
+    };
     for (const name of accountVars.unset) delete env[name];
     let commandArgs = args.args as string[];
     if (args.devinAskEdits) {

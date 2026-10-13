@@ -136,6 +136,8 @@ export function createHostServer(
   engine: HostEngine,
   providers: RemoteProvider[],
   lifecycle?: (request: IncomingMessage, response: ServerResponse) => void,
+  /** The command an agent on this host runs for the app CLI. */
+  appCli?: string,
 ) {
   const catalogs = new Map<
     string,
@@ -221,6 +223,18 @@ export function createHostServer(
         lifecycle(request, response);
         return;
       }
+      if (request.url === "/app" && engine.app && request.method === "POST" && !request.headers.origin) {
+        // An agent's app CLI: its session credential is in the body.
+        response.setHeader("Content-Type", "application/json");
+        response.setHeader("Cache-Control", "no-store");
+        try {
+          response.end(JSON.stringify(await engine.app.request(await body(request))));
+        } catch {
+          if (!response.destroyed)
+            response.writeHead(400).end(JSON.stringify({ ok: false, error: "Invalid control request" }));
+        }
+        return;
+      }
       response.setHeader("Content-Type", "application/json");
       response.setHeader("Cache-Control", "no-store");
       response.setHeader("X-Content-Type-Options", "nosniff");
@@ -288,6 +302,7 @@ export function createHostServer(
                   ? params.supportedProviders.includes(provider)
                   : provider === "codex" || provider === "claude"
               ),
+              ...(appCli ? { appCli } : {}),
               capabilities: [
                 "sessions",
                 "projects.browse",
@@ -321,6 +336,7 @@ export function createHostServer(
                 ...(engine.checkpoints ? ["sessions.review"] : []),
                 ...(engine.employees ? ["employees"] : []),
                 ...(engine.automations ? ["automations"] : []),
+                ...(engine.app ? ["app"] : []),
                 "accounts",
               ],
             };
@@ -723,6 +739,12 @@ export function createHostServer(
             break;
           case "automations.updateRun":
             result = automations().updateRun(params);
+            break;
+          case "app.take":
+            result = engine.app?.take(params.sessionId, engine.store.deviceId(token)) ?? [];
+            break;
+          case "app.reply":
+            result = { delivered: engine.app?.reply(params.id, params.response) ?? false };
             break;
           default:
             throw new Error("Unsupported host method");

@@ -277,6 +277,7 @@ type Props = SessionPaneProps & {
     draft: boolean;
     queue?: boolean;
     editLast?: boolean;
+    operator?: boolean;
   };
   /** An opened host conversation whose transcript has not arrived yet. */
   remoteSessionLoading?: boolean;

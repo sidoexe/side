@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { prepareRemotePrompt } from "../../sessions/model/promptPreparation";
+import {
+  consumeOperatorCommand,
+  operatorAppContext,
+} from "../../sessions/model/operatorCommand";
 import type { SessionPaneProps } from "../../sessions/ui/SessionPane";
 import type {
   Attachment,
@@ -75,6 +79,7 @@ export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
     draft: boolean;
     queue?: boolean;
     editLast?: boolean;
+    operator?: boolean;
   };
   remoteSessionLoading: boolean;
   remoteSessionStarted: boolean;
@@ -744,6 +749,19 @@ function ConnectedRemoteSession({
       });
   });
 
+  /** A leading /operator gives the thread's agent the host's app CLI, as it
+   * does locally: the command leaves the shown text, the agent is told how
+   * to call the CLI, and the host keeps access on for later turns. */
+  const operatorTurn = (typed: string): { text: string; context?: string } => {
+    const appCli = descriptor?.capabilities.includes("app") ? descriptor.appCli : undefined;
+    const operator = appCli ? consumeOperatorCommand(typed) : { text: typed, matched: false };
+    if (!operator.matched || !appCli) return { text: typed };
+    return {
+      text: operator.text.trim() || "Explain what you can do in sIDE with the app CLI.",
+      context: operatorAppContext(appCli, false),
+    };
+  };
+
   /** Skill bodies and `@` references go to the provider only; the turn keeps
    * showing what was typed. */
   const withProviderPrompt = async <C extends HostCommand>(
@@ -752,11 +770,18 @@ function ConnectedRemoteSession({
     harness: HarnessId,
   ): Promise<C> => {
     if (command.type !== "send") return command;
-    const prompt = await prepareRemotePrompt(command.text, {
+    const operator = operatorTurn(command.text);
+    const prompt = await prepareRemotePrompt(operator.text, {
       harness,
       cwd: remotePath(machine.environmentId, cwd),
-    }).catch(() => command.text);
-    return prompt === command.text ? command : { ...command, prompt };
+    }).catch(() => operator.text);
+    const full = operator.context ? `${prompt}\n\n${operator.context}` : prompt;
+    return {
+      ...command,
+      text: operator.text,
+      ...(full !== operator.text ? { prompt: full } : {}),
+      ...(operator.context ? { appAccess: true } : {}),
+    };
   };
 
   const dispatchTurn = async (
@@ -936,15 +961,18 @@ function ConnectedRemoteSession({
     preparingRef.current = true;
     void (async () => {
       const refs = await uploadRemoteAttachments(machine.id, attachments);
-      const prompt = await providerPromptFor(text);
+      const operator = operatorTurn(text);
+      const expanded = (await providerPromptFor(operator.text)) ?? operator.text;
+      const prompt = operator.context ? `${expanded}\n\n${operator.context}` : expanded;
       await run({
         type: "queue",
         commandId: crypto.randomUUID(),
         sessionId: id,
-        text,
+        text: operator.text,
         ...(refs.length ? { attachments: refs } : {}),
         ...(intent === "plan" ? { intent } : {}),
-        ...(prompt ? { prompt } : {}),
+        ...(prompt !== operator.text ? { prompt } : {}),
+        ...(operator.context ? { appAccess: true } : {}),
       });
     })()
       .catch((reason) => {
@@ -1378,6 +1406,7 @@ function ConnectedRemoteSession({
       draft: !!descriptor?.capabilities.includes("sessions.draft"),
       queue: !!descriptor?.capabilities.includes("sessions.queue"),
       editLast: !!descriptor?.capabilities.includes("sessions.editLast"),
+      operator: !!descriptor?.capabilities.includes("app") && !!descriptor.appCli,
     },
     remoteSessionLoading: !!sessionId && !hostSession && !session.blocks.length,
     remoteSessionStarted: !!sessionId,

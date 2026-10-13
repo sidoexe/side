@@ -230,6 +230,7 @@ type Props = {
     draft: boolean;
     queue?: boolean;
     editLast?: boolean;
+    operator?: boolean;
   };
   context?: ContextUsage;
   compactSupported?: boolean;
@@ -550,6 +551,7 @@ export function Composer({
       remote
         ? [
             ...(remoteFeatures?.plan ? [PLAN_COMMAND] : []),
+            ...(remoteFeatures?.operator ? [OPERATOR_COMMAND] : []),
             COMPACT_COMMAND,
             ...skills.filter(
               (skill) =>
@@ -587,6 +589,7 @@ export function Composer({
       skills,
       remote,
       remoteFeatures?.plan,
+      remoteFeatures?.operator,
       hideTopBar,
       canSaveDraft,
       onSaveDraft,

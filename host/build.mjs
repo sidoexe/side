@@ -8,7 +8,7 @@ await build({
   platform: "node",
   format: "esm",
   target: "node24",
-  loader: { ".ps1": "text" },
+  loader: { ".ps1": "text", ".txt": "text" },
   define: { "import.meta.hot": "undefined" },
   sourcemap: true,
 });

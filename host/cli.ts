@@ -11,6 +11,8 @@ import {
 import { HostCheckpoints } from "./checkpoints";
 import { HostEmployees } from "./employees";
 import { HostAutomations } from "./automations";
+import { HostAppBridge } from "./app-bridge";
+import { runAppCli } from "./app-cli";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -73,7 +75,27 @@ const lifecycle = async (state: Running, action: "status" | "stop") => {
   if (!response.ok) throw new Error("Could not verify the running host");
 };
 
+/** How an agent on this host calls the app CLI: the installed launcher when
+ * there is one, otherwise this runtime and script. */
+function appCliCommand(): string {
+  const quote = (value: string) =>
+    process.platform === "win32"
+      ? `"${value.replace(/"/g, "")}"`
+      : /^[\w./:-]+$/.test(value)
+        ? value
+        : `'${value.replace(/'/g, "'\\''")}'`;
+  const launcher = join(directory, "bin", process.platform === "win32" ? "monocode-host.cmd" : "monocode-host");
+  const base = existsSync(launcher)
+    ? quote(launcher)
+    : `${quote(process.execPath)} ${quote(fileURLToPath(import.meta.url))}`;
+  return `${base} app`;
+}
+
 async function main() {
+  if (command === "app") {
+    process.exitCode = await runAppCli(args.slice(1));
+    return;
+  }
   if (command === "--version") {
     console.log(version);
     return;
@@ -90,6 +112,7 @@ async function main() {
   pair --name <device>  Issue a device credential (shown once)
   devices               List paired devices
   revoke <device-id>    Revoke a device credential
+  app ACTION            The sIDE app CLI, for agents this host runs (app --help)
 Options: --data-dir <directory> --port <port> (default 3774)
 Connect another computer using an SSH forward to the loopback port.`);
     return;
@@ -246,6 +269,14 @@ Connect another computer using an SSH forward to the loopback port.`);
     engine.checkpoints = new HostCheckpoints(join(directory, "checkpoints"));
     engine.employees = new HostEmployees(join(directory, "employees"));
     engine.automations = new HostAutomations(join(directory, "automations.db"));
+    const app = new HostAppBridge(join(directory, "app-access.json"), (id) => engine.isRunning(id));
+    engine.app = app;
+    const appCli = appCliCommand();
+    backend.sessionEnv = (sessionId) => ({
+      MONOCODE_APP_ENDPOINT: `http://127.0.0.1:${port}/app`,
+      MONOCODE_APP_TOKEN: app.token(sessionId),
+      MONOCODE_APP_CLI: appCli,
+    });
     const secret = randomBytes(32).toString("base64url");
     let stopping = false;
     let stop: () => Promise<void>;
@@ -278,7 +309,7 @@ Connect another computer using an SSH forward to the loopback port.`);
           response.writeHead(400).end();
         }
       });
-    });
+    }, appCli);
     stop = async () => {
       if (stopping) return;
       stopping = true;
