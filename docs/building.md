@@ -64,7 +64,7 @@ The [release workflow](../.github/workflows/release.yml) builds the Apple Silico
 
 1. `npm run set-version -- 0.14.0` updates `package.json`, the lockfile, `Cargo.toml` and `tauri.conf.json` together.
 2. Commit, then tag and push: `git tag v0.14.0 && git push origin main v0.14.0`.
-3. The workflow publishes `sIDE_<version>_aarch64.dmg`, `sIDE.app.tar.gz` and its signature, `latest.json`, and the `monocode-host-*` archives. A tag with a suffix (`v0.14.0-beta.1`) is published as a prerelease, which installed copies do not update to.
+3. The workflow publishes `sIDE_<version>_aarch64.dmg`, `sIDE.app.tar.gz` and its signature, `latest.json`, and the `side-host-*` archives. A tag with a suffix (`v0.14.0-beta.1`) is published as a prerelease, which installed copies do not update to.
 
 Installed copies check `https://github.com/sidoexe/side/releases/latest/download/latest.json` and only install an archive signed with the updater key. Its public half is in `tauri.conf.json`; the private half is the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets, kept in `~/.side-release` on the release maintainer's Mac. Losing it means installed copies can no longer update themselves.
 

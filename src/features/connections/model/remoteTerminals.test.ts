@@ -20,7 +20,7 @@ beforeEach(() => {
 });
 
 it("opens a terminal on the machine that owns the folder", async () => {
-  machines.list = [{ id: "m1", environmentId: "env", ssh: { target: "me@pc", remotePort: 3774 } }];
+  machines.list = [{ id: "m1", environmentId: "env", ssh: { target: "me@pc", remotePort: 3775 } }];
   await spawnPty("t1", "remote://env/Users/me/app", 80, 24);
   expect(invoke).toHaveBeenCalledWith("pty_spawn_remote", {
     id: "t1", machineId: "m1", cwd: "/Users/me/app", cols: 80, rows: 24,

@@ -52,9 +52,9 @@ const option = (name: string, fallback: string): string => {
   return args[i + 1];
 };
 const directory = resolve(
-  option("data-dir", join(homedir(), ".monocode-host")),
+  option("data-dir", join(homedir(), ".side-host")),
 );
-const port = Number(option("port", "3774"));
+const port = Number(option("port", "3775"));
 const statePath = join(directory, "running.json");
 type Running = { pid: number; port: number; secret: string };
 const readRunning = (): Running | undefined => {
@@ -79,7 +79,7 @@ const lifecycle = async (state: Running, action: "status" | "stop") => {
 function appCliCommand(): string {
   const quote = (value: string) =>
     /^[\w./:-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`;
-  const launcher = join(directory, "bin", "monocode-host");
+  const launcher = join(directory, "bin", "side-host");
   const base = existsSync(launcher)
     ? quote(launcher)
     : `${quote(process.execPath)} ${quote(fileURLToPath(import.meta.url))}`;
@@ -108,7 +108,7 @@ async function main() {
   devices               List paired devices
   revoke <device-id>    Revoke a device credential
   app ACTION            The sIDE app CLI, for agents this host runs (app --help)
-Options: --data-dir <directory> --port <port> (default 3774)
+Options: --data-dir <directory> --port <port> (default 3775)
 Connect another computer using an SSH forward to the loopback port.`);
     return;
   }

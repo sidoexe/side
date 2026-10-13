@@ -20,7 +20,7 @@ const machine: RemoteMachine = {
   name: "Home Mac",
   environmentId: "env",
   endpoint: "ssh://me@home",
-  ssh: { target: "me@home", remotePort: 3774 },
+  ssh: { target: "me@home", remotePort: 3775 },
 };
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -212,7 +212,7 @@ it("explains removal and removes the saved connection without stopping or revoki
     "leaves this desktop’s credential valid",
   );
   expect(container.textContent).toContain(
-    "~/.monocode-host/bin/monocode-host service uninstall",
+    "~/.side-host/bin/side-host service uninstall",
   );
   await act(async () => button("Remove from this desktop only").click());
   expect(invoke).toHaveBeenCalledWith("remote_disconnect", {

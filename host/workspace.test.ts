@@ -208,7 +208,7 @@ it("reports tracked and untracked changes and commits staged files", async () =>
 
 it("stages and unstages a folder subtree without affecting other changes", async () => {
   const root = realpathSync.native(
-    mkdtempSync(join(tmpdir(), "monocode-host-folder-")),
+    mkdtempSync(join(tmpdir(), "side-host-folder-")),
   );
   roots.push(root);
   const git = (...args: string[]) => execFileSync("git", args, { cwd: root });
@@ -274,7 +274,7 @@ it
   "stages and unstages the literal folder %s without touching siblings",
   async (folder) => {
     const root = realpathSync.native(
-      mkdtempSync(join(tmpdir(), "monocode-host-literal-folder-")),
+      mkdtempSync(join(tmpdir(), "side-host-literal-folder-")),
     );
     roots.push(root);
     const git = (...args: string[]) =>

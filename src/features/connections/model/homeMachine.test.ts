@@ -23,9 +23,9 @@ vi.mock("../../monos/model/mono", () => ({
 const machine = (id: string, target?: string) => ({
   id,
   name: id,
-  endpoint: target ? `ssh://${target}` : "http://127.0.0.1:3774",
+  endpoint: target ? `ssh://${target}` : "http://127.0.0.1:3775",
   environmentId: `env-${id}`,
-  ssh: target ? { target, remotePort: 3774 } : null,
+  ssh: target ? { target, remotePort: 3775 } : null,
 });
 
 beforeEach(() => localStorage.clear());

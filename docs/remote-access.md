@@ -35,7 +35,7 @@ The **Explorer** sidebar and Go to File use the normal file views for host folde
 
 The composer’s **+** menu supports file and image attachments, Plan mode, and saved drafts when the host advertises these capabilities. Attachments are copied to the host’s private data directory before the turn or draft is recorded; each file is limited to 20 MiB. Image previews are restored from the host when you reopen a conversation. A draft can be sent or removed from its transcript card. Plan mode uses the host provider and produces a reviewable plan card whose Build action continues on the host with the session’s current model. Update older hosts to enable these menu actions.
 
-`@` file mentions and file skills (`.agents/skills`, each provider's skill folders and Claude plugins, discovered on the host) work as they do locally; harnesses with a native command catalog keep only `/plan` and `/compact` remotely. Terminals open on the machine, in the chosen folder: a terminal runs `ssh -t` to the same SSH target as the host tunnel, with your own SSH config, keys and agent, so it streams like a local one, and a machine reached through an alias to this computer gets a plain local shell. A machine connected by URL only has no SSH target and cannot open terminals. `/operator` works there too, with hosts that advertise `app`: the agent runs on the host, so it is given the host's own `app` CLI (`~/.monocode-host/bin/monocode-host app`), with the same actions and help as the local one. Each call goes to the host, which holds it until a desktop showing that session takes it, runs it as a local call and answers; folders are translated between the host's paths and the desktop's. As locally, calls are accepted only during a running turn of a thread where `/operator` was used, which the host remembers across restarts, and each host session has its own credential. The worktree settings page lists and deletes host worktrees with the same checks as locally; the sessions working in a deleted worktree are removed or moved to the project folder. A message typed while a turn runs is queued on the host and sent when the turn ends, even with the desktop closed; stopping a turn pauses the queue, and a queued message can be edited, removed or steered into the running turn. Editing the last message rewinds Codex, OpenCode, Pi and omp on the host before resending. The review card after each turn lists the files the turn changed, from Git snapshots the host takes before and after the turn, and can undo or keep them. Plans from the transcript open normal read-only plan tabs. Source files stay on the host; this feature shares host-owned sessions, not working-directory synchronization.
+`@` file mentions and file skills (`.agents/skills`, each provider's skill folders and Claude plugins, discovered on the host) work as they do locally; harnesses with a native command catalog keep only `/plan` and `/compact` remotely. Terminals open on the machine, in the chosen folder: a terminal runs `ssh -t` to the same SSH target as the host tunnel, with your own SSH config, keys and agent, so it streams like a local one, and a machine reached through an alias to this computer gets a plain local shell. A machine connected by URL only has no SSH target and cannot open terminals. `/operator` works there too, with hosts that advertise `app`: the agent runs on the host, so it is given the host's own `app` CLI (`~/.side-host/bin/side-host app`), with the same actions and help as the local one. Each call goes to the host, which holds it until a desktop showing that session takes it, runs it as a local call and answers; folders are translated between the host's paths and the desktop's. As locally, calls are accepted only during a running turn of a thread where `/operator` was used, which the host remembers across restarts, and each host session has its own credential. The worktree settings page lists and deletes host worktrees with the same checks as locally; the sessions working in a deleted worktree are removed or moved to the project folder. A message typed while a turn runs is queued on the host and sent when the turn ends, even with the desktop closed; stopping a turn pauses the queue, and a queued message can be edited, removed or steered into the running turn. Editing the last message rewinds Codex, OpenCode, Pi and omp on the host before resending. The review card after each turn lists the files the turn changed, from Git snapshots the host takes before and after the turn, and can undo or keep them. Plans from the transcript open normal read-only plan tabs. Source files stay on the host; this feature shares host-owned sessions, not working-directory synchronization.
 
 ## Manual connection (advanced / development)
 
@@ -46,21 +46,21 @@ From a checkout of this version of sIDE on the host:
 ```sh
 npm ci
 npm run host:build
-node build/host/monocode-host.mjs start
-node build/host/monocode-host.mjs pair --name "My laptop"
+node build/host/side-host.mjs start
+node build/host/side-host.mjs pair --name "My laptop"
 ```
 
 `start` launches the host independently of the terminal. `pair` prints a device ID and a device token; copy the token to the receiving desktop. Create a separate credential for each desktop. Tokens grant control of the host as its OS user, including provider execution and workspace reads.
 
-The host binds only to `127.0.0.1:3774`. State and logs live in `~/.monocode-host`. Unix permissions restrict access to the owner. Use `--data-dir` and `--port` to override them. `serve` runs in the foreground for debugging.
+The host binds only to `127.0.0.1:3775`. State and logs live in `~/.side-host`. Unix permissions restrict access to the owner. Use `--data-dir` and `--port` to override them. `serve` runs in the foreground for debugging.
 
 Open an SSH tunnel from your laptop:
 
 ```sh
-ssh -N -L 3774:127.0.0.1:3774 user@your-host
+ssh -N -L 3775:127.0.0.1:3775 user@your-host
 ```
 
-Under **Settings → Connections → Connect to an existing host by URL**, enter `http://127.0.0.1:3774` and the device token.
+Under **Settings → Connections → Connect to an existing host by URL**, enter `http://127.0.0.1:3775` and the device token.
 
 When the laptop wakes, restore the SSH tunnel. The remote view reconnects automatically and loads the host's latest persisted snapshot. An uncertain request retains its original command ID, including creation of a new session and its first message. **Retry** asks the host for that same command’s receipt, so a lost response does not create another conversation or submit the prompt again. Pending requests survive restarting the desktop and belong to the tab that created them.
 
@@ -68,7 +68,7 @@ HTTPS endpoints can also be entered if you operate a reverse proxy to the loopba
 
 ## Provider accounts and balancing
 
-A host can run sessions on several provider logins. Declare them in `config.json` in the host's data directory (`~/.monocode-host/config.json`); the file is read on every use, so no restart is needed:
+A host can run sessions on several provider logins. Declare them in `config.json` in the host's data directory (`~/.side-host/config.json`); the file is read on every use, so no restart is needed:
 
 ```json
 {
@@ -91,7 +91,7 @@ The limit notice works on host sessions: **Resume** continues the conversation, 
 
 ## Employees on the home machine
 
-When the home machine's host advertises `employees`, every desktop keeps its employees there instead of in its own data folder: the roster (names, looks, projects) and each employee's `SOUL.md`, `MEMORY.md`, `habits.json` and `memory/` notes, under `~/.monocode-host/employees`. The first time a desktop reaches such a host, it copies its own employees in; the host keeps whatever it already has, so a second desktop adds its employees without overwriting the first one's. Roster changes are pushed as they happen and read back every 15 seconds; when two desktops change it at once, each one's own edits are kept.
+When the home machine's host advertises `employees`, every desktop keeps its employees there instead of in its own data folder: the roster (names, looks, projects) and each employee's `SOUL.md`, `MEMORY.md`, `habits.json` and `memory/` notes, under `~/.side-host/employees`. The first time a desktop reaches such a host, it copies its own employees in; the host keeps whatever it already has, so a second desktop adds its employees without overwriting the first one's. Roster changes are pushed as they happen and read back every 15 seconds; when two desktops change it at once, each one's own edits are kept.
 
 Employees' conversations live there too, so any desktop opens the same chat. A desktop copies a chat it kept locally to the host the first time it opens it, unless the host already has one. Two desktops can write the same chat: a save names the last block its writer saved before, and when someone else has written since, the host merges the save, updating the blocks it has and appending the new ones, instead of replacing the conversation's end. The provider session behind a chat stays on the desktop that started it, so the next turn from another desktop starts a fresh provider session, briefed on the conversation exactly as when a long chat fills its context window. A chat started in another computer's home folder runs in this one's.
 
@@ -104,26 +104,26 @@ When the home machine's host advertises `automations`, every desktop lists, edit
 ## Manage the host
 
 ```sh
-node build/host/monocode-host.mjs status
-node build/host/monocode-host.mjs devices
-node build/host/monocode-host.mjs revoke DEVICE_ID
-node build/host/monocode-host.mjs stop
-node build/host/monocode-host.mjs service uninstall
+node build/host/side-host.mjs status
+node build/host/side-host.mjs devices
+node build/host/side-host.mjs revoke DEVICE_ID
+node build/host/side-host.mjs stop
+node build/host/side-host.mjs service uninstall
 ```
 
 SSH setup names each device credential after the desktop's computer name. Removing a saved connection from the desktop does not stop the host. It revokes the device credential only when you choose **Revoke access and remove**. Otherwise, use `devices` and `revoke` on the host to remove access. Stopping the host interrupts active turns; restarting retains their transcripts and marks them interrupted. No uncertain provider operation is automatically replayed after a host crash.
 
-`service uninstall` is the cleanup path for a host you no longer want running. It removes the systemd user service or the LaunchAgent. It then stops the host, including a manually started one, and interrupts any running turns. It never deletes the data directory. Sessions, logs, and device credentials stay in `~/.monocode-host` until you delete that directory yourself. To remove access without stopping the host, use `revoke` instead. On Linux, the command prints how to turn off lingering if nothing else needs it.
+`service uninstall` is the cleanup path for a host you no longer want running. It removes the systemd user service or the LaunchAgent. It then stops the host, including a manually started one, and interrupts any running turns. It never deletes the data directory. Sessions, logs, and device credentials stay in `~/.side-host` until you delete that directory yourself. To remove access without stopping the host, use `revoke` instead. On Linux, the command prints how to turn off lingering if nothing else needs it.
 
 The machine must remain awake. Manual `start` launches a detached process. `service install` installs a user service; SSH setup runs it automatically. Only one host may own a data directory. Restart the host after changing its provider installation or PATH. Service installs preserve an already-running host, including one previously started manually.
 
-SSH-installed hosts have a launcher at `~/.monocode-host/bin/monocode-host`; use it in place of `node build/host/monocode-host.mjs` in management commands. Linux services are named `monocode-host.service`; macOS uses `com.monocode.host`. A service manager can restart a stopped process, so use `service uninstall` rather than `stop` to keep the host stopped.
+SSH-installed hosts have a launcher at `~/.side-host/bin/side-host`; use it in place of `node build/host/side-host.mjs` in management commands. Linux services are named `side-host.service`; macOS uses `dev.sidoexe.side.host`. A service manager can restart a stopped process, so use `service uninstall` rather than `stop` to keep the host stopped.
 
 ## Release packaging
 
 `npm run host:package` builds a self-contained package for the current Mac/Linux architecture. `npm run host:package -- --all` builds all four archives, using pinned official Node binaries and checksums. Archives contain the host bundle, runtime, launcher, and licenses. `host/package.mjs` pins the runtime version.
 
-The release workflow publishes `monocode-host-darwin-arm64.tar.gz` and its `.sha256` file alongside the desktop release. SSH setup downloads from the exact desktop version's GitHub release, then installs under `~/.monocode-host/runtime`.
+The release workflow publishes `side-host-darwin-arm64.tar.gz` and its `.sha256` file alongside the desktop release. SSH setup downloads from the exact desktop version's GitHub release, then installs under `~/.side-host/runtime`.
 
 **Unreleased development builds:** automatic first-time installation and **Update Host** require host archives published for the desktop version. Release builds from v0.5.0 onward include the matching archives; an unreleased checkout may not have them. Until the matching release is available, use the manual development connection above. A missing archive produces an explicit error in Settings. No fallback to an arbitrary latest release or unverified download is used. Connecting does not automatically upgrade a running host. When an SSH host lacks Explorer or Changes, Settings → Connections offers **Update Host**. This downloads and verifies the matching package, restarts the host service, and reconnects using the existing device credential. The restart interrupts active agent turns; sessions and history remain on the host. URL connections must be updated on the host manually.
 

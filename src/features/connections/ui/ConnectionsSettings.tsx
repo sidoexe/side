@@ -39,7 +39,7 @@ export function ConnectionsSettings() {
   const [updatingMachine, setUpdatingMachine] = useState<string>();
   const [removing, setRemoving] = useState<string>();
   const [revoking, setRevoking] = useState(false);
-  const [url, setUrl] = useState("http://127.0.0.1:3774");
+  const [url, setUrl] = useState("http://127.0.0.1:3775");
   const [token, setToken] = useState("");
   const alive = useRef(true);
   const currentJob = useRef<string | undefined>(undefined);
@@ -220,7 +220,7 @@ export function ConnectionsSettings() {
           await remoteRequest(machine.id, "devices.revokeSelf");
         } catch (reason) {
           throw new Error(
-            `Could not revoke access, so ${machine.name} was not removed: ${String(reason)}. Reconnect and try again, or remove it from this desktop only and revoke it on the host with monocode-host devices and monocode-host revoke <device-id>.`,
+            `Could not revoke access, so ${machine.name} was not removed: ${String(reason)}. Reconnect and try again, or remove it from this desktop only and revoke it on the host with side-host devices and side-host revoke <device-id>.`,
           );
         }
       }
@@ -345,7 +345,7 @@ export function ConnectionsSettings() {
                   <p>
                     To stop the host and turn off its background service, run{" "}
                     <code className="rounded bg-content/10 px-1">
-                      ~/.monocode-host/bin/monocode-host service uninstall
+                      ~/.side-host/bin/side-host service uninstall
                     </code>{" "}
                     on that machine. Its sessions and history are kept.
                   </p>

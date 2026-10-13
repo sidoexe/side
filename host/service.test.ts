@@ -14,7 +14,7 @@ import { launchAgent, systemdUnit, uninstallService } from "./service";
 it("keeps paths and environment content from injecting service configuration", () => {
   const options = {
     directory: "/Users/a & b/%folder",
-    port: 3774,
+    port: 3775,
     executable: '/runtime/a"b/node',
     entry: "/runtime/$name/host.mjs",
   };
@@ -36,9 +36,9 @@ it.each(["darwin", "linux"] as const)(
     try {
       const service =
         platform === "darwin"
-          ? join(home, "Library/LaunchAgents/com.monocode.host.plist")
-          : join(home, ".config/systemd/user/monocode-host.service");
-      const data = join(home, ".monocode-host/host.db");
+          ? join(home, "Library/LaunchAgents/dev.sidoexe.side.host.plist")
+          : join(home, ".config/systemd/user/side-host.service");
+      const data = join(home, ".side-host/host.db");
       for (const file of [service, data]) {
         mkdirSync(dirname(file), { recursive: true });
         writeFileSync(file, "existing");
@@ -64,7 +64,7 @@ it.each(["darwin", "linux"] as const)(
           "--user",
           "disable",
           "--now",
-          "monocode-host.service",
+          "side-host.service",
         ]);
         expect(notes.join("\n")).toContain("loginctl disable-linger");
       }

@@ -75,7 +75,7 @@ async function devinAskEditsArgs(): Promise<string[]> {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const config = devinAskEditsConfig(user);
-  const dir = join(homedir(), ".monocode-host", "devin");
+  const dir = join(homedir(), ".side-host", "devin");
   const hash = createHash("sha256").update(config).digest("hex").slice(0, 16);
   const file = join(dir, `supervised-${hash}.json`);
   await mkdir(dir, { recursive: true, mode: 0o700 });

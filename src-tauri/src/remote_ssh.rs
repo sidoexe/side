@@ -339,14 +339,14 @@ pub fn bootstrap_script() -> String {
 
 pub fn upgrade_script(port: u16) -> String {
     format!(
-        "MONOCODE_HOST_FORCE_UPGRADE=1\nMONOCODE_HOST_PORT={port}\n{}",
+        "SIDE_HOST_FORCE_UPGRADE=1\nSIDE_HOST_PORT={port}\n{}",
         bootstrap_script()
     )
 }
 
 pub fn pairing_script(name: &str) -> String {
     format!(
-        "set -eu\n\"$HOME/.monocode-host/bin/monocode-host\" pair --name {} --json\n",
+        "set -eu\n\"$HOME/.side-host/bin/side-host\" pair --name {} --json\n",
         shell_quote(name)
     )
 }
@@ -580,7 +580,7 @@ mod tests {
         SshTarget {
             target: value.into(),
             port,
-            remote_port: 3774,
+            remote_port: 3775,
         }
     }
 
@@ -737,8 +737,8 @@ mod tests {
         assert!(script.contains("checksum mismatch"));
         assert!(script.contains("\"$FORCE_UPGRADE\" = 1"));
         assert!(script.contains("service uninstall"));
-        assert!(upgrade_script(3774).starts_with("MONOCODE_HOST_FORCE_UPGRADE=1"));
-        assert!(!upgrade_script(3774).contains('\r'));
+        assert!(upgrade_script(3775).starts_with("SIDE_HOST_FORCE_UPGRADE=1"));
+        assert!(!upgrade_script(3775).contains('\r'));
     }
     #[test]
     fn device_names_are_bounded_single_lines() {

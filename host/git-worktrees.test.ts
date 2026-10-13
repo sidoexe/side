@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 
 it.each([false, true])("applies generated worktree names only to retained sessions (deleted: %s)", async (deleted) => {
-  const cwd = mkdtempSync(join(tmpdir(), "monocode-host-names-"));
+  const cwd = mkdtempSync(join(tmpdir(), "side-host-names-"));
   const git = (...args: string[]) => execFileSync("git", args, { cwd });
   git("init", "-q");
   git("checkout", "-q", "-b", "main");
@@ -119,7 +119,7 @@ it.each([false, true])("applies generated worktree names only to retained sessio
 });
 
 it("creates registered host worktrees and binds new sessions to the selected checkout", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "monocode-host-worktrees-"));
+  const cwd = mkdtempSync(join(tmpdir(), "side-host-worktrees-"));
   const git = (...args: string[]) => execFileSync("git", args, { cwd });
   git("init", "-q");
   git("checkout", "-q", "-b", "main");

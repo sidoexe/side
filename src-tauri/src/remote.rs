@@ -256,7 +256,7 @@ pub fn remote_connect(
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
     {
-        return Err("Enter the device token issued by monocode-host pair".into());
+        return Err("Enter the device token issued by side-host pair".into());
     }
     let descriptor = rpc(&endpoint, &token, None, "environment.describe", json!({}))?;
     if descriptor.get("protocolVersion").and_then(Value::as_u64) != Some(1) {
@@ -620,7 +620,7 @@ pub fn remote_ssh_begin(
         SshTarget {
             target,
             port,
-            remote_port: 3774,
+            remote_port: 3775,
         },
         name.trim().chars().take(100).collect(),
         None,
@@ -733,13 +733,13 @@ mod tests {
     #[test]
     fn endpoints_require_an_encrypted_route_and_no_embedded_secrets() {
         assert_eq!(
-            endpoint("http://127.0.0.1:3774/").unwrap(),
-            "http://127.0.0.1:3774"
+            endpoint("http://127.0.0.1:3775/").unwrap(),
+            "http://127.0.0.1:3775"
         );
-        assert!(endpoint("http://[::1]:3774").is_ok());
+        assert!(endpoint("http://[::1]:3775").is_ok());
         assert!(endpoint("https://host.example").is_ok());
         for url in [
-            "http://192.168.1.5:3774",
+            "http://192.168.1.5:3775",
             "file:///tmp/socket",
             "https://user:secret@host.example",
             "https://host.example/rpc",

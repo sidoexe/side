@@ -9,7 +9,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 const home = {
   id: "pro",
   name: "Pro",
-  endpoint: "http://127.0.0.1:3774",
+  endpoint: "http://127.0.0.1:3775",
   environmentId: "env-pro",
   ssh: null,
 };

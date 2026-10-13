@@ -5,7 +5,7 @@ import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 
 const exec = promisify(execFile);
-const LABEL = "com.monocode.host";
+const LABEL = "dev.sidoexe.side.host";
 type ServiceOptions = {
   directory: string;
   port: number;
@@ -148,10 +148,10 @@ export async function uninstallService(
     const env = systemdEnvironment(user.uid);
     await run(
       "systemctl",
-      ["--user", "disable", "--now", "monocode-host.service"],
+      ["--user", "disable", "--now", "side-host.service"],
       env,
     ).catch(ignore);
-    await rm(join(home, ".config/systemd/user/monocode-host.service"), {
+    await rm(join(home, ".config/systemd/user/side-host.service"), {
       force: true,
     });
     await run("systemctl", ["--user", "daemon-reload"], env).catch(ignore);
@@ -232,7 +232,7 @@ export async function installService(
     }
     const folder = join(homedir(), ".config/systemd/user");
     await mkdir(folder, { recursive: true });
-    const file = join(folder, "monocode-host.service");
+    const file = join(folder, "side-host.service");
     try {
       await readFile(file);
     } catch {
@@ -241,7 +241,7 @@ export async function installService(
     await run("systemctl", ["--user", "daemon-reload"], env);
     await run(
       "systemctl",
-      ["--user", "enable", "--now", "monocode-host.service"],
+      ["--user", "enable", "--now", "side-host.service"],
       env,
     );
   } else {

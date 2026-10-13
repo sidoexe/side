@@ -24,8 +24,8 @@ it("parses the same arguments as the desktop's app CLI", () => {
 });
 
 it("prints help naming this host's command", () => {
-  const help = appHelp("/home/me/.monocode-host/bin/monocode-host app");
-  expect(help).toContain("Usage: /home/me/.monocode-host/bin/monocode-host app ACTION");
+  const help = appHelp("/home/me/.side-host/bin/side-host app");
+  expect(help).toContain("Usage: /home/me/.side-host/bin/side-host app ACTION");
   expect(help).toContain("sessions.start");
 });
 

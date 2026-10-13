@@ -170,7 +170,7 @@ beforeEach(() => {
         name: "home",
         providers,
         capabilities: ["attachments.upload", "sessions.plan", "sessions.draft", ...extraCapabilities],
-        ...(extraCapabilities.includes("app") ? { appCli: "/home/me/.monocode-host/bin/monocode-host app" } : {}),
+        ...(extraCapabilities.includes("app") ? { appCli: "/home/me/.side-host/bin/side-host app" } : {}),
       };
     if (method === "accounts.list") return hostAccounts;
     if (method === "sessions.update") {
@@ -639,7 +639,7 @@ it("gives an /operator thread the host's app CLI and keeps the command out of th
   expect(commands[1]).toMatchObject({ type: "send", text: "list my sessions", appAccess: true });
   const prompt = (commands[1] as { prompt?: string }).prompt ?? "";
   expect(prompt).toContain("<monocode_app>");
-  expect(prompt).toContain("/home/me/.monocode-host/bin/monocode-host app --help");
+  expect(prompt).toContain("/home/me/.side-host/bin/side-host app --help");
 });
 
 it("sends /operator as typed to a host without the app CLI", async () => {

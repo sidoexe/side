@@ -72,7 +72,7 @@ for (const target of targets) {
     `${stem}/bin/node`,
     `${stem}/LICENSE`,
   ]);
-  await copyFile("build/host/monocode-host.mjs", join(folder, "host.mjs"));
+  await copyFile("build/host/side-host.mjs", join(folder, "host.mjs"));
   await copyFile("host/provider-guard.mjs", join(folder, "provider-guard.mjs"));
   await copyFile("LICENSE", join(folder, "MONOCODE-LICENSE"));
   await writeFile(
@@ -80,10 +80,10 @@ for (const target of targets) {
     JSON.stringify({ version, nodeVersion, target }),
   );
   await writeFile(
-    join(folder, "monocode-host"),
+    join(folder, "side-host"),
     '#!/bin/sh\nset -eu\nDIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$DIR/bin/node" "$DIR/host.mjs" "$@"\n',
   );
-  await chmod(join(folder, "monocode-host"), 0o755);
+  await chmod(join(folder, "side-host"), 0o755);
   if (target === `${process.platform}-${process.arch}`) {
     const executable = join(folder, "bin/node");
     const actual = execFileSync(
@@ -96,7 +96,7 @@ for (const target of targets) {
     if (actual !== version)
       throw new Error("Packaged host failed its executable smoke test");
   }
-  const filename = `monocode-host-${target}.${extension}`;
+  const filename = `side-host-${target}.${extension}`;
   await rm(join(output, filename), { force: true });
   execFileSync("tar", ["-czf", join(output, filename), "-C", folder, "."]);
   const hash = createHash("sha256")

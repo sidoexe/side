@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import usage from "./app-cli-usage.txt?raw";
 
 /**
- * `monocode-host app …`: the sIDE app CLI for an agent the host runs. Same
+ * `side-host app …`: the sIDE app CLI for an agent the host runs. Same
  * arguments, output and help as the desktop's own (`control_cli.rs`); calls
  * go to this host, which relays them to the desktop showing the session.
  */
@@ -46,7 +46,7 @@ export function parseAppArgs(args: readonly string[], stdin: () => string): Pars
   return { kind: "call", action, input: input as Record<string, unknown>, requestId };
 }
 
-export function appHelp(exe = process.env.MONOCODE_APP_CLI || "monocode-host"): string {
+export function appHelp(exe = process.env.MONOCODE_APP_CLI || "side-host"): string {
   return usage.replaceAll("{exe} app", exe.endsWith(" app") ? exe : `${exe} app`);
 }
 
