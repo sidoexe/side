@@ -198,7 +198,14 @@ export class HostStore {
 
   updateSession(
     id: string,
-    patch: { title?: string; archived?: boolean; pinned?: boolean; linkedWorkItem?: LinkedWorkItem | null },
+    patch: {
+      title?: string;
+      archived?: boolean;
+      pinned?: boolean;
+      linkedWorkItem?: LinkedWorkItem | null;
+      /** `null` dismisses the limit notice; `resumeAtReset` arms the resume. */
+      usageLimit?: null | { resumeAtReset: boolean };
+    },
   ): HostSessionSummary {
     return this.transaction(() => {
       const current = this.session(id);
@@ -216,6 +223,14 @@ export class HostStore {
             ...(patch.linkedWorkItem === undefined
               ? {}
               : { linkedWorkItem: patch.linkedWorkItem ?? undefined }),
+            ...(patch.usageLimit === undefined
+              ? {}
+              : {
+                  usageLimit:
+                    patch.usageLimit && current.session.usageLimit
+                      ? { ...current.session.usageLimit, resumeAtReset: patch.usageLimit.resumeAtReset }
+                      : undefined,
+                }),
           },
         },
         { type: "session.metadata", patch },

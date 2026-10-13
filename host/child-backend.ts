@@ -18,6 +18,7 @@ import {
   type RemoteProvider,
 } from "../src/features/connections/model/protocol";
 import { providerLaunch, resolveProvider } from "./process";
+import { accountEnv, DEFAULT_ACCOUNT, type HostAccounts } from "./accounts";
 
 const exec = promisify(execFile);
 const ALLOWED_EXEC_ARGS: readonly (readonly string[])[] = [
@@ -107,12 +108,15 @@ export class HostChildBackend implements ChildBackend {
 
   constructor(
     private readonly binaries: Partial<Record<RemoteProvider, string>> = {},
+    private readonly accounts?: HostAccounts,
   ) {
     this.events.setMaxListeners(0);
   }
 
   async resolve(provider: RemoteProvider): Promise<string> {
     if (this.binaries[provider]) return this.binaries[provider]!;
+    const configured = this.accounts?.binary(provider);
+    if (configured) return configured;
     return resolveProvider(provider);
   }
 
@@ -325,11 +329,16 @@ export class HostChildBackend implements ChildBackend {
     if (this.closing) throw new Error("Host is stopping");
     await this.kill(id);
     if (this.closing) throw new Error("Host is stopping");
-    const account = args.account as { id?: string } | undefined;
-    if (account?.id && account.id !== "default")
-      throw new Error(
-        "Named provider accounts are not supported by this host yet",
-      );
+    const account = args.account as { provider?: string; id?: string } | undefined;
+    const named =
+      account?.id && account.id !== DEFAULT_ACCOUNT
+        ? this.accounts?.find(String(account.provider ?? ""), account.id)
+        : undefined;
+    if (account?.id && account.id !== DEFAULT_ACCOUNT && !named)
+      throw new Error("Named provider accounts are not configured on this host");
+    const accountVars = accountEnv(named);
+    const env: NodeJS.ProcessEnv = { ...process.env, ...accountVars.set, MONOCODE_HOST: "1" };
+    for (const name of accountVars.unset) delete env[name];
     let commandArgs = args.args as string[];
     if (args.devinAskEdits) {
       if (
@@ -355,7 +364,7 @@ export class HostChildBackend implements ChildBackend {
         stdio: ["pipe", "pipe", "pipe", "pipe"],
         detached: process.platform !== "win32",
         windowsHide: true,
-        env: { ...process.env, MONOCODE_HOST: "1" },
+        env,
       },
     );
     this.children.set(id, child);

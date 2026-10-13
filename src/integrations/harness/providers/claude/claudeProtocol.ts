@@ -515,6 +515,45 @@ export function usageLimitFromRateLimitEvent(
   return resetsAt != null ? { resetsAt } : {};
 }
 
+/**
+ * The account's window levels a `rate_limit_event` carries, as percent used.
+ * Recent CLIs list every window under `unifiedWindows` (utilization 0..1);
+ * older ones describe only the window the event is about.
+ */
+export function rateLimitWindowsFromEvent(rec: Record<string, unknown>): {
+  fiveHour?: { used: number; resetsAt?: number };
+  sevenDay?: { used: number; resetsAt?: number };
+} | null {
+  const info = asRecord(rec.rate_limit_info);
+  if (!info) return null;
+  const read = (value: unknown) => {
+    const window = asRecord(value);
+    const utilization = window?.utilization;
+    if (typeof utilization !== "number" || !Number.isFinite(utilization)) return undefined;
+    const resetsAt = parseResetTimestamp(window?.resetsAt);
+    return {
+      used: Math.round(Math.min(Math.max(utilization, 0), 1) * 1000) / 10,
+      ...(resetsAt != null ? { resetsAt } : {}),
+    };
+  };
+  const unified = asRecord(info.unifiedWindows);
+  const out: {
+    fiveHour?: { used: number; resetsAt?: number };
+    sevenDay?: { used: number; resetsAt?: number };
+  } = {};
+  const fiveHour = read(unified?.five_hour);
+  const sevenDay = read(unified?.seven_day);
+  if (fiveHour) out.fiveHour = fiveHour;
+  if (sevenDay) out.sevenDay = sevenDay;
+  if (!fiveHour && !sevenDay) {
+    const single = read(info);
+    const type = stringField(info, "rateLimitType");
+    if (single && type === "five_hour") out.fiveHour = single;
+    if (single && type === "seven_day") out.sevenDay = single;
+  }
+  return out.fiveHour || out.sevenDay ? out : null;
+}
+
 const USAGE_LIMIT_TEXT = /hit your (?:usage )?limit|usage limit reached/i;
 
 /** Claude also ends a limited turn with the limit as its error text. */

@@ -122,6 +122,9 @@ let currentBranch: string;
 let createdBranch: string | undefined;
 let createdWorktree: string | undefined;
 let deletedSessions: string[];
+let extraCapabilities: string[];
+let hostAccounts: unknown[];
+let sessionUpdates: Record<string, unknown>[];
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -137,6 +140,9 @@ beforeEach(() => {
   createdBranch = undefined;
   createdWorktree = undefined;
   deletedSessions = [];
+  extraCapabilities = [];
+  hostAccounts = [];
+  sessionUpdates = [];
   catalog = { models: { codex: [gpt] }, errors: {} };
   providers = ["codex"];
   projectKey = rememberRemoteProject("env", {
@@ -163,8 +169,26 @@ beforeEach(() => {
         environmentId: "env",
         name: "home",
         providers,
-        capabilities: ["attachments.upload", "sessions.plan", "sessions.draft"],
+        capabilities: ["attachments.upload", "sessions.plan", "sessions.draft", ...extraCapabilities],
       };
+    if (method === "accounts.list") return hostAccounts;
+    if (method === "sessions.update") {
+      const update = params as unknown as Record<string, unknown>;
+      sessionUpdates.push(update);
+      if (host && update.usageLimit !== undefined)
+        host = {
+          ...host,
+          revision: host.revision + 1,
+          session: {
+            ...host.session,
+            usageLimit:
+              update.usageLimit && host.session.usageLimit
+                ? { ...host.session.usageLimit, ...(update.usageLimit as object) }
+                : undefined,
+          },
+        };
+      return {};
+    }
     if (method === "models.list") {
       if (catalog instanceof Error) throw catalog.message;
       return catalog;
@@ -280,6 +304,7 @@ function dispatch(command: HostCommand) {
         model: command.model,
         modelSettings: command.modelSettings ?? {},
         runtimeMode: command.runtimeMode,
+        ...(command.providerAccountId ? { providerAccountId: command.providerAccountId } : {}),
         title: "New remote session",
         blocks: [],
       },
@@ -293,6 +318,7 @@ function dispatch(command: HostCommand) {
         model: command.model,
         modelSettings: command.modelSettings,
         runtimeMode: command.runtimeMode,
+        providerAccountId: command.providerAccountId,
       },
     };
   } else if (host && command.type === "send") {
@@ -1073,4 +1099,77 @@ it("ignores a late create response after its tab has switched conversations", as
   expect(remoteSessionFor("shell")).toBe("different-session");
   expect(commands.map((command) => command.type)).toEqual(["create"]);
   expect(container.textContent).not.toContain("Pending first message");
+});
+
+it("starts on the host's balanced account and switches account between turns", async () => {
+  extraCapabilities = ["accounts"];
+  hostAccounts = [
+    { id: "auto", provider: "codex", label: "Balanced" },
+    { id: "work", provider: "codex", label: "Work", usage: { sevenDay: { used: 12 } } },
+  ];
+  await render();
+  const picker = () => container.querySelector<HTMLSelectElement>('select[aria-label="Host account"]')!;
+  expect(picker().value).toBe("auto");
+  expect(picker().textContent).toContain("Work · 7d 12%");
+  await send("Fix the tests");
+  expect(commands[0]).toMatchObject({ type: "create", providerAccountId: "auto" });
+  await act(async () => {
+    picker().value = "work";
+    picker().dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await settle();
+  expect(commands.find((command) => command.type === "configure")).toMatchObject({
+    providerAccountId: "work",
+  });
+});
+
+it("hides the account picker on a host without accounts", async () => {
+  await render();
+  expect(container.querySelector('select[aria-label="Host account"]')).toBeNull();
+  await send("Hi");
+  expect(commands[0]).not.toHaveProperty("providerAccountId");
+});
+
+async function limitedSession(resetsAt: number) {
+  await render();
+  dispatch({
+    type: "create", commandId: "limited", projectId: "project",
+    harness: "codex", model: gpt.id, runtimeMode: "supervised",
+  });
+  host = {
+    ...host!,
+    session: {
+      ...host!.session,
+      blocks: [{ id: "u", role: "user", text: "Work" }],
+      usageLimit: { resetsAt },
+    },
+  };
+  commands = [];
+  await act(async () => rememberRemoteSession("shell", "host-session"));
+  await settle();
+}
+
+it("resumes a limited host session from its notice", async () => {
+  await limitedSession(Date.now() - 60_000);
+  const resume = [...container.querySelectorAll("button")].find((button) => button.textContent === "Resume")!;
+  await act(async () => resume.click());
+  await settle();
+  expect(commands).toEqual([
+    expect.objectContaining({ type: "send", text: "Continue from where you left off." }),
+  ]);
+});
+
+it("arms the host's resume at reset and dismisses the notice on the host", async () => {
+  await limitedSession(Date.now() + 3_600_000);
+  const atReset = [...container.querySelectorAll("button")].find((button) => button.textContent === "Resume at reset")!;
+  await act(async () => atReset.click());
+  await settle();
+  expect(sessionUpdates).toEqual([
+    { projectId: "project", sessionId: "host-session", usageLimit: { resumeAtReset: true } },
+  ]);
+  expect(container.textContent).toContain("Resuming at reset");
+  await act(async () => byLabel("Dismiss usage limit notice")!.click());
+  await settle();
+  expect(sessionUpdates[1]).toEqual({ projectId: "project", sessionId: "host-session", usageLimit: null });
+  expect(byLabel("Dismiss usage limit notice")).toBeNull();
 });

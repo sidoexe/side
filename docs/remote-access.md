@@ -68,6 +68,29 @@ When the laptop wakes, restore the SSH tunnel. The remote view reconnects automa
 
 HTTPS endpoints can also be entered if you operate a reverse proxy to the loopback host. Plain HTTP is accepted only for loopback endpoints. Native desktop HTTP carries the saved credential; it is not exposed to the renderer or browser storage. The native connection store is `remote-machines.json` in the desktop app's data directory, with mode 0600 on Unix. This initial implementation does not use the OS keychain.
 
+## Provider accounts and balancing
+
+A host can run sessions on several provider logins. Declare them in `config.json` in the host's data directory (`~/.monocode-host/config.json`); the file is read on every use, so no restart is needed:
+
+```json
+{
+  "accounts": [
+    { "id": "perso-1", "provider": "claude", "label": "Perso 1", "configDir": "~/.claude-1" },
+    { "id": "perso-2", "provider": "claude", "label": "Perso 2", "configDir": "~/.claude-2" }
+  ],
+  "balance": ["perso-1", "perso-2"],
+  "binaries": { "claude": "/opt/homebrew/bin/claude" }
+}
+```
+
+Each account is a CLI profile directory the host user already signed in to (`CLAUDE_CONFIG_DIR` for Claude, `CODEX_HOME` for Codex). The remote composer shows an **Account** picker when the host lists accounts.
+
+With two or more accounts in `balance`, the picker also offers **Balanced**, the default for new sessions. A balanced conversation starts on the account with the most weekly headroom; the five-hour window only rules out an account that is nearly full. When its account hits a Claude usage limit, the host carries the conversation to the next account and runs the refused turn again there, without showing the refusal. Only when every pooled account is limited does the usual limit notice appear. Window levels are recorded in `account-usage.json` next to `config.json`.
+
+The limit notice works on host sessions: **Resume** continues the conversation, **Dismiss** clears the notice, and **Resume at reset** is kept by the host, which continues the conversation itself once the window reopens, with every desktop closed.
+
+`binaries` overrides where the host finds a provider CLI; otherwise its PATH decides.
+
 ## Manage the host
 
 ```sh
@@ -100,7 +123,7 @@ The release workflow publishes `monocode-host-{darwin,linux}-{arm64,x64}.tar.gz`
 
 Supported: persistent remote text conversations with all ten local provider adapters, follow-up turns, approvals, questions where the provider offers them, cancellation, per-device revocation, reconnect, remote file browsing and text editing, Git status, file diffs, and history, staging and commits, branch selection and creation, worktree selection and creation, and a tracked Git diff against HEAD. OpenCode's server and event stream stay on the host's loopback interface. Cursor's optional enrichment from its native session database is not available on the headless host; basic transcript and subagent events still work. The desktop polls the host and downloads only transcript blocks that changed since its last update (every 0.75 s while a session runs, 3 s otherwise). The desktop rejects any single host response over 16 MiB. A sync above 4 MiB, such as reopening a very long transcript or one very large tool output, is sent as a series of bounded pieces of one consistent revision. Transcript size is therefore not limited by the response cap. The host writes streamed output in 120 ms batches and keeps a bounded event journal.
 
-Remote history appears in the Sessions sidebar of each project on a machine. Host snapshots also populate the app's normal session state while the tab is open; they are not written to the local session store. Remote `/compact` uses the provider's context compaction, and `/plan` selects the host provider's plan mode. Queued follow-ups and editing the last message still need host commands. Other local slash commands and skill expansion are not yet available remotely. Worktree deletion, terminals, generated image output, named provider accounts, `/operator`, automations, orchestration, LAN discovery, and account-based tunnels are not implemented yet. Other remote prompts are sent directly to the provider.
+Remote history appears in the Sessions sidebar of each project on a machine. Host snapshots also populate the app's normal session state while the tab is open; they are not written to the local session store. Remote `/compact` uses the provider's context compaction, and `/plan` selects the host provider's plan mode. Queued follow-ups and editing the last message still need host commands. Other local slash commands and skill expansion are not yet available remotely. Worktree deletion, terminals, generated image output, `/operator`, automations, orchestration, LAN discovery, and account-based tunnels are not implemented yet. Other remote prompts are sent directly to the provider.
 
 The headless host runs the reused TypeScript adapters with a Node process backend. It proves the execution boundary without introducing the planned Rust daemon/worker IPC yet. Node is included in host release archives, separately from the desktop application.
 

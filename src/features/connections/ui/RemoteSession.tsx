@@ -22,6 +22,13 @@ import type { Worktree } from "../../source-control/model/worktrees";
 import { useProjectBranchesState } from "../../source-control/hooks/useProjectBranches";
 import { registerRemoteSessionActions } from "../model/remoteSessionActions";
 import {
+  accountsFor,
+  defaultHostAccount,
+  useHostAccounts,
+} from "../model/hostAccounts";
+import { RemoteAccountPicker } from "./RemoteAccountPicker";
+import { CONTINUE_PROMPT } from "../../sessions/model/inFlight";
+import {
   clearPendingRemoteCommand,
   loadRemoteSession,
   OPEN_CONNECTIONS_EVENT,
@@ -72,6 +79,8 @@ type Configuration = {
   model: string;
   settings: Record<string, string>;
   mode: RuntimeMode;
+  /** Host account; undefined is the host's default login. */
+  account?: string;
 };
 
 type OptimisticTurn = {
@@ -463,6 +472,21 @@ function ConnectedRemoteSession({
     () => (descriptor?.providers ?? []).filter(isRemoteProvider),
     [descriptor],
   );
+  const hostAccounts = useHostAccounts(
+    machine.id,
+    !!descriptor?.capabilities.includes("accounts"),
+  );
+  // A new session starts balanced when the host pools accounts for it.
+  useEffect(() => {
+    if (sessionId) return;
+    setDraft((current) => {
+      const offered = accountsFor(hostAccounts, current.harness);
+      if (current.account && offered.some((account) => account.id === current.account))
+        return current;
+      const account = defaultHostAccount(hostAccounts, current.harness);
+      return current.account === account ? current : { ...current, account };
+    });
+  }, [hostAccounts, sessionId, draft.harness]);
   // A new session starts with the tab's model when the host offers it, and
   // otherwise with the host's first model. Settings follow the host's entry:
   // the same id can differ between machines, such as `claude:opus` offering a
@@ -496,6 +520,7 @@ function ConnectedRemoteSession({
     model: hostSession.model,
     settings: hostSession.modelSettings ?? {},
     mode: hostSession.runtimeMode,
+    account: hostSession.providerAccountId,
   };
   const configuration = saved ? (changes ?? saved) : draft;
   const updateConfiguration = (
@@ -684,6 +709,7 @@ function ConnectedRemoteSession({
     const same = (a: Configuration, b: Configuration) =>
       a.model === b.model &&
       a.mode === b.mode &&
+      (a.account ?? "default") === (b.account ?? "default") &&
       sameModelSettings(a.settings, b.settings);
     if (same(changes, saved)) {
       applied.current = undefined;
@@ -701,6 +727,7 @@ function ConnectedRemoteSession({
       model: changes.model,
       modelSettings: changes.settings,
       runtimeMode: changes.mode,
+      providerAccountId: changes.account ?? "default",
     })
       .then((receipt) => {
         if (receipt) applied.current = sent;
@@ -795,6 +822,7 @@ function ConnectedRemoteSession({
         model: draft.model,
         modelSettings: draft.settings,
         runtimeMode: draft.mode,
+        ...(draft.account ? { providerAccountId: draft.account } : {}),
       }, turn, followup);
       if (version !== bindingVersion.current) return;
       if (!receipt) {
@@ -839,6 +867,22 @@ function ConnectedRemoteSession({
           ...(draftBlockId ? { draftBlockId } : {}),
           ...(planBlockId ? { planBlockId } : {}),
         };
+
+  const updateUsageLimit = async (
+    usageLimit: null | { resumeAtReset: boolean },
+  ) => {
+    if (!hostSession || !online) return;
+    try {
+      await remoteRequest(machine.id, "sessions.update", {
+        projectId: project.projectId,
+        sessionId: hostSession.id,
+        usageLimit,
+      });
+      setRefresh((value) => value + 1);
+    } catch (reason) {
+      if (alive.current) setError(String(reason));
+    }
+  };
 
   const submit = (
     text: string,
@@ -1250,9 +1294,14 @@ function ConnectedRemoteSession({
     onQueuedMessageEditingChange: noop,
     onSteerQueuedMessage: noop,
     onResumeQueue: noop,
-    onUsageLimitResume: noop,
-    onUsageLimitResumeAtReset: noop,
-    onUsageLimitDismiss: noop,
+    // The notice lives in the host session; the host also runs the timed
+    // resume, so it fires with this desktop closed.
+    onUsageLimitResume: () => {
+      submit(CONTINUE_PROMPT);
+    },
+    onUsageLimitResumeAtReset: (_, enabled) =>
+      void updateUsageLimit({ resumeAtReset: enabled }),
+    onUsageLimitDismiss: () => void updateUsageLimit(null),
     onOpenPlan: (_, blockId) => onOpenPlan(shell.id, blockId),
     onBuildPlan: (_, blockId, target) => buildPlan(blockId, target),
     onSecondOpinion: undefined,
@@ -1293,6 +1342,14 @@ function ConnectedRemoteSession({
             ) : null}
           </div>
         ) : null}
+        <RemoteAccountPicker
+          accounts={accountsFor(hostAccounts, configuration.harness)}
+          value={configuration.account}
+          disabled={!online || busy}
+          onChange={(account) =>
+            updateConfiguration((current) => ({ ...current, account }))
+          }
+        />
         <div className="min-h-0 flex-1">{render(overrides)}</div>
       </div>
     </ModelSourceContext.Provider>

@@ -293,11 +293,15 @@ export function createHostServer(
                 "sessions.draft",
                 "sessions.plan",
                 "sessions.import",
+                "accounts",
               ],
             };
             break;
           case "projects.list":
             result = engine.store.projects();
+            break;
+          case "accounts.list":
+            result = engine.accountSummaries();
             break;
           case "projects.browse":
             result = await browseHostDirectories(params.path);
@@ -333,7 +337,7 @@ export function createHostServer(
             const current = engine.store.session(sessionId);
             if (current.projectId !== params.projectId)
               throw new Error("Session does not belong to this project");
-            const patch: { title?: string; archived?: boolean; pinned?: boolean; linkedWorkItem?: LinkedWorkItem | null } = {};
+            const patch: Parameters<typeof engine.updateSession>[1] = {};
             if (params.title !== undefined) {
               if (typeof params.title !== "string") throw new Error("Invalid session title");
               patch.title = params.title;
@@ -360,6 +364,16 @@ export function createHostServer(
                 parsed.url !== (item as LinkedWorkItem).url
               )) throw new Error("Invalid linked work item");
               patch.linkedWorkItem = item as LinkedWorkItem | null;
+            }
+            if (params.usageLimit !== undefined) {
+              const limit = params.usageLimit;
+              if (limit === null) patch.usageLimit = null;
+              else if (
+                limit && typeof limit === "object" && !Array.isArray(limit) &&
+                typeof (limit as { resumeAtReset?: unknown }).resumeAtReset === "boolean"
+              )
+                patch.usageLimit = { resumeAtReset: (limit as { resumeAtReset: boolean }).resumeAtReset };
+              else throw new Error("Invalid usage limit change");
             }
             if (Object.keys(patch).length === 0) throw new Error("No session changes supplied");
             result = engine.updateSession(sessionId, patch);

@@ -18,6 +18,7 @@ import {
   acquireHarnessBridge,
 } from "../src/integrations/harness/core/child";
 import { HostChildBackend } from "./child-backend";
+import { HostAccounts } from "./accounts";
 import { HostStore } from "./store";
 import { acquireHostOwner } from "./owner";
 import { HostEngine } from "./engine";
@@ -219,7 +220,8 @@ Connect another computer using an SSH forward to the loopback port.`);
     throw new Error("Unknown command; run with --help");
   }
   const releaseOwner = await acquireHostOwner(directory);
-  const backend = new HostChildBackend();
+  const accounts = new HostAccounts(directory);
+  const backend = new HostChildBackend({}, accounts);
   let cleanup = () => {
     rmSync(statePath, { force: true });
     store.close();
@@ -237,7 +239,7 @@ Connect another computer using an SSH forward to the loopback port.`);
         /* report via descriptor */
       }
     }
-    const engine = new HostEngine(store, hostProviders);
+    const engine = new HostEngine(store, hostProviders, accounts);
     const secret = randomBytes(32).toString("base64url");
     let stopping = false;
     let stop: () => Promise<void>;

@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { HostProvider } from "./providers";
 import { HostEngine, parseCommand } from "./engine";
 import { HostStore } from "./store";
+import { HostAccounts } from "./accounts";
 import { readAttachmentChunk, writeAttachmentChunk } from "./attachments";
 
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -894,4 +895,168 @@ describe("headless session ownership", () => {
       }),
     ).toThrow();
   });
+});
+
+describe("balanced provider accounts", () => {
+  async function balanced() {
+    const directory = mkdtempSync(join(tmpdir(), "monocode-balance-test-"));
+    const profiles = join(directory, "profiles");
+    writeFileSync(join(directory, "config.json"), JSON.stringify({
+      accounts: [
+        { id: "a", provider: "claude", configDir: join(profiles, "a") },
+        { id: "b", provider: "claude", configDir: join(profiles, "b") },
+      ],
+      balance: ["a", "b"],
+    }));
+    const accounts = new HostAccounts(directory);
+    // a has the most weekly headroom, so the conversation starts there.
+    accounts.recordUsage("a", { sevenDay: { used: 5 } });
+    accounts.recordUsage("b", { sevenDay: { used: 50 } });
+    const store = new HostStore(join(directory, "host.db"));
+    const project = store.addProject(directory, "Test");
+    const sends: SendTurnInput[] = [];
+    const provider: HostProvider = {
+      send: vi.fn(async (input: SendTurnInput) => {
+        sends.push(input);
+        input.onEvent({ type: "session.providerBound", providerSessionId: "conv-1" });
+        if (input.providerAccountId === "a") {
+          input.onEvent({ type: "rate.limits", fiveHour: { used: 100 }, sevenDay: { used: 6 } });
+          input.onEvent({ type: "message.delta", text: "You've hit your session limit · resets 3pm" });
+          input.onEvent({ type: "session.error", message: "You've hit your session limit · resets 3pm" });
+          input.onEvent({ type: "usage.limited", resetsAt: Date.now() + 3_600_000 });
+          return;
+        }
+        input.onEvent({ type: "message.delta", text: "Answer from b" });
+        input.onEvent({ type: "message.completed" });
+      }),
+      cancel: vi.fn(async () => {}),
+      stop: vi.fn(async () => {}),
+      bind: vi.fn(),
+      approve: vi.fn(),
+      answer: vi.fn(),
+    };
+    const engine = new HostEngine(store, { claude: provider }, accounts);
+    cleanups.push(async () => {
+      await engine.close();
+      store.close();
+      rmSync(directory, { recursive: true, force: true });
+    });
+    return { directory, profiles, accounts, store, project, provider, engine, sends };
+  }
+
+  it("moves a limited conversation to the next account and hides the refusal", async () => {
+    const { accounts, store, project, provider, engine, sends, profiles } = await balanced();
+    mkdirSync(join(profiles, "a", "projects", "-repo"), { recursive: true });
+    writeFileSync(join(profiles, "a", "projects", "-repo", "conv-1.jsonl"), "{}\n");
+    const { sessionId } = engine.command({
+      type: "create", commandId: "c", projectId: project.id, harness: "claude",
+      model: "claude:test", runtimeMode: "supervised", providerAccountId: "auto",
+    });
+    engine.command({ type: "send", commandId: "s", sessionId, text: "Hello" });
+    await vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"));
+
+    expect(sends.map((input) => input.providerAccountId)).toEqual(["a", "b"]);
+    expect(sends[1].text).toBe("Hello");
+    expect(provider.bind).toHaveBeenCalledWith(sessionId, "conv-1", expect.any(String), "b");
+    const saved = store.session(sessionId);
+    expect(saved.accountInUse).toBe("b");
+    expect(saved.session.usageLimit).toBeUndefined();
+    const text = JSON.stringify(saved.session.blocks);
+    expect(text).toContain("Answer from b");
+    expect(text).not.toMatch(/hit your/);
+    expect(accounts.usage().a.blockedUntil).toBeGreaterThan(Date.now());
+    expect(accounts.usage().a.sevenDay).toEqual({ used: 6 });
+    // The transcript followed the conversation to b's profile.
+    expect(existsSync(join(profiles, "b", "projects", "-repo", "conv-1.jsonl"))).toBe(true);
+  });
+
+  it("shows the limit when every account is limited", async () => {
+    const { accounts, store, project, engine, sends } = await balanced();
+    accounts.markBlocked("b", Date.now() + 60_000);
+    const { sessionId } = engine.command({
+      type: "create", commandId: "c", projectId: project.id, harness: "claude",
+      model: "claude:test", runtimeMode: "supervised", providerAccountId: "auto",
+    });
+    engine.command({ type: "send", commandId: "s", sessionId, text: "Hello" });
+    await vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"));
+    expect(sends.map((input) => input.providerAccountId)).toEqual(["a"]);
+    const saved = store.session(sessionId);
+    expect(saved.session.usageLimit).toBeDefined();
+    expect(JSON.stringify(saved.session.blocks)).toMatch(/hit your session limit/);
+  });
+
+  it("runs a named account as is and rejects unknown ones", async () => {
+    const { store, project, engine, sends } = await balanced();
+    expect(() => engine.command({
+      type: "create", commandId: "x", projectId: project.id, harness: "claude",
+      model: "claude:test", runtimeMode: "supervised", providerAccountId: "ghost",
+    })).toThrow(/Unknown claude account/);
+    const { sessionId } = engine.command({
+      type: "create", commandId: "c", projectId: project.id, harness: "claude",
+      model: "claude:test", runtimeMode: "supervised", providerAccountId: "b",
+    });
+    engine.command({ type: "send", commandId: "s", sessionId, text: "Hi" });
+    await vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"));
+    expect(sends.map((input) => input.providerAccountId)).toEqual(["b"]);
+    expect(store.session(sessionId).accountInUse).toBeUndefined();
+  });
+});
+
+describe("usage limit notice on a host session", () => {
+  it("dismisses, arms and resumes at reset from the host itself", async () => {
+    const { engine, store, turns, id } = setup("claude");
+    engine.command({ type: "send", commandId: "first", sessionId: id, text: "Work" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    const resetsAt = Date.now() - 60_000;
+    turns[0].input.onEvent({ type: "usage.limited", resetsAt });
+    turns[0].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    expect(store.session(id).session.usageLimit).toEqual({ resetsAt });
+
+    engine.updateSession(id, { usageLimit: null });
+    expect(store.session(id).session.usageLimit).toBeUndefined();
+
+    // Limited again, this time armed: the window already reset, so the host
+    // continues the conversation without any desktop.
+    engine.command({ type: "send", commandId: "second", sessionId: id, text: "More" });
+    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    turns[1].input.onEvent({ type: "usage.limited", resetsAt });
+    turns[1].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    engine.updateSession(id, { usageLimit: { resumeAtReset: true } });
+    await vi.waitFor(() => expect(turns).toHaveLength(3));
+    expect(turns[2].input.text).toBe("Continue from where you left off.");
+    expect(store.session(id).session.usageLimit).toBeUndefined();
+    turns[2].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+  });
+
+  it("waits for the reset before resuming", async () => {
+    const { engine, store, turns, id } = setup("claude");
+    engine.command({ type: "send", commandId: "first", sessionId: id, text: "Work" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    const resetsAt = Date.now() + 3_600_000;
+    turns[0].input.onEvent({ type: "usage.limited", resetsAt });
+    turns[0].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    engine.updateSession(id, { usageLimit: { resumeAtReset: true } });
+    expect(store.session(id).session.usageLimit).toEqual({ resetsAt, resumeAtReset: true });
+    engine.resumeDue(resetsAt - 1);
+    expect(turns).toHaveLength(1);
+    engine.resumeDue(resetsAt + 31_000);
+    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    turns[1].finish();
+  });
+});
+
+it("dates a limit without a reset time from the window that filled up", async () => {
+  const { engine, store, turns, id } = setup("claude");
+  engine.command({ type: "send", commandId: "first", sessionId: id, text: "Work" });
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  const reset = Date.now() + 7_200_000;
+  turns[0].input.onEvent({ type: "rate.limits", fiveHour: { used: 100, resetsAt: reset }, sevenDay: { used: 40, resetsAt: reset + 1 } });
+  turns[0].input.onEvent({ type: "usage.limited" });
+  turns[0].finish();
+  await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+  expect(store.session(id).session.usageLimit).toEqual({ resetsAt: reset });
 });

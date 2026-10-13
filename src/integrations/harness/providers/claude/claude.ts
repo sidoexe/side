@@ -67,6 +67,7 @@ import {
   tryParseJsonRecord,
   turnStatusFromResult,
   usageLimitFromRateLimitEvent,
+  rateLimitWindowsFromEvent,
   type ClaudeAgentTaskNotification,
   type ClaudeCliSettings,
   type ClaudeControlRequest,
@@ -727,6 +728,8 @@ function handleLine(sessionId: string, live: Live, line: string): void {
   }
   if (type === "rate_limit_event") {
     live.usageLimit = usageLimitFromRateLimitEvent(rec);
+    const windows = rateLimitWindowsFromEvent(rec);
+    if (windows) live.onEvent({ type: "rate.limits", ...windows });
     return;
   }
   if (type === "system") {

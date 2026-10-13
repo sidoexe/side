@@ -27,6 +27,18 @@ export type HostDescriptor = {
   platform?: "win32" | "darwin" | "linux";
 };
 export type HostProject = { id: string; cwd: string; name: string };
+/** A provider account the host can run sessions on. `auto` is the
+ * balanced choice across the host's pooled accounts. */
+export type HostAccountSummary = {
+  id: string;
+  provider: "claude" | "codex";
+  label: string;
+  usage?: {
+    fiveHour?: { used: number; resetsAt?: number };
+    sevenDay?: { used: number; resetsAt?: number };
+    blockedUntil?: number;
+  };
+};
 export type HostDirectory = {
   path: string;
   parent: string | null;
@@ -58,6 +70,8 @@ export type HostSession = {
   autoWorktreeBranch?: string;
   /** Host-only: the revision at which each block last changed. */
   blockRevisions?: Record<string, number>;
+  /** The account a balanced (`auto`) conversation currently runs on. */
+  accountInUse?: string;
 };
 export type HostSessionSummary = Omit<
   HostSession,
@@ -152,6 +166,8 @@ export type HostCommand =
       model: string;
       modelSettings?: Record<string, string>;
       runtimeMode: RuntimeMode;
+      /** Host account: `default`, `auto` (balanced), or a named one. */
+      providerAccountId?: string;
     }
   | {
       type: "configure";
@@ -160,6 +176,7 @@ export type HostCommand =
       model: string;
       modelSettings: Record<string, string>;
       runtimeMode: RuntimeMode;
+      providerAccountId?: string;
     }
   | { type: "compact"; commandId: string; sessionId: string }
   | {

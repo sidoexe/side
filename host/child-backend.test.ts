@@ -6,6 +6,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { HostChildBackend } from "./child-backend";
+import { HostAccounts } from "./accounts";
 import { REMOTE_PROVIDERS } from "../src/features/connections/model/protocol";
 
 it("resolves every provider and runs only allowed provider commands", async () => {
@@ -278,3 +279,49 @@ setInterval(() => {}, 1000);
     });
   }
 }, 10_000);
+
+it("starts a named account's provider in its profile and refuses unknown ones", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "monocode-account-spawn-"));
+  const file = join(directory, "provider.cjs");
+  writeFileSync(
+    file,
+    "console.log(JSON.stringify({ dir: process.env.CLAUDE_CONFIG_DIR ?? null, key: process.env.ANTHROPIC_API_KEY ?? null })); setInterval(() => {}, 1000)",
+  );
+  writeFileSync(
+    join(directory, "config.json"),
+    JSON.stringify({ accounts: [{ id: "perso", provider: "claude", configDir: join(directory, "perso") }] }),
+  );
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "ambient";
+  const backend = new HostChildBackend({}, new HostAccounts(directory));
+  const lines: string[] = [];
+  const stopListening = await backend.listen<{ sessionId: string; line: string }>(
+    "harness-stdout",
+    ({ payload }) => lines.push(`${payload.sessionId}:${payload.line}`),
+  );
+  try {
+    await backend.invoke("harness_spawn", {
+      sessionId: "named", command: file, args: [], cwd: directory,
+      account: { provider: "claude", id: "perso" },
+    });
+    await backend.invoke("harness_spawn", {
+      sessionId: "plain", command: file, args: [], cwd: directory,
+      account: { provider: "claude", id: "default" },
+    });
+    await vi.waitFor(() => expect(lines).toHaveLength(2));
+    expect(lines).toContain(`named:${JSON.stringify({ dir: join(directory, "perso"), key: null })}`);
+    expect(lines).toContain(`plain:${JSON.stringify({ dir: process.env.CLAUDE_CONFIG_DIR ?? null, key: "ambient" })}`);
+    await expect(
+      backend.invoke("harness_spawn", {
+        sessionId: "ghost", command: file, args: [], cwd: directory,
+        account: { provider: "claude", id: "ghost" },
+      }),
+    ).rejects.toThrow(/Unknown claude account/);
+  } finally {
+    if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousKey;
+    stopListening();
+    await backend.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+}, 15_000);

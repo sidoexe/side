@@ -39,7 +39,7 @@ export interface HostProvider {
   compact?(input: CompactContextInput): Promise<void>;
   cancel(id: string): Promise<void>;
   stop(id: string): Promise<void>;
-  bind(id: string, providerId: string, cwd: string): void;
+  bind(id: string, providerId: string, cwd: string, accountId?: string): void;
   approve(id: string, request: number, decision: ApprovalDecision): void;
   answer(id: string, request: number, reply: UserQuestionReply): void;
   generateTitle?(input: {

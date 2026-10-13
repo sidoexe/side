@@ -31,6 +31,15 @@ import {
 } from "../src/features/connections/model/protocol";
 import type { HostProvider } from "./providers";
 import { HostStore } from "./store";
+import { CONTINUE_PROMPT } from "../src/features/sessions/model/inFlight";
+import { usageLimitResumeDue } from "../src/features/sessions/model/usageLimit";
+import {
+  AUTO_ACCOUNT,
+  DEFAULT_ACCOUNT,
+  carryClaudeTranscript,
+  claudeConfigDir,
+  type HostAccounts,
+} from "./accounts";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments";
 
 // Streamed output is written in batches. Anything a user may need to act on
@@ -74,6 +83,35 @@ function modelSettings(value: unknown): Record<string, string> {
   return Object.fromEntries(entries) as Record<string, string>;
 }
 
+function accountField(value: unknown): { providerAccountId?: string } {
+  if (value === undefined) return {};
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,80}$/.test(value))
+    throw new Error("Invalid provider account");
+  return { providerAccountId: value };
+}
+
+/** Claude's text when a usage window refuses the turn. */
+const LIMIT_TEXT = /hit your (?:[a-z0-9-]+ )?limit|usage limit reached/i;
+
+/** Binds a provider conversation, naming its account only when it has one. */
+function bindProvider(
+  provider: HostProvider,
+  id: string,
+  providerSessionId: string,
+  cwd: string,
+  account: string | undefined,
+): void {
+  if (account) provider.bind(id, providerSessionId, cwd, account);
+  else provider.bind(id, providerSessionId, cwd);
+}
+
+/** The concrete account a session's provider conversation belongs to. */
+function boundAccount(value: HostSession): string | undefined {
+  const requested = value.session.providerAccountId;
+  if (requested === AUTO_ACCOUNT) return value.accountInUse;
+  return requested && requested !== DEFAULT_ACCOUNT ? requested : undefined;
+}
+
 export function parseCommand(input: unknown): HostCommand {
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new Error("Invalid command");
@@ -108,6 +146,7 @@ export function parseCommand(input: unknown): HostCommand {
         ? { modelSettings: modelSettings(v.modelSettings) }
         : {}),
       runtimeMode: v.runtimeMode as Session["runtimeMode"],
+      ...accountField(v.providerAccountId),
     };
   }
   const sessionId = text(v.sessionId, "session ID");
@@ -121,6 +160,7 @@ export function parseCommand(input: unknown): HostCommand {
       model: text(v.model, "model", 200),
       modelSettings: modelSettings(v.modelSettings),
       runtimeMode: v.runtimeMode as Session["runtimeMode"],
+      ...accountField(v.providerAccountId),
     };
   }
   if (v.type === "compact") return { type: "compact", commandId, sessionId };
@@ -260,14 +300,20 @@ export class HostEngine {
   >();
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private closing = false;
+  /** Sessions waiting to continue once their usage window resets. The host
+   * resumes them itself, so it happens with every desktop closed. */
+  private resumeAtReset = new Set<string>();
+  private resumeTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     readonly store: HostStore,
     private readonly providers: Partial<Record<RemoteProvider, HostProvider>>,
+    private readonly accounts?: HostAccounts,
   ) {
     // Provider dispatch is not transactional with SQLite. Never replay a send
     // automatically after a crash; its external effects may already exist.
     for (const value of store.sessions()) {
+      if (value.session.usageLimit?.resumeAtReset) this.resumeAtReset.add(value.session.id);
       if (value.status === "running") {
         this.save(
           this.settled(
@@ -280,12 +326,16 @@ export class HostEngine {
         );
       }
       if (value.session.providerSessionId)
-        this.provider(value.session.harness).bind(
+        bindProvider(
+          this.provider(value.session.harness),
           value.session.id,
           value.session.providerSessionId,
           value.session.cwd,
+          boundAccount(value),
         );
     }
+    this.resumeTimer = setInterval(() => this.resumeDue(), 30_000);
+    this.resumeTimer.unref?.();
   }
 
   async openProject(path: string) {
@@ -339,7 +389,43 @@ export class HostEngine {
     const summary = this.store.updateSession(id, patch);
     const live = this.live.get(id);
     if (live) live.value = this.store.session(id);
+    if (patch.usageLimit !== undefined) {
+      if (this.store.session(id).session.usageLimit?.resumeAtReset) this.resumeAtReset.add(id);
+      else this.resumeAtReset.delete(id);
+      this.resumeDue();
+    }
     return summary;
+  }
+
+  /** Sends the continue prompt to every armed session whose window reset. */
+  resumeDue(now = Date.now()): void {
+    if (this.closing) return;
+    for (const id of [...this.resumeAtReset]) {
+      let value: HostSession;
+      try {
+        value = this.store.session(id);
+      } catch {
+        this.resumeAtReset.delete(id);
+        continue;
+      }
+      const limit = value.session.usageLimit;
+      if (!limit?.resumeAtReset) {
+        this.resumeAtReset.delete(id);
+        continue;
+      }
+      if (value.status !== "idle" || !usageLimitResumeDue(value.session, now)) continue;
+      this.resumeAtReset.delete(id);
+      try {
+        this.command({
+          type: "send",
+          commandId: `resume-${id}-${limit.resetsAt}`,
+          sessionId: id,
+          text: CONTINUE_PROMPT,
+        });
+      } catch (error) {
+        console.error("Could not resume a session after its usage limit:", error instanceof Error ? error.message : error);
+      }
+    }
   }
 
   /** Takes over a session a desktop recorded in its own store, so every
@@ -447,10 +533,12 @@ export class HostEngine {
           this.live.delete(id);
           this.running.delete(id);
           if (latest.session.providerSessionId)
-            provider.bind(
+            bindProvider(
+              provider,
               id,
               latest.session.providerSessionId,
               latest.session.cwd,
+              boundAccount(latest),
             );
         } catch (error) {
           console.error(
@@ -483,6 +571,7 @@ export class HostEngine {
         if (this.switchingProjects.has(project.id))
           throw new Error("Wait for the branch switch to finish");
         this.provider(command.harness);
+        this.checkAccount(command.harness, command.providerAccountId);
         const cwd = resolveHostWorktree(project.cwd, command.worktreeCwd);
         const now = Date.now();
         value = {
@@ -499,6 +588,9 @@ export class HostEngine {
             model: command.model,
             runtimeMode: command.runtimeMode,
             modelSettings: command.modelSettings ?? {},
+            ...(command.providerAccountId
+              ? { providerAccountId: command.providerAccountId }
+              : {}),
             title: "New remote session",
             ...(command.autoWorktreeBranch
               ? { branch: command.autoWorktreeBranch, worktreeCwd: cwd }
@@ -519,6 +611,7 @@ export class HostEngine {
             throw new Error(
               "Wait for the current turn before changing settings",
             );
+          this.checkAccount(value.session.harness, command.providerAccountId);
           value = {
             ...value,
             session: {
@@ -526,6 +619,9 @@ export class HostEngine {
               model: command.model,
               modelSettings: command.modelSettings,
               runtimeMode: command.runtimeMode,
+              ...(command.providerAccountId
+                ? { providerAccountId: command.providerAccountId }
+                : {}),
             },
           };
         } else if (command.type === "draft") {
@@ -635,6 +731,8 @@ export class HostEngine {
               ...value.session,
               busy: true,
               pendingQuestion: undefined,
+              // A new turn supersedes the limit notice, as it does locally.
+              usageLimit: undefined,
               title:
                 firstTurn && placeholderTitle
                   ? titleFromPrompt(
@@ -829,6 +927,142 @@ export class HostEngine {
     }
   }
 
+  accountSummaries() {
+    return this.accounts?.summaries() ?? [];
+  }
+
+  private checkAccount(harness: string, id: string | undefined): void {
+    if (!id || id === DEFAULT_ACCOUNT) return;
+    if (id === AUTO_ACCOUNT) {
+      if (!this.accounts?.pool(harness).length)
+        throw new Error(`No balanced ${harness} accounts are configured on this host`);
+      return;
+    }
+    if (!this.accounts) throw new Error("Named provider accounts are not configured on this host");
+    this.accounts.find(harness, id);
+  }
+
+  /** The concrete account this turn runs on. A balanced conversation keeps
+   * its account until that account is limited, then takes the best one. */
+  private accountForRun(id: string): string | undefined {
+    const live = this.live.get(id);
+    if (!live) return undefined;
+    const value = live.value;
+    const requested = value.session.providerAccountId;
+    if (!requested || requested === DEFAULT_ACCOUNT) return undefined;
+    if (requested !== AUTO_ACCOUNT || !this.accounts) return requested;
+    const harness = value.session.harness;
+    const pool = this.accounts.pool(harness);
+    const current = value.accountInUse;
+    const blockedUntil = current ? this.accounts.usage()[current]?.blockedUntil : undefined;
+    let chosen =
+      current && pool.some((account) => account.id === current) && !(blockedUntil && blockedUntil > Date.now())
+        ? current
+        : this.accounts.pick(harness)?.account.id;
+    // Codex keeps its threads per profile and has no carry-over: an existing
+    // Codex conversation stays where it started.
+    if (harness !== "claude" && current && value.session.providerSessionId) chosen = current;
+    if (chosen && chosen !== current)
+      this.useAccount(id, this.provider(harness), current, chosen);
+    return chosen;
+  }
+
+  /** The account after a limited one, or nothing when all are limited. */
+  private nextAccount(
+    id: string,
+    limitedId: string,
+    limited: { resetsAt?: number },
+    tried: string[],
+  ): string | undefined {
+    const value = this.live.get(id)?.value;
+    if (!this.accounts || value?.session.providerAccountId !== AUTO_ACCOUNT) return undefined;
+    if (value.session.harness !== "claude") return undefined;
+    this.accounts.markBlocked(limitedId, limited.resetsAt);
+    tried.push(limitedId);
+    const next = this.accounts.pick(value.session.harness, tried);
+    return next?.free ? next.account.id : undefined;
+  }
+
+  /** Moves a conversation's provider identity onto another account. */
+  private useAccount(
+    id: string,
+    provider: HostProvider,
+    fromId: string | undefined,
+    toId: string,
+  ): void {
+    const live = this.live.get(id);
+    if (!live) return;
+    const { session } = live.value;
+    if (session.providerSessionId && session.harness === "claude" && this.accounts) {
+      const from = fromId ? this.accounts.find("claude", fromId) : undefined;
+      const to = this.accounts.find("claude", toId);
+      carryClaudeTranscript(claudeConfigDir(from), claudeConfigDir(to), session.providerSessionId);
+      provider.bind(id, session.providerSessionId, session.cwd, toId);
+    }
+    live.value = this.save(
+      { ...live.value, accountInUse: toId },
+      { type: "account.selected", from: fromId, to: toId },
+    );
+  }
+
+  /**
+   * Routes one provider attempt's events. On a balanced conversation the
+   * limit notice (its synthetic message, error and `usage.limited`) is held
+   * back until the engine knows whether another account takes the turn.
+   */
+  private attempt(id: string, runId: string, accountId: string | undefined) {
+    const balanced =
+      this.live.get(id)?.value.session.providerAccountId === AUTO_ACCOUNT;
+    const held: HarnessEvent[] = [];
+    let full: number | undefined;
+    const state: {
+      limited?: { resetsAt?: number };
+      onEvent: (event: HarnessEvent) => void;
+      release: () => void;
+      discard: () => void;
+    } = {
+      onEvent: (incoming) => {
+        let event = incoming;
+        if (event.type === "rate.limits") {
+          full = [event.fiveHour, event.sevenDay]
+            .filter((window) => window && window.used >= 100 && window.resetsAt)
+            .reduce((latest, window) => Math.max(latest ?? 0, window!.resetsAt!), full);
+          if (accountId && this.accounts)
+            this.accounts.recordUsage(accountId, {
+              fiveHour: event.fiveHour,
+              sevenDay: event.sevenDay,
+            });
+          return;
+        }
+        // Claude does not always say when a refused window reopens; the
+        // window that filled up during this attempt does.
+        if (event.type === "usage.limited" && event.resetsAt == null && full)
+          event = { ...event, resetsAt: full };
+        if (event.type === "usage.limited") {
+          state.limited = { resetsAt: event.resetsAt };
+          if (accountId && this.accounts) this.accounts.markBlocked(accountId, event.resetsAt);
+        }
+        if (
+          balanced &&
+          (event.type === "usage.limited" ||
+            ((event.type === "message.delta" || event.type === "session.error") &&
+              LIMIT_TEXT.test(event.type === "message.delta" ? event.text : event.message)))
+        ) {
+          held.push(event);
+          return;
+        }
+        this.event(id, runId, event);
+      },
+      release: () => {
+        for (const event of held.splice(0)) this.event(id, runId, event);
+      },
+      discard: () => {
+        held.length = 0;
+      },
+    };
+    return state;
+  }
+
   private run(
     value: HostSession,
     prompt: string | null,
@@ -844,7 +1078,10 @@ export class HostEngine {
       .then(async () => {
         let error: string | undefined;
         try {
-          if (!this.closing && !active.cancelled) {
+          const tried: string[] = [];
+          while (!this.closing && !active.cancelled) {
+            const accountId = this.accountForRun(session.id);
+            const attempt = this.attempt(session.id, runId!, accountId);
             const input: HarnessSessionInput = {
               sessionId: session.id,
               cwd: session.cwd,
@@ -852,7 +1089,8 @@ export class HostEngine {
               modelSettings: session.modelSettings,
               runtimeMode: session.runtimeMode,
               intent,
-              onEvent: (event) => this.event(session.id, runId!, event),
+              ...(accountId ? { providerAccountId: accountId } : {}),
+              onEvent: attempt.onEvent,
             };
             if (prompt === null) await provider.compact!(input);
             else
@@ -870,6 +1108,20 @@ export class HostEngine {
                     : file,
                 ),
               });
+            const next =
+              attempt.limited && accountId && !active.cancelled && !this.closing
+                ? this.nextAccount(session.id, accountId, attempt.limited, tried)
+                : undefined;
+            if (!next) {
+              attempt.release();
+              break;
+            }
+            // The refused turn never reached the transcript: run it again on
+            // the next account, the conversation carried over.
+            attempt.discard();
+            await provider.stop(session.id);
+            this.flush(session.id);
+            this.useAccount(session.id, provider, accountId, next);
           }
         } catch (reason) {
           error = reason instanceof Error ? reason.message : String(reason);
@@ -900,9 +1152,16 @@ export class HostEngine {
         this.running.delete(session.id);
         // stop/forget releases callbacks and native resources; bind only retained
         // provider conversation identity for an explicit future follow-up.
-        const persisted = this.store.session(session.id).session;
+        const persistedValue = this.store.session(session.id);
+        const persisted = persistedValue.session;
         if (persisted.providerSessionId)
-          provider.bind(session.id, persisted.providerSessionId, persisted.cwd);
+          bindProvider(
+            provider,
+            session.id,
+            persisted.providerSessionId,
+            persisted.cwd,
+            boundAccount(persistedValue),
+          );
       })
       .catch((error) => {
         clearTimeout(this.live.get(session.id)?.timer);
@@ -968,6 +1227,7 @@ export class HostEngine {
 
   async close(): Promise<void> {
     this.closing = true;
+    clearInterval(this.resumeTimer);
     for (const timer of this.retryTimers.values()) clearTimeout(timer);
     this.retryTimers.clear();
     await Promise.all(

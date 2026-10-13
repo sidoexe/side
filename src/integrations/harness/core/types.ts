@@ -25,6 +25,12 @@ export type HarnessEvent =
   | { type: "status"; text: string; key?: string }
   /** The provider refused the turn until its usage window resets (epoch ms). */
   | { type: "usage.limited"; resetsAt?: number }
+  /** How full the account's usage windows are, percent used and reset (epoch ms). */
+  | {
+      type: "rate.limits";
+      fiveHour?: { used: number; resetsAt?: number };
+      sevenDay?: { used: number; resetsAt?: number };
+    }
   /**
    * The agent has yielded but the turn is not over: work it started is still
    * running and will wake it again. Empty once it is back at work.

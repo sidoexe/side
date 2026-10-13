@@ -40,6 +40,7 @@ import {
   turnMetricsFromResult,
   isUsageLimitResult,
   usageLimitFromRateLimitEvent,
+  rateLimitWindowsFromEvent,
 } from "./claudeProtocol";
 
 describe("runtimeModeToPermission", () => {
@@ -999,5 +1000,35 @@ describe("applyClaudeTaskTool", () => {
     expect(applyClaudeTaskTool(tasks, "TaskUpdate", { taskId: "9", status: "completed" }, "")).toBe(false);
     expect(applyClaudeTaskTool(tasks, "TaskList", {}, "#1 [pending] One")).toBe(false);
     expect(tasks.size).toBe(0);
+  });
+});
+
+describe("rateLimitWindowsFromEvent", () => {
+  it("reads every unified window as percent used", () => {
+    expect(
+      rateLimitWindowsFromEvent({
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "allowed",
+          unifiedWindows: {
+            five_hour: { utilization: 0.374, resetsAt: 1_791_210_000 },
+            seven_day: { utilization: 0.08, resetsAt: 1_791_763_200 },
+          },
+        },
+      }),
+    ).toEqual({
+      fiveHour: { used: 37.4, resetsAt: 1_791_210_000_000 },
+      sevenDay: { used: 8, resetsAt: 1_791_763_200_000 },
+    });
+  });
+
+  it("falls back to the single window an older event describes", () => {
+    expect(
+      rateLimitWindowsFromEvent({
+        rate_limit_info: { rateLimitType: "seven_day", utilization: 1.2 },
+      }),
+    ).toEqual({ sevenDay: { used: 100 } });
+    expect(rateLimitWindowsFromEvent({ rate_limit_info: { status: "allowed" } })).toBeNull();
+    expect(rateLimitWindowsFromEvent({})).toBeNull();
   });
 });
