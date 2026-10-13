@@ -391,6 +391,8 @@ fn supported_remote_method(method: &str) -> bool {
             | "git.index"
             | "git.fileDiff"
             | "git.action"
+            | "accounts.list"
+            | "sessions.import"
     )
 }
 
