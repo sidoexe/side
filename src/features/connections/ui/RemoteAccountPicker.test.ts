@@ -219,3 +219,24 @@ it("says why an account's usage could not be read", async () => {
   await openMenu();
   expect(document.body.textContent).toContain("Not signed in");
 });
+
+it("names the accounts Balanced spreads conversations over", async () => {
+  await render({
+    accounts: [
+      { id: "auto", provider: "claude", label: "Balanced", pool: ["perso-1", "perso-2", "perso-3"] },
+      { id: "perso-1", provider: "claude", label: "6ido.exe" },
+      { id: "perso-2", provider: "claude", label: "benchoubane.sid" },
+      { id: "perso-3", provider: "claude", label: "work" },
+    ],
+  });
+  await openMenu();
+  const balanced = document.querySelector('[role="menuitemradio"]')!;
+  expect(balanced.textContent).toContain("Between 6ido.exe, benchoubane.sid and work");
+});
+
+it("says to update a host too old to refresh usage", async () => {
+  await render();
+  await openMenu();
+  expect(document.body.textContent).toContain("Update host to refresh");
+  expect(document.querySelector('button[aria-label="Refresh usage"]')).toBeNull();
+});

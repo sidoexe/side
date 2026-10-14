@@ -113,6 +113,17 @@ function AccountUsageRows({ account, now }: { account: HostAccountSummary; now: 
   );
 }
 
+/** The names of the accounts the balanced choice uses, from hosts that
+ * say which. */
+function balancedOver(accounts: readonly HostAccountSummary[]): string | undefined {
+  const pool = accounts.find((account) => account.id === AUTO_HOST_ACCOUNT)?.pool;
+  if (!pool?.length) return undefined;
+  return pool
+    .map((id) => accounts.find((account) => account.id === id)?.label ?? id)
+    .join(" and ")
+    .replace(/ and (?=.* and )/g, ", ");
+}
+
 /** "just now", "4 min ago", for the newest reading among the accounts. */
 function readAt(accounts: readonly HostAccountSummary[], now: number): string | undefined {
   const at = Math.max(0, ...accounts.map((account) => account.usage?.updatedAt ?? 0));
@@ -478,7 +489,14 @@ export function RemoteAccountPicker({
             <span className="min-w-0 flex-1 truncate">
               Host accounts{readAt(named, now) ? ` · ${readAt(named, now)}` : ""}
             </span>
-            {canRefresh ? (
+            {!canRefresh ? (
+              <span
+                className="shrink-0 pr-1.5 text-content/35"
+                title="This host is too old to read usage on demand. Update it in Settings → Connections."
+              >
+                Update host to refresh
+              </span>
+            ) : (
               <button
                 type="button"
                 aria-label="Refresh usage"
@@ -493,7 +511,7 @@ export function RemoteAccountPicker({
                   aria-hidden
                 />
               </button>
-            ) : null}
+            )}
           </div>
           {options.map((option) => (
             <button
@@ -517,8 +535,14 @@ export function RemoteAccountPicker({
               <span className="flex min-w-0 flex-1 flex-col gap-1.5">
                 <span className="truncate">{option.label}</span>
                 {option.id === AUTO_HOST_ACCOUNT ? (
-                  <span className="text-[10px] leading-3 text-content/40">
-                    Starts on the account with the most weekly room, moves on at a limit
+                  <span className="text-[10px] leading-[13px] text-content/40">
+                    {balancedOver(accounts) ? (
+                      <>
+                        Between <span className="text-content/60">{balancedOver(accounts)}</span>
+                        {" · "}
+                      </>
+                    ) : null}
+                    starts on the most weekly room, moves on at a limit
                   </span>
                 ) : option.account ? (
                   <AccountUsageRows account={option.account} now={now} />

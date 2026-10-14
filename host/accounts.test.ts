@@ -80,6 +80,7 @@ describe("host accounts", () => {
     writeFileSync(join(dir, "config.json"), JSON.stringify(config));
     const ids = new HostAccounts(dir).summaries().map((entry) => `${entry.provider}:${entry.id}`);
     expect(ids).toEqual(["claude:auto", "claude:one", "claude:two", "codex:work"]);
+    expect(new HostAccounts(dir).summaries()[0].pool).toEqual(["one", "two"]);
     expect(new HostAccounts(temp()).summaries()).toEqual([]);
   });
 

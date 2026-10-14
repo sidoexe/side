@@ -1,3 +1,4 @@
+import { version } from "../package.json";
 import {
   createServer,
   type IncomingMessage,
@@ -300,6 +301,7 @@ export function createHostServer(
               environmentId: engine.store.environmentId,
               name: hostname(),
               platform: process.platform,
+              version,
               // Older clients validate this list against Codex and Claude only.
               providers: providers.filter((provider) =>
                 Array.isArray(params.supportedProviders)

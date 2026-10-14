@@ -25,6 +25,8 @@ export type HostDescriptor = {
   providers: RemoteProvider[];
   capabilities: string[];
   platform?: "darwin" | "linux";
+  /** The sIDE release the host was built from; absent before 0.20. */
+  version?: string;
   /** How an agent on the host calls the app CLI, with the `app` capability. */
   appCli?: string;
 };
@@ -43,6 +45,8 @@ export type HostAccountSummary = {
     /** Why the host could not read this account's usage last time. */
     error?: string;
   };
+  /** For the balanced choice: the ids of the accounts it uses. */
+  pool?: string[];
 };
 export type HostDirectory = {
   path: string;

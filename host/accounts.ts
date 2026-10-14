@@ -54,6 +54,8 @@ export type HostAccountSummary = {
   provider: AccountProvider;
   label: string;
   usage?: AccountUsage;
+  /** For the balanced choice: the accounts it spreads conversations over. */
+  pool?: string[];
 };
 
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
@@ -179,7 +181,12 @@ export class HostAccounts {
     }));
     for (const provider of PROVIDERS)
       if (this.pool(provider).length > 1)
-        list.unshift({ id: AUTO_ACCOUNT, provider, label: "Balanced" });
+        list.unshift({
+          id: AUTO_ACCOUNT,
+          provider,
+          label: "Balanced",
+          pool: this.pool(provider).map((account) => account.id),
+        });
     return list;
   }
 

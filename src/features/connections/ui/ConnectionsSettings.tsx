@@ -15,6 +15,8 @@ import {
   type SshSetup,
 } from "../model/protocol";
 import { HomeMachineSetting } from "./HomeMachineSetting";
+import { hostIsOlder } from "../model/hostVersion";
+import { readAppVersion } from "../../../app/model/updater";
 
 const input =
   "w-full rounded-lg border border-content/15 bg-content/3 px-3 py-2 text-[13px] outline-none focus:border-content/35";
@@ -135,12 +137,17 @@ export function ConnectionsSettings() {
                 throw new Error("Host identity changed");
               if (!host.providers.length)
                 label = "Connected · install a supported provider on the host";
-              const update =
+              const missing =
                 !host.capabilities?.includes("workspace.run") ||
                 !host.capabilities?.includes("git.worktreeCreate");
-              if (update)
+              const app = await readAppVersion();
+              const older = hostIsOlder(host.version, app);
+              const update = missing || older;
+              if (missing)
                 label =
                   "Connected · host update needed for Explorer and Changes";
+              else if (older)
+                label = `Connected · host ${host.version ? `${host.version} ` : ""}is older than this app (${app}); update it for the latest features`;
               if (!disposed)
                 setNeedsUpdate((current) => ({
                   ...current,
