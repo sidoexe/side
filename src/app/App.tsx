@@ -568,7 +568,6 @@ import {
   monosSnapshot,
   monoState,
   removeMono,
-  replaceMonoProjectPath,
   saveOpenMono,
   subscribeMonos,
   type MonoState,
@@ -690,10 +689,6 @@ import {
 } from "../features/connections/model/remoteProjects";
 import type { HostSession } from "../features/connections/model/protocol";
 import { AddRemoteProjectDialog } from "../features/connections/ui/AddRemoteProjectDialog";
-import {
-  isLoopbackMachine,
-  openOnHomeMachine,
-} from "../features/connections/model/homeMachine";
 import { useHomeMachine } from "./hooks/useHomeMachine";
 import { useRemoteAppBridge, type ControlRequest } from "./hooks/useRemoteAppBridge";
 import type { ConnectableInboxSource } from "../features/inbox/model/inboxFilters";
@@ -1367,15 +1362,7 @@ function Workspace({
 
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
-  const homeMachine = useHomeMachine({
-    sessionsRef,
-    setSessions,
-    setRecents,
-    onProjectMoved: (path, key) => {
-      replaceMonoProjectPath(path, key);
-      setProjectCwd((current) => (current === path ? key : current));
-    },
-  });
+  const homeMachine = useHomeMachine();
   useEffect(() => startEmployeeRosterSync(), []);
   const linkedSessionUpdatesRef = useRef<
     ReadonlyMap<string, LinkedSessionUpdate>
@@ -6199,41 +6186,14 @@ function Workspace({
     ],
   );
 
-  const onSelectProject = useCallback(
-    (path: string) => {
-      // Host-only mode never opens a folder of this computer directly: a local
-      // path still reachable here (an old archive entry) opens on the host.
-      if (!homeMachine || isRemoteProjectPath(path) || !looksLikeProject(path)) {
-        selectProjectNow(path);
-        return;
-      }
-      void openOnHomeMachine(homeMachine, [path]).then(({ keys }) => {
-        if (keys[0]) selectProjectNow(keys[0]);
-        else window.dispatchEvent(new Event(OPEN_REMOTE_PROJECT_EVENT));
-      });
-    },
-    [homeMachine, selectProjectNow],
-  );
+  const onSelectProject = selectProjectNow;
 
   const pickProject = useCallback(async () => {
-    // Host-only mode: every project lives on the home machine. A host on this
-    // computer keeps the native picker, its folders mapped onto the host; any
-    // other one is browsed in the machine dialog.
-    if (homeMachine && !isLoopbackMachine(homeMachine)) {
-      window.dispatchEvent(new Event(OPEN_REMOTE_PROJECT_EVENT));
-      return;
-    }
     // Several folders can be taken at once; each opens as its own project, and
-    // the last one selected ends up focused.
-    const paths = await pickFolders();
-    if (!homeMachine) {
-      openProjects(paths);
-      return;
-    }
-    const { keys, failed } = await openOnHomeMachine(homeMachine, paths);
-    openProjects(keys);
-    if (failed.length) window.dispatchEvent(new Event(OPEN_REMOTE_PROJECT_EVENT));
-  }, [homeMachine, openProjects]);
+    // the last one selected ends up focused. A machine's folders are opened
+    // from "Open folder on a machine…".
+    openProjects(await pickFolders());
+  }, [openProjects]);
 
   const onPlaceSessionInFolder = useCallback(
     (sessionId: string, target: SessionFolderTarget) => {

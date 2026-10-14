@@ -21,7 +21,7 @@ export function AddRemoteProjectDialog({
   onCancel: () => void;
   /** Receives the new project's rail key. */
   onOpen: (key: string) => void;
-  /** Preselected machine, the home machine in host-only mode. */
+  /** Preselected machine: the home machine when there is one. */
   initialMachineId?: string;
 }) {
   const { machines, loaded } = useRemoteMachines();

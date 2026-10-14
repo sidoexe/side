@@ -309,22 +309,6 @@ export function replaceRoster(roster: readonly unknown[]): void {
   saveRoster(roster.flatMap((entry) => parseMono(entry) ?? []));
 }
 
-/** A project that moved to the home machine stays on the Monos given it. */
-export function replaceMonoProjectPath(path: string, next: string): void {
-  const key = projectKey(path);
-  const roster = listMonos();
-  if (!roster.some((mono) => mono.projects.some((project) => projectKey(project) === key)))
-    return;
-  saveRoster(
-    roster.map((mono) => ({
-      ...mono,
-      projects: uniqueProjects(
-        mono.projects.map((project) => (projectKey(project) === key ? next : project)),
-      ),
-    })),
-  );
-}
-
 /** Forgets the Mono and its background. Its folder of files stays on disk. */
 export function removeMono(id: string): void {
   removeMonoBackground(id);
