@@ -26,7 +26,7 @@ await build({
   jsx: "automatic",
   minify: true,
   define: { "process.env.NODE_ENV": '"production"' },
-  loader: { ".woff": "empty", ".woff2": "empty", ".ttf": "empty" },
+  loader: { ".woff": "empty", ".woff2": "empty", ".ttf": "empty", ".svg": "dataurl" },
 });
 for (const file of ["index.html", "manifest.webmanifest"])
   await copyFile(`host/webapp/${file}`, `build/host/web/${file}`);

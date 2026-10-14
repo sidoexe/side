@@ -9,10 +9,12 @@ import type {
   HostSessionSummary,
   RemoteProvider,
 } from "../../src/features/connections/model/protocol";
-import type { RuntimeMode } from "../../src/features/sessions/model/session";
+import { sessionDisplayTitle, type RuntimeMode } from "../../src/features/sessions/model/session";
 import { buildQuestionReply, type UserQuestionPrompt } from "../../src/features/sessions/model/userQuestion";
 import { command, describe, login, logout, rpc, syncSession, Unauthorized } from "./api";
 import { Transcript } from "./Transcript";
+import { HarnessIcon } from "../../src/features/sessions/ui/HarnessIcon";
+import { findModel, setHarnessModels } from "../../src/features/sessions/model/models";
 import "./styles.css";
 
 type Route = { kind: "home" } | { kind: "session"; projectId: string; sessionId: string } | { kind: "new"; projectId: string };
@@ -79,6 +81,48 @@ const ago = (time?: number) => {
   return `${Math.floor(s / 86400)}d`;
 };
 
+const tilde = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
+
+const modelName = (session: HostSessionSummary) =>
+  (session.model && findModel(session.model)?.name) || session.model?.split(":").pop() || session.harness;
+
+const BranchIcon = () => (
+  <svg className="glyph" viewBox="0 0 16 16" aria-hidden>
+    <circle cx="5" cy="4" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.2" />
+    <circle cx="5" cy="12" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.2" />
+    <circle cx="11" cy="6" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.2" />
+    <path d="M5 5.6v4.8M11 7.6c0 2-2 2.4-4.6 3.4" fill="none" stroke="currentColor" strokeWidth="1.2" />
+  </svg>
+);
+
+/** One session as the IDE's sidebar shows it: agent and model, title, branch. */
+function SessionRow({ session, active, onClick }: { session: HostSessionSummary; active?: boolean; onClick?: () => void }) {
+  const state = session.needsInput ? "input" : session.status;
+  return (
+    <a
+      className={`session${active ? " active" : ""}${session.archived ? " archived" : ""}`}
+      href={`#/s/${encodeURIComponent(session.projectId)}/${encodeURIComponent(session.id)}`}
+      onClick={onClick}
+    >
+      <span className="session-line meta">
+        <HarnessIcon harness={session.harness} className="harness" />
+        <span className="ellipsis">{modelName(session)}</span>
+        <span className="time">{ago(session.updatedAt)}</span>
+      </span>
+      <span className="session-line">
+        <span className={`session-title ellipsis${state === "running" ? " shimmer" : ""}`}>{sessionDisplayTitle(session.title, session.harness) || "New session"}</span>
+        {state === "input" ? <span className="pill">Needs you</span> : state === "interrupted" ? <span className="pill red">Interrupted</span> : null}
+      </span>
+      {session.repo || session.branch ? (
+        <span className="session-line meta">
+          <BranchIcon />
+          <span className="ellipsis">{[session.repo, session.branch].filter(Boolean).join("/")}</span>
+        </span>
+      ) : null}
+    </a>
+  );
+}
+
 function Login({ onDone }: { onDone: () => void }) {
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
@@ -115,7 +159,7 @@ function Login({ onDone }: { onDone: () => void }) {
           autoFocus
         />
         {error ? <div className="error">{error}</div> : null}
-        <button className="primary" disabled={busy || !token.trim()}>
+        <button className="btn primary" disabled={busy || !token.trim()}>
           Sign in
         </button>
       </form>
@@ -168,10 +212,12 @@ function Sidebar({
   return (
     <nav className="sidebar">
       <header>
-        <img src="side.png" alt="" width={22} height={22} />
+        <img src="side.png" alt="" width={18} height={18} />
         <span className="host-name">{host.name}</span>
         <span className="version">{host.version}</span>
-        <button className="icon close" onClick={onClose} aria-label="Close menu">✕</button>
+        <button className="icon close" onClick={onClose} aria-label="Close menu">
+          <svg className="glyph" viewBox="0 0 16 16" aria-hidden><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+        </button>
       </header>
       <input className="search" placeholder="Filter sessions" value={filter} onChange={(e) => setFilter(e.target.value)} />
       <div className="projects">
@@ -193,24 +239,17 @@ function Sidebar({
                     onClose();
                   }}
                 >
-                  +
+                  <svg className="glyph" viewBox="0 0 16 16" aria-hidden><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                 </button>
               </div>
-              {list.map((session) => {
-                const active = route.kind === "session" && route.sessionId === session.id;
-                return (
-                  <a
-                    key={session.id}
-                    className={`session${active ? " active" : ""}${session.archived ? " archived" : ""}`}
-                    href={`#/s/${encodeURIComponent(project.id)}/${encodeURIComponent(session.id)}`}
-                    onClick={onClose}
-                  >
-                    <span className={`dot ${session.needsInput ? "input" : session.status}`} />
-                    <span className="title">{session.title || "New session"}</span>
-                    <span className="meta">{ago(session.updatedAt)}</span>
-                  </a>
-                );
-              })}
+              {list.map((session) => (
+                <SessionRow
+                  key={session.id}
+                  session={session}
+                  active={route.kind === "session" && route.sessionId === session.id}
+                  onClick={onClose}
+                />
+              ))}
             </section>
           );
         })}
@@ -220,6 +259,15 @@ function Sidebar({
         <label>
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Archived
         </label>
+        <button
+          className="theme-toggle"
+          onClick={() => {
+            const light = document.documentElement.classList.toggle("theme-light");
+            localStorage.setItem("side-web-theme", light ? "light" : "dark");
+          }}
+        >
+          Theme
+        </button>
         <button className="link" onClick={onLogout}>Sign out</button>
       </footer>
     </nav>
@@ -281,9 +329,13 @@ function Composer({
   disabled,
   onSend,
   onStop,
+  context,
+  tools,
   children,
 }: {
   placeholder: string;
+  context?: React.ReactNode;
+  tools?: React.ReactNode;
   running?: boolean;
   disabled?: boolean;
   onSend: (text: string) => Promise<void>;
@@ -314,6 +366,7 @@ function Composer({
     <div className="composer">
       {children}
       <div className="composer-box">
+        {context ? <div className="composer-context">{context}</div> : null}
         <textarea
           ref={area}
           rows={1}
@@ -328,18 +381,23 @@ function Composer({
             }
           }}
         />
-        {running && onStop ? (
-          <button className="stop" onClick={onStop} aria-label="Stop">■</button>
-        ) : null}
-        <button className="send primary" disabled={!text.trim() || sending || disabled} onClick={() => void submit()} aria-label="Send">
-          ↑
-        </button>
+        <div className="composer-bar">
+          <span className="composer-tools">{tools ?? (running ? <span className="composer-hint">Queues until the turn ends</span> : null)}</span>
+          {running && onStop ? (
+            <button className="square stop" onClick={onStop} aria-label="Stop">
+              <svg className="glyph" viewBox="0 0 16 16" aria-hidden><rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" /></svg>
+            </button>
+          ) : null}
+          <button className="square send" disabled={!text.trim() || sending || disabled} onClick={() => void submit()} aria-label="Send">
+            <svg className="glyph" viewBox="0 0 16 16" aria-hidden><path d="M8 12.5v-9M4 7.5l4-4 4 4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function SessionView({ sessionId, onError }: { sessionId: string; onError: (error: unknown) => void }) {
+function SessionView({ sessionId, branch, onError }: { sessionId: string; branch?: string; onError: (error: unknown) => void }) {
   const [value, setValue] = useState<HostSession>();
   const known = useRef<HostSession | undefined>(undefined);
   const scroller = useRef<HTMLDivElement>(null);
@@ -389,12 +447,13 @@ function SessionView({ sessionId, onError }: { sessionId: string; onError: (erro
         <div className="transcript-inner">
           <Transcript
             blocks={session.blocks}
+            cwd={session.cwd}
+            running={running}
             canDecide={running && !!value.runId}
             onDecide={(requestId, decision) =>
               void run({ type: "approve", sessionId, runId: value.runId!, requestId, decision })
             }
           />
-          {running ? <div className="working"><span className="dot running" /> Working…</div> : null}
           {value.status === "interrupted" ? <div className="system interrupt">Interrupted</div> : null}
           {session.usageLimit ? (
             <div className="system error">
@@ -415,8 +474,14 @@ function SessionView({ sessionId, onError }: { sessionId: string; onError: (erro
         </div>
       </div>
       <Composer
-        placeholder={running ? "Queue a follow-up…" : "Message…"}
+        placeholder={running ? "Queue a follow-up…" : "Ask, build…"}
         running={running}
+        context={
+          <>
+            <span className="mono ellipsis">{tilde(session.worktreeCwd ?? session.cwd)}</span>
+            {branch ? <span className="mono"><BranchIcon /> {branch}</span> : null}
+          </>
+        }
         onStop={value.runId ? () => void run({ type: "cancel", sessionId, runId: value.runId! }) : undefined}
         onSend={(text) => run(running ? { type: "queue", sessionId, text } : { type: "send", sessionId, text })}
       >
@@ -453,99 +518,137 @@ const MODES: { id: RuntimeMode; label: string }[] = [
   { id: "full-access", label: "Full access" },
 ];
 
+/** A native select dressed as one of the composer's chips. */
+function Chip<T extends string>({
+  value,
+  onChange,
+  children,
+  icon,
+  label,
+  disabled,
+}: {
+  value: T;
+  onChange: (value: T) => void;
+  children: React.ReactNode;
+  icon?: React.ReactNode;
+  label: string;
+  disabled?: boolean;
+}) {
+  return (
+    <label className={`chip${disabled ? " disabled" : ""}`}>
+      {icon}
+      <span className="ellipsis">{label}</span>
+      <svg className="chip-caret" viewBox="0 0 16 16" aria-hidden><path d="M4.5 6.5L8 10l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value as T)}>{children}</select>
+    </label>
+  );
+}
+
+/** The IDE's empty session: the project's name over a composer whose chips
+ * pick the project, agent and model, permissions and account. */
 function NewSession({
   host,
   project,
+  projects,
   accounts,
   onError,
 }: {
   host: HostDescriptor;
   project: HostProject;
+  projects?: HostProject[];
   accounts: HostAccountSummary[];
   onError: (error: unknown) => void;
 }) {
+  const [projectId, setProjectId] = useState(project.id);
+  const current = projects?.find((item) => item.id === projectId) ?? project;
   const [catalog, setCatalog] = useState<HostModelCatalog>();
-  const [harness, setHarness] = useState<RemoteProvider>(host.providers.includes("claude") ? "claude" : host.providers[0]);
-  const [model, setModel] = useState("");
+  const [choice, setChoice] = useState("");
   const [mode, setMode] = useState<RuntimeMode>("supervised");
-  const providerAccounts = accounts.filter((account) => account.provider === harness);
   const [account, setAccount] = useState("");
+  useEffect(() => setProjectId(project.id), [project.id]);
   useEffect(() => {
-    rpc<HostModelCatalog>("models.list", { projectId: project.id }).then(setCatalog, onError);
-  }, [project.id, onError]);
-  const models = catalog?.models[harness] ?? [];
+    rpc<HostModelCatalog>("models.list", { projectId: current.id }).then(setCatalog, onError);
+  }, [current.id, onError]);
+  const options = host.providers.flatMap((harness) =>
+    (catalog?.models[harness] ?? []).map((model) => ({ harness, model, key: `${harness}|${model.id}` })),
+  );
   useEffect(() => {
-    if (!models.some((item) => item.id === model)) setModel(models[0]?.id ?? "");
-  }, [models, model]);
+    if (options.some((option) => option.key === choice)) return;
+    const preferred = options.find((option) => option.harness === "claude") ?? options[0];
+    setChoice(preferred?.key ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalog]);
+  const selected = options.find((option) => option.key === choice);
+  const harness = selected?.harness;
+  const providerAccounts = accounts.filter((item) => item.provider === harness);
   useEffect(() => {
     setAccount(providerAccounts.find((item) => item.pool)?.id ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [harness, accounts.length]);
   return (
     <div className="session-view">
-      <div className="transcript">
-        <div className="transcript-inner new-session">
-          <p className="muted">{project.cwd}</p>
-          <label>
-            Agent
-            <select value={harness} onChange={(event) => setHarness(event.target.value as RemoteProvider)}>
-              {host.providers.map((provider) => (
-                <option key={provider} value={provider}>{provider}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Model
-            <select value={model} onChange={(event) => setModel(event.target.value)} disabled={!models.length}>
-              {!catalog ? <option>Loading…</option> : null}
-              {models.map((item) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
-              ))}
-            </select>
-            {catalog?.errors[harness] ? <span className="error">{catalog.errors[harness]}</span> : null}
-          </label>
-          <label>
-            Permissions
-            <select value={mode} onChange={(event) => setMode(event.target.value as RuntimeMode)}>
-              {MODES.map((item) => (
-                <option key={item.id} value={item.id}>{item.label}</option>
-              ))}
-            </select>
-          </label>
-          {providerAccounts.length ? (
-            <label>
-              Account
-              <select value={account} onChange={(event) => setAccount(event.target.value)}>
-                <option value="">Default</option>
-                {providerAccounts.map((item) => (
-                  <option key={item.id} value={item.id}>{item.label}</option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-        </div>
-      </div>
-      <Composer
-        placeholder="What should the agent do?"
-        disabled={!model}
-        onSend={async (text) => {
-          try {
-            const receipt = await command({
-              type: "create",
-              projectId: project.id,
-              harness,
-              model,
-              runtimeMode: mode,
-              ...(account ? { providerAccountId: account } : {}),
-            });
-            await command({ type: "send", sessionId: receipt.sessionId, text });
-            go({ kind: "session", projectId: project.id, sessionId: receipt.sessionId });
-          } catch (error) {
-            onError(error);
-            throw error;
+      <div className="empty-session">
+        <div className="empty-title ellipsis">{current.name}</div>
+        <Composer
+          placeholder="Ask, build…"
+          disabled={!selected}
+          context={<span className="mono ellipsis">{tilde(current.cwd)}</span>}
+          tools={
+            <>
+              {projects && projects.length > 1 ? (
+                <Chip value={current.id} onChange={setProjectId} label={current.name}>
+                  {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </Chip>
+              ) : null}
+              <Chip
+                value={choice}
+                onChange={setChoice}
+                disabled={!options.length}
+                icon={harness ? <HarnessIcon harness={harness} className="harness" /> : undefined}
+                label={selected?.model.name ?? (catalog ? "No models" : "Loading…")}
+              >
+                {host.providers.map((provider) =>
+                  catalog?.models[provider]?.length ? (
+                    <optgroup key={provider} label={provider}>
+                      {catalog.models[provider]!.map((model) => (
+                        <option key={model.id} value={`${provider}|${model.id}`}>{model.name}</option>
+                      ))}
+                    </optgroup>
+                  ) : null,
+                )}
+              </Chip>
+              <Chip value={mode} onChange={setMode} label={MODES.find((item) => item.id === mode)!.label}>
+                {MODES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </Chip>
+              {providerAccounts.length ? (
+                <Chip value={account} onChange={setAccount} label={providerAccounts.find((item) => item.id === account)?.label ?? "Default"}>
+                  <option value="">Default</option>
+                  {providerAccounts.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                </Chip>
+              ) : null}
+            </>
           }
-        }}
-      />
+          onSend={async (text) => {
+            if (!selected) return;
+            try {
+              const receipt = await command({
+                type: "create",
+                projectId: current.id,
+                harness: selected.harness,
+                model: selected.model.id,
+                runtimeMode: mode,
+                ...(account ? { providerAccountId: account } : {}),
+              });
+              await command({ type: "send", sessionId: receipt.sessionId, text });
+              go({ kind: "session", projectId: current.id, sessionId: receipt.sessionId });
+            } catch (error) {
+              onError(error);
+              throw error;
+            }
+          }}
+        />
+        {catalog?.errors[harness ?? "claude"] ? <div className="error">{catalog.errors[harness ?? "claude"]}</div> : null}
+      </div>
     </div>
   );
 }
@@ -569,6 +672,16 @@ function App() {
     });
   }, [onError]);
   useEffect(connect, [connect]);
+  const [, setModelsLoaded] = useState(0);
+  useEffect(() => {
+    if (!host) return;
+    // Model names, as the IDE shows them ("Claude Opus 5" rather than "opus").
+    rpc<HostModelCatalog>("models.list").then((catalog) => {
+      for (const [harness, models] of Object.entries(catalog.models))
+        if (models?.length) setHarnessModels(harness as RemoteProvider, models);
+      setModelsLoaded((n) => n + 1);
+    }, () => undefined);
+  }, [host?.environmentId]);
   usePoll(
     async () => {
       if (!host) return;
@@ -614,14 +727,14 @@ function App() {
       <main>
         <div className="topbar">
           <button className="icon menu" onClick={() => setMenu(true)} aria-label="Open menu">
-            ☰{attention ? <span className="badge">{attention}</span> : null}
+            <svg className="glyph" viewBox="0 0 16 16" aria-hidden><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
+            {attention ? <span className="badge">{attention}</span> : null}
           </button>
           <div className="topbar-title">
-            <span>{route.kind === "new" ? `New session · ${project?.name ?? ""}` : summary?.title || (route.kind === "home" ? host.name : "")}</span>
+            <span>{route.kind === "new" ? `New session · ${project?.name ?? ""}` : (summary && sessionDisplayTitle(summary.title, summary.harness)) || (route.kind === "home" ? host.name : "")}</span>
             {summary ? (
               <span className="muted">
-                {project?.name} · {summary.harness}
-                {summary.model ? ` · ${summary.model.split(":").pop()}` : ""}
+                {project?.name} · {modelName(summary)}
                 {summary.branch ? ` · ${summary.branch}` : ""}
                 {summary.accountInUse ? ` · ${summary.accountInUse}` : ""}
               </span>
@@ -646,46 +759,48 @@ function App() {
           <div className="toast" onClick={() => setError("")}>{error}</div>
         ) : null}
         {route.kind === "session" ? (
-          <SessionView key={route.sessionId} sessionId={route.sessionId} onError={onError} />
+          <SessionView key={route.sessionId} sessionId={route.sessionId} branch={summary?.branch} onError={onError} />
         ) : route.kind === "new" && project ? (
           <NewSession key={project.id} host={host} project={project} accounts={accounts} onError={onError} />
         ) : (
-          <Home sessions={sessions} projects={projects} />
+          <>
+            <Home sessions={sessions} />
+            {projects.length ? (
+              <div className="wide-only">
+                <NewSession host={host} project={recentProject(projects, sessions)} projects={projects} accounts={accounts} onError={onError} />
+              </div>
+            ) : null}
+          </>
         )}
       </main>
     </div>
   );
 }
 
+/** The project worked in last, which a new session starts in by default. */
+function recentProject(projects: HostProject[], sessions: Record<string, HostSessionSummary[]>): HostProject {
+  const latest = Object.values(sessions).flat().sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  return projects.find((project) => project.id === latest?.projectId) ?? projects[0];
+}
+
 /** What runs or waits right now, across every project. */
-function Home({ sessions, projects }: { sessions: Record<string, HostSessionSummary[]>; projects: HostProject[] }) {
+function Home({ sessions }: { sessions: Record<string, HostSessionSummary[]> }) {
   const all = Object.values(sessions).flat().filter((session) => !session.archived);
   const live = all
     .filter((session) => session.needsInput || session.status === "running")
     .sort((a, b) => Number(!!b.needsInput) - Number(!!a.needsInput) || b.updatedAt - a.updatedAt);
   const recent = all.filter((session) => !live.includes(session)).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 12);
-  const name = (id: string) => projects.find((project) => project.id === id)?.name ?? "";
-  const card = (session: HostSessionSummary) => (
-    <a key={session.id} className="card" href={`#/s/${encodeURIComponent(session.projectId)}/${encodeURIComponent(session.id)}`}>
-      <span className={`dot ${session.needsInput ? "input" : session.status}`} />
-      <span className="card-body">
-        <span className="title">{session.title || "New session"}</span>
-        <span className="muted">
-          {name(session.projectId)} · {session.harness} · {ago(session.updatedAt)}
-          {session.needsInput ? " · needs you" : ""}
-        </span>
-      </span>
-    </a>
-  );
   return (
-    <div className="home">
-      <h2>Now</h2>
-      {live.length ? live.map(card) : <p className="muted">Nothing is running.</p>}
-      <h2>Recent</h2>
-      {recent.map(card)}
+    <div className="home narrow-only">
+      <div className="section-label">Now</div>
+      {live.length ? <div className="list">{live.map((session) => <SessionRow key={session.id} session={session} />)}</div> : <p className="muted empty-line">Nothing is running.</p>}
+      <div className="section-label">Recent</div>
+      <div className="list">{recent.map((session) => <SessionRow key={session.id} session={session} />)}</div>
     </div>
   );
 }
+
+if (localStorage.getItem("side-web-theme") === "light") document.documentElement.classList.add("theme-light");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
