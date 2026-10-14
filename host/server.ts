@@ -342,7 +342,7 @@ export function createHostServer(
                 ...(engine.automations ? ["automations"] : []),
                 ...(engine.app ? ["app"] : []),
                 "accounts",
-                ...(engine.accountLogins ? ["accounts.login"] : []),
+                ...(engine.accountLogins ? ["accounts.login", "accounts.import"] : []),
               ],
             };
             break;
@@ -361,6 +361,12 @@ export function createHostServer(
           case "accounts.loginCancel":
             accountLogins().cancel(params);
             result = {};
+            break;
+          case "accounts.found":
+            result = await accountLogins().found();
+            break;
+          case "accounts.import":
+            result = await accountLogins().adopt(params);
             break;
           case "projects.browse":
             result = await browseHostDirectories(params.path);

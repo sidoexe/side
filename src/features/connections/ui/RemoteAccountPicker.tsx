@@ -5,7 +5,7 @@ import { barClass } from "../../providers/ui/ProviderAccountUsage";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowLeft, Check, Plus, RefreshCw } from "../../../shared/ui/icons";
+import { ArrowDownCircle, ArrowLeft, Check, Plus, RefreshCw } from "../../../shared/ui/icons";
 import { Popover, type PopoverDismissReason } from "../../../shared/ui/Popover";
 import { remoteRequest } from "../model/connections";
 import { AUTO_HOST_ACCOUNT, reloadHostAccounts } from "../model/hostAccounts";
@@ -213,6 +213,29 @@ function HostSignIn({
   );
 }
 
+type Found = { configDir: string; label: string };
+
+/** Signed-in Claude profiles on the host that are not accounts yet, read
+ * each time the menu opens. */
+function useFoundAccounts(machineId: string, enabled: boolean) {
+  const [found, setFound] = useState<Found[]>([]);
+  useEffect(() => {
+    if (!enabled) return;
+    let disposed = false;
+    void remoteRequest<Found[]>(machineId, "accounts.found")
+      .then((value) => {
+        if (!disposed && Array.isArray(value)) setFound(value);
+      })
+      .catch(() => {
+        /* nothing to offer */
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [machineId, enabled]);
+  return [found, setFound] as const;
+}
+
 /** Which host account a remote session runs on, in the app footer where
  * this computer's usage chips would be. */
 export function RemoteAccountPicker({
@@ -220,6 +243,7 @@ export function RemoteAccountPicker({
   machineId,
   harness,
   canSignIn = false,
+  canImport = false,
   accounts,
   value,
   disabled,
@@ -230,6 +254,8 @@ export function RemoteAccountPicker({
   harness: RemoteProvider;
   /** The host can sign its Claude accounts in from here. */
   canSignIn?: boolean;
+  /** The host offers its signed-in profiles that are not accounts yet. */
+  canImport?: boolean;
   accounts: HostAccountSummary[];
   value: string | undefined;
   disabled?: boolean;
@@ -242,6 +268,9 @@ export function RemoteAccountPicker({
   >("menu");
   const slot = useRemoteAccountSlot(sessionId);
   const signIn = canSignIn && harness === "claude";
+  const [found, setFound] = useFoundAccounts(machineId, open && canImport && harness === "claude");
+  const [importing, setImporting] = useState<string>();
+  const [importError, setImportError] = useState<string>();
   if ((!accounts.length && !signIn) || !slot) return null;
   const selected = value ?? DEFAULT;
   const active = accounts.find((account) => account.id === selected);
@@ -252,9 +281,25 @@ export function RemoteAccountPicker({
     { id: DEFAULT, label: DEFAULT_LABEL, account: undefined },
   ];
 
+  const adopt = async (entry: Found) => {
+    if (importing) return;
+    setImporting(entry.configDir);
+    setImportError(undefined);
+    try {
+      await remoteRequest(machineId, "accounts.import", { configDir: entry.configDir });
+      setFound((current) => current.filter((other) => other.configDir !== entry.configDir));
+      reloadHostAccounts(machineId);
+    } catch (error) {
+      setImportError(message(error));
+    } finally {
+      setImporting(undefined);
+    }
+  };
+
   const dismiss = (reason: PopoverDismissReason) => {
     setOpen(false);
     setView("menu");
+    setImportError(undefined);
     if (reason === "escape") requestAnimationFrame(() => trigger.current?.focus());
   };
 
@@ -353,6 +398,38 @@ export function RemoteAccountPicker({
               </span>
             </button>
           ))}
+          {found.length ? (
+            <>
+              <div role="separator" className="my-1 h-px bg-content/10" />
+              <div className="px-2 pb-0.5 pt-1 text-[11px] text-content/40">
+                Signed in on the host
+              </div>
+              {found.map((entry) => (
+                <button
+                  key={entry.configDir}
+                  type="button"
+                  role="menuitem"
+                  className={MENU_ITEM}
+                  title={`Add ${entry.configDir} as an account`}
+                  disabled={!!importing}
+                  onClick={() => void adopt(entry)}
+                >
+                  <ArrowDownCircle className="size-3 shrink-0" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">
+                    {importing === entry.configDir ? "Importing…" : `Import ${entry.label}`}
+                  </span>
+                  <span className="shrink-0 font-mono text-[11px] text-content/35">
+                    {entry.configDir}
+                  </span>
+                </button>
+              ))}
+              {importError ? (
+                <p role="alert" className="px-2 py-1 text-[11px] text-red-600 dark:text-red-300">
+                  {importError}
+                </p>
+              ) : null}
+            </>
+          ) : null}
           {signIn ? (
             <>
               <div role="separator" className="my-1 h-px bg-content/10" />

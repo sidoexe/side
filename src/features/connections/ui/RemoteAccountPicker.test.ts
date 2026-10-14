@@ -34,6 +34,8 @@ beforeEach(() => {
     if (method === "accounts.login")
       return { loginId: "login-1", url: "https://claude.com/cai/oauth/authorize?code=true", accountId: "perso-3" };
     if (method === "accounts.loginCode") return codeResult();
+    if (method === "accounts.found") return [{ configDir: "~/.claude-work", label: "work.person" }];
+    if (method === "accounts.import") return { accountId: "perso-3", label: "work.person" };
     return {};
   });
   footer = document.createElement("div");
@@ -132,4 +134,25 @@ it("offers signing in only where the host can do it for that provider", async ()
   await act(async () => root.render(createElement("div")));
   await render({ accounts: [], value: undefined });
   expect(footer.querySelector("button")?.getAttribute("aria-label")).toBe("Host account: Default account");
+});
+
+it("imports a profile already signed in on the host", async () => {
+  const reloaded = vi.fn();
+  window.addEventListener("side:host-accounts-changed", reloaded);
+  await render({ canImport: true });
+  await openMenu();
+  expect(requests.at(-1)).toEqual({ method: "accounts.found", params: {} });
+  await act(async () => item("Import work.person").click());
+  expect(requests.at(-1)).toEqual({
+    method: "accounts.import",
+    params: { configDir: "~/.claude-work" },
+  });
+  expect(reloaded).toHaveBeenCalled();
+  expect(item("Import work.person")).toBeUndefined();
+});
+
+it("does not look for profiles on a host that cannot import them", async () => {
+  await render();
+  await openMenu();
+  expect(requests.some((request) => request.method === "accounts.found")).toBe(false);
 });

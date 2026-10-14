@@ -28,7 +28,10 @@ type FakeChild = EventEmitter & {
 };
 
 /** A stand-in for `claude auth login` / `auth status`, driven by the test. */
-function fakeClaude(onCode: (code: string, call: Call) => void) {
+function fakeClaude(
+  onCode: (code: string, call: Call) => void,
+  statusOf: (configDir: string) => unknown = () => ({ loggedIn: true, email: "new.person@example.com" }),
+) {
   const calls: Call[] = [];
   const spawn = (_command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => {
     const child = Object.assign(new EventEmitter(), {
@@ -45,7 +48,7 @@ function fakeClaude(onCode: (code: string, call: Call) => void) {
     calls.push(call);
     if (args[1] === "status") {
       setTimeout(() => {
-        child.stdout.write(JSON.stringify({ loggedIn: true, email: "new.person@example.com" }));
+        child.stdout.write(JSON.stringify(statusOf(options.env.CLAUDE_CONFIG_DIR!)));
         child.emit("exit", 0);
       });
     } else {
@@ -64,12 +67,16 @@ function fakeClaude(onCode: (code: string, call: Call) => void) {
   return { calls, spawn };
 }
 
-function setup(onCode: (code: string, call: Call) => void, config?: unknown) {
+function setup(
+  onCode: (code: string, call: Call) => void,
+  config?: unknown,
+  statusOf?: (configDir: string) => unknown,
+) {
   const data = temp();
   const home = temp();
   if (config) writeFileSync(join(data, "config.json"), JSON.stringify(config));
   const accounts = new HostAccounts(data);
-  const claude = fakeClaude(onCode);
+  const claude = fakeClaude(onCode, statusOf);
   const logins = new HostAccountLogins(accounts, async () => "/bin/claude", claude.spawn, home);
   return { data, home, accounts, logins, claude };
 }
@@ -145,5 +152,74 @@ describe("host account sign-in", () => {
     await expect(logins.finish({ loginId: started.loginId, code: "abc" })).rejects.toThrow(
       "This sign-in has ended",
     );
+  });
+});
+
+describe("host account import", () => {
+  const emails: Record<string, string> = {
+    ".claude-1": "one@example.com",
+    ".claude-2": "two@example.com",
+    ".claude-copy": "one@example.com",
+    ".claude-10": "ten@example.com",
+  };
+  const statusOf = (dir: string) => {
+    const email = emails[dir.slice(dir.lastIndexOf("/") + 1)];
+    return email ? { loggedIn: true, email } : { loggedIn: false };
+  };
+
+  /** A home with `.claude-1` declared, and profiles made outside sIDE. */
+  function withProfiles() {
+    const env = setup(succeed, undefined, statusOf);
+    const profile = (name: string) => {
+      mkdirSync(join(env.home, name));
+      writeFileSync(join(env.home, name, ".claude.json"), "{}");
+    };
+    for (const name of [".claude-1", ".claude-2", ".claude-copy", ".claude-10", ".claude-out"]) profile(name);
+    mkdirSync(join(env.home, ".claude-empty"));
+    writeFileSync(join(env.home, ".claude-file"), "");
+    writeFileSync(
+      join(env.data, "config.json"),
+      JSON.stringify({
+        accounts: [{ id: "perso-1", provider: "claude", label: "one", configDir: join(env.home, ".claude-1") }],
+        balance: ["perso-1"],
+      }),
+    );
+    return env;
+  }
+
+  it("offers signed-in profiles no account declares, without copies of one", async () => {
+    const { logins, claude } = withProfiles();
+    await expect(logins.found()).resolves.toEqual([
+      { configDir: expect.stringMatching(/\.claude-2$/), label: "two" },
+      { configDir: expect.stringMatching(/\.claude-10$/), label: "ten" },
+    ]);
+    // Folders without a Claude profile are never asked about.
+    const asked = claude.calls.map((call) => call.env.CLAUDE_CONFIG_DIR!.split("/").pop());
+    expect(asked).not.toContain(".claude-empty");
+    expect(asked).not.toContain(".claude-file");
+  });
+
+  it("declares a found profile under the next free id and pools it", async () => {
+    const { logins, accounts, home } = withProfiles();
+    const [, ten] = await logins.found();
+    await expect(logins.adopt({ configDir: ten.configDir })).resolves.toEqual({
+      accountId: "perso-2",
+      label: "ten",
+    });
+    expect(accounts.config().accounts.at(-1)).toEqual({
+      id: "perso-2",
+      provider: "claude",
+      label: "ten",
+      configDir: join(home, ".claude-10"),
+    });
+    expect(accounts.config().balance).toEqual(["perso-1", "perso-2"]);
+    expect((await logins.found()).map((entry) => entry.label)).toEqual(["two"]);
+  });
+
+  it("refuses a folder it did not offer", async () => {
+    const { logins, home } = withProfiles();
+    await expect(logins.adopt({ configDir: join(home, ".claude-out") })).rejects.toThrow("not signed in");
+    await expect(logins.adopt({ configDir: join(home, ".claude-1") })).rejects.toThrow("not signed in");
+    await expect(logins.adopt({ configDir: "/etc" })).rejects.toThrow("not signed in");
   });
 });

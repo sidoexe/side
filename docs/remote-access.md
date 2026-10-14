@@ -81,7 +81,7 @@ A host can run sessions on several provider logins. Declare them in `config.json
 }
 ```
 
-Each account is a CLI profile directory the host user already signed in to (`CLAUDE_CONFIG_DIR` for Claude, `CODEX_HOME` for Codex). The remote composer shows an **Account** picker when the host lists accounts.
+Each account is a CLI profile directory the host user already signed in to (`CLAUDE_CONFIG_DIR` for Claude, `CODEX_HOME` for Codex). The remote composer shows an **Account** picker when the host lists accounts. A Claude profile already signed in under the host's home folder (`~/.claude-<name>`) but not declared is listed in that picker under **Signed in on the host**; **Import** declares it and adds it to `balance`, without signing in again. A profile signed in to an address an account already has is not offered: it is a copy of that account.
 
 With two or more accounts in `balance`, the picker also offers **Balanced**, the default for new sessions. A balanced conversation starts on the account with the most weekly headroom; the five-hour window only rules out an account that is nearly full. When its account hits a Claude usage limit, the host carries the conversation to the next account and runs the refused turn again there, without showing the refusal. Only when every pooled account is limited does the usual limit notice appear. Window levels are recorded in `account-usage.json` next to `config.json`.
 

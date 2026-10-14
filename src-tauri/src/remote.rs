@@ -413,6 +413,8 @@ fn supported_remote_method(method: &str) -> bool {
             | "accounts.login"
             | "accounts.loginCode"
             | "accounts.loginCancel"
+            | "accounts.found"
+            | "accounts.import"
             | "sessions.import"
             | "employees.load"
             | "employees.read"
