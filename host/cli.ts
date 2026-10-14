@@ -30,6 +30,7 @@ import { acquireHostOwner } from "./owner";
 import { HostEngine } from "./engine";
 import { hostProviders } from "./providers";
 import { createHostServer } from "./server";
+import { HostPush } from "./push";
 import {
   REMOTE_PROVIDERS,
   type RemoteProvider,
@@ -266,6 +267,8 @@ Connect another computer using an SSH forward to the loopback port.`);
     engine.automations = new HostAutomations(join(directory, "automations.db"));
     const app = new HostAppBridge(join(directory, "app-access.json"), (id) => engine.isRunning(id));
     engine.app = app;
+    engine.push = new HostPush(join(directory, "push.json"));
+    engine.push.watch(store);
     const appCli = appCliCommand();
     backend.sessionEnv = (sessionId) => ({
       MONOCODE_APP_ENDPOINT: `http://127.0.0.1:${port}/app`,
@@ -310,6 +313,7 @@ Connect another computer using an SSH forward to the loopback port.`);
       stopping = true;
       server.close();
       server.closeAllConnections();
+      engine.push?.close();
       await engine.close();
       await backend.close();
       release();

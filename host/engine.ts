@@ -44,6 +44,7 @@ import {
   claudeConfigDir,
   type HostAccounts,
 } from "./accounts";
+import type { HostPush } from "./push";
 import type { HostAccountLogins } from "./account-login";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments";
 import {
@@ -337,6 +338,8 @@ export class HostEngine {
   automations?: HostAutomations;
   app?: HostAppBridge;
   accountLogins?: HostAccountLogins;
+  /** Notifications for the browser app. */
+  push?: HostPush;
 
   /** Whether a turn of this session is running now. */
   isRunning(sessionId: string): boolean {

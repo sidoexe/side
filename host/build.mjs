@@ -28,6 +28,6 @@ await build({
   define: { "process.env.NODE_ENV": '"production"' },
   loader: { ".woff": "empty", ".woff2": "empty", ".ttf": "empty", ".svg": "dataurl" },
 });
-for (const file of ["index.html", "manifest.webmanifest"])
+for (const file of ["index.html", "manifest.webmanifest", "sw.js"])
   await copyFile(`host/webapp/${file}`, `build/host/web/${file}`);
 await copyFile("public/side.png", "build/host/web/side.png");

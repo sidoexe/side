@@ -174,6 +174,10 @@ export function createHostServer(
     if (!engine.accountLogins) throw new Error("Signing in is unavailable on this host");
     return engine.accountLogins;
   };
+  const push = () => {
+    if (!engine.push) throw new Error("Notifications are unavailable on this host");
+    return engine.push;
+  };
   const automations = () => {
     if (!engine.automations) throw new Error("Automations are unavailable on this host");
     return engine.automations;
@@ -358,6 +362,7 @@ export function createHostServer(
                 ...(engine.employees ? ["employees"] : []),
                 ...(engine.automations ? ["automations"] : []),
                 ...(engine.app ? ["app"] : []),
+                ...(engine.push ? ["push"] : []),
                 "accounts",
                 "accounts.refresh",
                 "accounts.balance",
@@ -785,6 +790,15 @@ export function createHostServer(
             break;
           case "automations.updateRun":
             result = automations().updateRun(params);
+            break;
+          case "push.key":
+            result = { publicKey: push().publicKey() };
+            break;
+          case "push.subscribe":
+            result = push().subscribe(params.subscription);
+            break;
+          case "push.unsubscribe":
+            result = push().unsubscribe(params.endpoint);
             break;
           case "app.take":
             result = engine.app?.take(params.sessionId, engine.store.deviceId(token)) ?? [];

@@ -13,7 +13,7 @@ import { sessionDisplayTitle, type RuntimeMode } from "../../src/features/sessio
 import { command, describe, login, logout, rpc, Unauthorized } from "./api";
 import { SessionView } from "./SessionView";
 import { ChangesPanel, FolderBrowser } from "./workspace";
-import { ago, BranchIcon, Chip, Composer, go, MODES, tilde, usePoll, useRoute, type Route } from "./ui";
+import { ago, BranchIcon, Chip, Composer, go, MODES, tilde, useNotifications, usePoll, useRoute, type Route } from "./ui";
 import { HarnessIcon } from "../../src/features/sessions/ui/HarnessIcon";
 import { findModel, setHarnessModels } from "../../src/features/sessions/model/models";
 import "./styles.css";
@@ -135,6 +135,7 @@ function Sidebar({
   onLogout: () => void;
 }) {
   const [showArchived, setShowArchived] = useState(false);
+  const notifications = useNotifications(host.capabilities.includes("push"));
   const [filter, setFilter] = useState("");
   const query = filter.trim().toLowerCase();
   return (
@@ -190,6 +191,21 @@ function Sidebar({
         <label>
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Archived
         </label>
+        {notifications.state !== "unsupported" ? (
+          <button
+            className={`theme-toggle${notifications.state === "on" ? " on" : ""}`}
+            onClick={() =>
+              notifications.state === "install"
+                ? alert("To get notifications on iPhone, open this page in Safari, tap Share → Add to Home Screen, then open sIDE from your Home Screen.")
+                : notifications.state === "denied"
+                  ? alert("Notifications are blocked for this site. Allow them in the browser's settings.")
+                  : void notifications.toggle()
+            }
+            title="Notify me when a session needs me or finishes"
+          >
+            {notifications.state === "on" ? "Notifications on" : notifications.state === "working" ? "…" : "Notifications"}
+          </button>
+        ) : null}
         <button
           className="theme-toggle"
           onClick={() => {

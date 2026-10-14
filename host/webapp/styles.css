@@ -400,3 +400,6 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: r
   .panel { position: fixed; inset: 0; z-index: 25; width: auto; border-left: none; background: var(--bg); }
   .file-dir { display: none; }
 }
+.theme-toggle.on { color: var(--text); }
+.sidebar footer { gap: 10px; }
+.sidebar footer label { margin-right: auto; }
