@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { readClaudeUsage, type UsageReading } from "./account-usage";
 
 /**
  * Named provider accounts on a host. Each is a CLI profile directory
@@ -43,6 +44,8 @@ export type AccountUsage = {
   sevenDay?: AccountWindow;
   blockedUntil?: number;
   updatedAt?: number;
+  /** Why the last refresh could not read this account's usage. */
+  error?: string;
 };
 
 /** What the desktop's account picker shows for a host. */
@@ -57,6 +60,8 @@ const ID = /^[A-Za-z0-9_-]{1,80}$/;
 const PROVIDERS = new Set<AccountProvider>(["claude", "codex"]);
 /** An account whose 5h window is this full is used only when all others are. */
 const FIVE_HOUR_GUARD = 90;
+/** A refresh asked for sooner than this after the last reading reuses it. */
+const REFRESH_MIN_MS = 20_000;
 /** When Claude gives no reset time, try a limited account again after this. */
 const UNKNOWN_RESET_MS = 60 * 60 * 1000;
 
@@ -104,7 +109,11 @@ export class HostAccounts {
   private readonly configPath: string;
   private readonly usagePath: string;
 
-  constructor(dataDir: string, private readonly now: () => number = Date.now) {
+  constructor(
+    dataDir: string,
+    private readonly now: () => number = Date.now,
+    private readonly readUsage: (account: HostAccount) => Promise<UsageReading> = readClaudeUsage,
+  ) {
     this.configPath = join(dataDir, "config.json");
     this.usagePath = join(dataDir, "account-usage.json");
   }
@@ -196,12 +205,42 @@ export class HostAccounts {
   }
 
   recordUsage(id: string, windows: { fiveHour?: AccountWindow; sevenDay?: AccountWindow }): void {
-    this.writeUsage(id, (current) => ({
+    this.writeUsage(id, ({ error: _error, ...current }) => ({
       ...current,
       ...(windows.fiveHour ? { fiveHour: windows.fiveHour } : {}),
       ...(windows.sevenDay ? { sevenDay: windows.sevenDay } : {}),
       updatedAt: this.now(),
     }));
+  }
+
+  /**
+   * Reads every Claude account's usage from Anthropic, instead of waiting for
+   * the next turn to report it. A reading below both limits frees an account
+   * marked limited; one that fails keeps the last levels and says why.
+   */
+  async refreshUsage(): Promise<void> {
+    const usage = this.usage();
+    const due = this.config().accounts.filter(
+      (account) =>
+        account.provider === "claude" &&
+        !(usage[account.id]?.updatedAt && this.now() - usage[account.id].updatedAt! < REFRESH_MIN_MS),
+    );
+    const readings = await Promise.all(due.map((account) => this.readUsage(account)));
+    due.forEach((account, index) => {
+      const reading = readings[index];
+      this.writeUsage(account.id, (current) => {
+        if (!reading.ok) return { ...current, error: reading.error };
+        const { error: _error, blockedUntil, ...rest } = current;
+        const full = [reading.fiveHour, reading.sevenDay].some((window) => window && window.used >= 100);
+        return {
+          ...rest,
+          ...(reading.fiveHour ? { fiveHour: reading.fiveHour } : {}),
+          ...(reading.sevenDay ? { sevenDay: reading.sevenDay } : {}),
+          ...(full && blockedUntil ? { blockedUntil } : {}),
+          updatedAt: this.now(),
+        };
+      });
+    });
   }
 
   markBlocked(id: string, resetsAt?: number): void {

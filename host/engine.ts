@@ -1307,6 +1307,12 @@ export class HostEngine {
     return this.accounts?.summaries() ?? [];
   }
 
+  /** The summaries after reading every account's usage afresh. */
+  async refreshAccountUsage() {
+    await this.accounts?.refreshUsage();
+    return this.accountSummaries();
+  }
+
   private checkAccount(harness: string, id: string | undefined): void {
     if (!id || id === DEFAULT_ACCOUNT) return;
     if (id === AUTO_ACCOUNT) {

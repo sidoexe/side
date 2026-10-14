@@ -1159,7 +1159,8 @@ it("starts on the host's balanced account and switches account between turns", a
   await act(async () => picker().click());
   const work = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')]
     .find((item) => item.textContent?.includes("Work"))!;
-  expect(work.textContent).toContain("12% 7d");
+  expect(work.textContent).toContain("Weekly");
+  expect(work.querySelector("[role=\"progressbar\"]")?.getAttribute("aria-valuenow")).toBe("12");
   await act(async () => work.click());
   await settle();
   expect(commands.find((command) => command.type === "configure")).toMatchObject({

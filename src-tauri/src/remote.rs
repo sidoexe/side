@@ -410,6 +410,7 @@ fn supported_remote_method(method: &str) -> bool {
             | "git.fileDiff"
             | "git.action"
             | "accounts.list"
+            | "accounts.refresh"
             | "accounts.login"
             | "accounts.loginCode"
             | "accounts.loginCancel"

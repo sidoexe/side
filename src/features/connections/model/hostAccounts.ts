@@ -11,6 +11,13 @@ export function reloadHostAccounts(machineId: string) {
   window.dispatchEvent(new CustomEvent(CHANGED, { detail: machineId }));
 }
 
+/** Asks the host to read every account's usage now, then shows it. */
+export async function refreshHostAccounts(machineId: string): Promise<void> {
+  const value = await remoteRequest<HostAccountSummary[]>(machineId, "accounts.refresh");
+  if (Array.isArray(value)) cached.set(machineId, value);
+  reloadHostAccounts(machineId);
+}
+
 /** The accounts a host offers, for hosts that advertise them. */
 export function useHostAccounts(
   machineId: string,

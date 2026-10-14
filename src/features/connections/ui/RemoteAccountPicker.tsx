@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { clampUsedPercent, formatUsagePercent } from "../../providers/model/rateLimits";
-import { barClass } from "../../providers/ui/ProviderAccountUsage";
+import {
+  clampUsedPercent,
+  formatResetDuration,
+  formatUsagePercent,
+  SESSION_WINDOW_MINUTES,
+  WEEKLY_WINDOW_MINUTES,
+  type RateLimitWindow,
+} from "../../providers/model/rateLimits";
+import { barClass, UsageMeter } from "../../providers/ui/ProviderAccountUsage";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ArrowDownCircle, ArrowLeft, Check, Plus, RefreshCw } from "../../../shared/ui/icons";
 import { Popover, type PopoverDismissReason } from "../../../shared/ui/Popover";
 import { remoteRequest } from "../model/connections";
-import { AUTO_HOST_ACCOUNT, reloadHostAccounts } from "../model/hostAccounts";
+import { AUTO_HOST_ACCOUNT, refreshHostAccounts, reloadHostAccounts } from "../model/hostAccounts";
 import type { HostAccountSummary, RemoteProvider } from "../model/protocol";
 import { useRemoteAccountSlot } from "./remoteAccountSlot";
 
@@ -17,12 +24,19 @@ const DEFAULT_LABEL = "Default account";
 
 type Window = { key: string; label: string; used: number };
 
+/** A window whose reset time has passed is empty again, whatever the host
+ * last read. */
+const live = (window: { used: number; resetsAt?: number } | undefined) =>
+  window && window.resetsAt && window.resetsAt <= Date.now() ? { used: 0 } : window;
+
 function windows(account: HostAccountSummary | undefined): Window[] {
   const usage = account?.usage;
   if (!usage) return [];
+  const fiveHour = live(usage.fiveHour);
+  const sevenDay = live(usage.sevenDay);
   return [
-    usage.fiveHour ? { key: "5h", label: "5h", used: usage.fiveHour.used } : undefined,
-    usage.sevenDay ? { key: "7d", label: "7d", used: usage.sevenDay.used } : undefined,
+    fiveHour ? { key: "5h", label: "5h", used: fiveHour.used } : undefined,
+    sevenDay ? { key: "7d", label: "7d", used: sevenDay.used } : undefined,
   ].filter((entry): entry is Window => !!entry);
 }
 
@@ -49,6 +63,64 @@ function UsageText({ account }: { account: HostAccountSummary | undefined }) {
       ))}
     </span>
   );
+}
+
+function meter(
+  window: { used: number; resetsAt?: number } | undefined,
+  windowMinutes: number,
+  now: number,
+): RateLimitWindow | undefined {
+  if (!window) return undefined;
+  const past = !!window.resetsAt && window.resetsAt <= now;
+  return {
+    usedPercent: past ? 0 : window.used,
+    windowMinutes,
+    resetsAt: past ? null : (window.resetsAt ?? null),
+  };
+}
+
+/** One account in the menu: its name, then a bar per window with the time
+ * left before it resets, as in Settings → Providers. */
+function AccountUsageRows({ account, now }: { account: HostAccountSummary; now: number }) {
+  const usage = account.usage;
+  const blocked = usage?.blockedUntil && usage.blockedUntil > now ? usage.blockedUntil : undefined;
+  if (blocked)
+    return (
+      <p className="text-[10px] leading-3 text-amber-600 dark:text-amber-300">
+        Limited · free in {formatResetDuration(blocked - now)}
+      </p>
+    );
+  const fiveHour = meter(usage?.fiveHour, SESSION_WINDOW_MINUTES, now);
+  const sevenDay = meter(usage?.sevenDay, WEEKLY_WINDOW_MINUTES, now);
+  return (
+    <>
+      {fiveHour || sevenDay ? (
+        <div className="flex gap-3">
+          {fiveHour ? (
+            <UsageMeter title="5h" window={fiveHour} now={now} className="w-[7.5rem]" />
+          ) : null}
+          {sevenDay ? (
+            <UsageMeter title="Weekly" window={sevenDay} now={now} className="w-[7.5rem]" />
+          ) : null}
+        </div>
+      ) : usage?.error ? null : (
+        <p className="text-[10px] leading-3 text-content/40">No usage read yet</p>
+      )}
+      {usage?.error ? (
+        <p className="text-[10px] leading-3 text-red-600 dark:text-red-300">{usage.error}</p>
+      ) : null}
+    </>
+  );
+}
+
+/** "just now", "4 min ago", for the newest reading among the accounts. */
+function readAt(accounts: readonly HostAccountSummary[], now: number): string | undefined {
+  const at = Math.max(0, ...accounts.map((account) => account.usage?.updatedAt ?? 0));
+  if (!at) return undefined;
+  const minutes = Math.floor((now - at) / 60_000);
+  if (minutes < 1) return "updated just now";
+  if (minutes < 60) return `updated ${minutes} min ago`;
+  return `updated ${formatResetDuration(now - at)} ago`;
 }
 
 function MiniBar({ account }: { account: HostAccountSummary | undefined }) {
@@ -244,6 +316,7 @@ export function RemoteAccountPicker({
   harness,
   canSignIn = false,
   canImport = false,
+  canRefresh = false,
   accounts,
   value,
   disabled,
@@ -256,6 +329,8 @@ export function RemoteAccountPicker({
   canSignIn?: boolean;
   /** The host offers its signed-in profiles that are not accounts yet. */
   canImport?: boolean;
+  /** The host can read its accounts' usage on demand. */
+  canRefresh?: boolean;
   accounts: HostAccountSummary[];
   value: string | undefined;
   disabled?: boolean;
@@ -271,13 +346,39 @@ export function RemoteAccountPicker({
   const [found, setFound] = useFoundAccounts(machineId, open && canImport && harness === "claude");
   const [importing, setImporting] = useState<string>();
   const [importError, setImportError] = useState<string>();
+  const [refreshing, setRefreshing] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const refresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await refreshHostAccounts(machineId);
+    } catch {
+      /* the last levels stay; each account says why it could not be read */
+    } finally {
+      setNow(Date.now());
+      setRefreshing(false);
+    }
+  };
+  // Opening the menu reads the levels afresh; the host reuses a reading
+  // taken in the last few seconds.
+  useEffect(() => {
+    if (!open || !canRefresh) return;
+    setNow(Date.now());
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, canRefresh, machineId]);
   if ((!accounts.length && !signIn) || !slot) return null;
   const selected = value ?? DEFAULT;
   const active = accounts.find((account) => account.id === selected);
   const provider = harness;
   const named = accounts.filter((account) => account.id !== AUTO_HOST_ACCOUNT);
   const options = [
-    ...accounts.map((account) => ({ id: account.id, label: account.label, account })),
+    ...accounts.map((account) => ({
+      id: account.id,
+      label: account.label,
+      account: account.id === AUTO_HOST_ACCOUNT ? undefined : account,
+    })),
     { id: DEFAULT, label: DEFAULT_LABEL, account: undefined },
   ];
 
@@ -336,7 +437,7 @@ export function RemoteAccountPicker({
           onDismiss={dismiss}
           role={typeof view === "object" ? "dialog" : "menu"}
           aria-label={typeof view === "object" ? "Sign in a host account" : "Host accounts"}
-          className="min-w-[15rem] p-1"
+          className="w-[18.5rem] p-1"
         >
           {typeof view === "object" ? (
             <HostSignIn
@@ -373,13 +474,34 @@ export function RemoteAccountPicker({
             </>
           ) : (
           <>
+          <div className="flex h-7 items-center gap-2 pl-2 pr-0.5 text-[11px] text-content/40">
+            <span className="min-w-0 flex-1 truncate">
+              Host accounts{readAt(named, now) ? ` · ${readAt(named, now)}` : ""}
+            </span>
+            {canRefresh ? (
+              <button
+                type="button"
+                aria-label="Refresh usage"
+                title="Read every account's usage now"
+                disabled={refreshing}
+                className="grid size-6 place-items-center rounded-md text-content/40 hover:bg-content/10 hover:text-content disabled:opacity-40"
+                onClick={() => void refresh()}
+              >
+                <RefreshCw
+                  className={`size-3 ${refreshing ? "animate-spin" : ""}`}
+                  strokeWidth={1.75}
+                  aria-hidden
+                />
+              </button>
+            ) : null}
+          </div>
           {options.map((option) => (
             <button
               key={option.id}
               type="button"
               role="menuitemradio"
               aria-checked={option.id === selected}
-              className="flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-[12px] leading-none text-content hover:bg-content/10"
+              className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] leading-none text-content hover:bg-content/10"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 setOpen(false);
@@ -387,14 +509,24 @@ export function RemoteAccountPicker({
                   onChange(option.id === DEFAULT ? undefined : option.id);
               }}
             >
-              <span className="grid size-3 shrink-0 place-items-center">
+              <span className="grid size-3 shrink-0 place-items-center pt-px">
                 {option.id === selected ? (
                   <Check className="size-3" strokeWidth={2} aria-hidden />
                 ) : null}
               </span>
-              <span className="min-w-0 flex-1 truncate">{option.label}</span>
-              <span className="shrink-0 text-[11px] text-content/40">
-                <UsageText account={option.account} />
+              <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <span className="truncate">{option.label}</span>
+                {option.id === AUTO_HOST_ACCOUNT ? (
+                  <span className="text-[10px] leading-3 text-content/40">
+                    Starts on the account with the most weekly room, moves on at a limit
+                  </span>
+                ) : option.account ? (
+                  <AccountUsageRows account={option.account} now={now} />
+                ) : (
+                  <span className="text-[10px] leading-3 text-content/40">
+                    The host's own Claude sign-in
+                  </span>
+                )}
               </span>
             </button>
           ))}

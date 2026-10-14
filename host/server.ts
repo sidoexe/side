@@ -342,6 +342,7 @@ export function createHostServer(
                 ...(engine.automations ? ["automations"] : []),
                 ...(engine.app ? ["app"] : []),
                 "accounts",
+                "accounts.refresh",
                 ...(engine.accountLogins ? ["accounts.login", "accounts.import"] : []),
               ],
             };
@@ -351,6 +352,9 @@ export function createHostServer(
             break;
           case "accounts.list":
             result = engine.accountSummaries();
+            break;
+          case "accounts.refresh":
+            result = await engine.refreshAccountUsage();
             break;
           case "accounts.login":
             result = await accountLogins().start(params);

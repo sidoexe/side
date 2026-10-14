@@ -39,6 +39,9 @@ export type HostAccountSummary = {
     fiveHour?: { used: number; resetsAt?: number };
     sevenDay?: { used: number; resetsAt?: number };
     blockedUntil?: number;
+    updatedAt?: number;
+    /** Why the host could not read this account's usage last time. */
+    error?: string;
   };
 };
 export type HostDirectory = {

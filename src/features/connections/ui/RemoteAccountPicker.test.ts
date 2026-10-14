@@ -34,6 +34,23 @@ beforeEach(() => {
     if (method === "accounts.login")
       return { loginId: "login-1", url: "https://claude.com/cai/oauth/authorize?code=true", accountId: "perso-3" };
     if (method === "accounts.loginCode") return codeResult();
+    if (method === "accounts.refresh")
+      return [
+        { id: "auto", provider: "claude", label: "Balanced" },
+        {
+          id: "perso-1",
+          provider: "claude",
+          label: "6ido.exe",
+          usage: { fiveHour: { used: 9, resetsAt: Date.now() + 3_600_000 }, sevenDay: { used: 24 }, updatedAt: Date.now() },
+        },
+        {
+          id: "perso-2",
+          provider: "claude",
+          label: "benchoubane.sid",
+          usage: { fiveHour: { used: 100, resetsAt: Date.now() - 1_000 }, error: "Sign-in expired; reconnect this account" },
+        },
+      ];
+    if (method === "accounts.list") return [];
     if (method === "accounts.found") return [{ configDir: "~/.claude-work", label: "work.person" }];
     if (method === "accounts.import") return { accountId: "perso-3", label: "work.person" };
     return {};
@@ -155,4 +172,50 @@ it("does not look for profiles on a host that cannot import them", async () => {
   await render();
   await openMenu();
   expect(requests.some((request) => request.method === "accounts.found")).toBe(false);
+});
+
+it("reads usage afresh when the menu opens, and again on demand", async () => {
+  const reloaded = vi.fn();
+  window.addEventListener("side:host-accounts-changed", reloaded);
+  await render({ canRefresh: true });
+  await openMenu();
+  const refreshes = () => requests.filter((request) => request.method === "accounts.refresh").length;
+  expect(refreshes()).toBe(1);
+  expect(reloaded).toHaveBeenCalled();
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('button[aria-label="Refresh usage"]')!.click(),
+  );
+  expect(refreshes()).toBe(2);
+});
+
+it("shows a window whose reset has passed as empty, not full", async () => {
+  await render({
+    value: "perso-2",
+    accounts: [
+      {
+        id: "perso-2",
+        provider: "claude",
+        label: "benchoubane.sid",
+        usage: { fiveHour: { used: 100, resetsAt: Date.now() - 1_000 }, sevenDay: { used: 72 } },
+      },
+    ],
+  });
+  const trigger = footer.querySelector("button")!;
+  expect(trigger.textContent).toContain("0% 5h");
+  expect(trigger.textContent).toContain("72% 7d");
+  await openMenu();
+  const bars = [...document.querySelectorAll('[role="progressbar"]')].map((bar) =>
+    bar.getAttribute("aria-valuenow"),
+  );
+  expect(bars).toEqual(["0", "72"]);
+});
+
+it("says why an account's usage could not be read", async () => {
+  await render({
+    accounts: [
+      { id: "perso-2", provider: "claude", label: "benchoubane.sid", usage: { error: "Not signed in" } },
+    ],
+  });
+  await openMenu();
+  expect(document.body.textContent).toContain("Not signed in");
 });
