@@ -47,6 +47,8 @@ export type HostAccountSummary = {
   };
   /** For the balanced choice: the ids of the accounts it uses. */
   pool?: string[];
+  /** For a named account, on hosts that say: the balanced choice may use it. */
+  balanced?: boolean;
 };
 export type HostDirectory = {
   path: string;

@@ -84,6 +84,21 @@ describe("host accounts", () => {
     expect(new HostAccounts(temp()).summaries()).toEqual([]);
   });
 
+  it("puts an account in the balanced pool and takes it out, keeping the rest of the file", () => {
+    const dir = temp();
+    writeFileSync(join(dir, "config.json"), JSON.stringify(config));
+    const accounts = new HostAccounts(dir);
+    expect(accounts.summaries().find((entry) => entry.id === "one")?.balanced).toBe(true);
+    accounts.setBalanced("one", false);
+    expect(accounts.pool("claude").map((account) => account.id)).toEqual(["two"]);
+    expect(accounts.summaries().some((entry) => entry.id === "auto")).toBe(false);
+    expect(accounts.summaries().find((entry) => entry.id === "one")?.balanced).toBe(false);
+    accounts.setBalanced("one", true);
+    expect(accounts.pool("claude").map((account) => account.id)).toEqual(["two", "one"]);
+    expect(JSON.parse(readFileSync(join(dir, "config.json"), "utf8")).binaries).toEqual(config.binaries);
+    expect(() => accounts.setBalanced("ghost", true)).toThrow(/Unknown account/);
+  });
+
   it("rejects an account the host does not know", () => {
     const dir = temp();
     writeFileSync(join(dir, "config.json"), JSON.stringify(config));

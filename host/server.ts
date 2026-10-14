@@ -360,6 +360,7 @@ export function createHostServer(
                 ...(engine.app ? ["app"] : []),
                 "accounts",
                 "accounts.refresh",
+                "accounts.balance",
                 ...(engine.accountLogins ? ["accounts.login", "accounts.import"] : []),
               ],
             };
@@ -372,6 +373,9 @@ export function createHostServer(
             break;
           case "accounts.refresh":
             result = await engine.refreshAccountUsage();
+            break;
+          case "accounts.balance":
+            result = engine.setAccountBalanced(params);
             break;
           case "accounts.login":
             result = await accountLogins().start(params);

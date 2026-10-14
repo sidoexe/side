@@ -1307,6 +1307,13 @@ export class HostEngine {
     return this.accounts?.summaries() ?? [];
   }
 
+  /** Puts an account in the balanced pool or takes it out; the summaries after. */
+  setAccountBalanced(params: Record<string, unknown>) {
+    if (!this.accounts) throw new Error("Named provider accounts are not configured on this host");
+    this.accounts.setBalanced(String(params.accountId ?? ""), params.balanced === true);
+    return this.accountSummaries();
+  }
+
   /** The summaries after reading every account's usage afresh. */
   async refreshAccountUsage() {
     await this.accounts?.refreshUsage();

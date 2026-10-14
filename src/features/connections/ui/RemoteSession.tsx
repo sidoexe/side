@@ -1533,6 +1533,7 @@ function ConnectedRemoteSession({
           canSignIn={!!descriptor?.capabilities.includes("accounts.login")}
           canImport={!!descriptor?.capabilities.includes("accounts.import")}
           canRefresh={!!descriptor?.capabilities.includes("accounts.refresh")}
+          canBalance={!!descriptor?.capabilities.includes("accounts.balance")}
           accounts={accountsFor(hostAccounts, configuration.harness)}
           value={configuration.account}
           disabled={!online || busy}

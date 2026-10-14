@@ -12,10 +12,15 @@ import { barClass, UsageMeter } from "../../providers/ui/ProviderAccountUsage";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowDownCircle, ArrowLeft, Check, Plus, RefreshCw } from "../../../shared/ui/icons";
+import { ArrowDownCircle, ArrowLeft, Check, Plus, RefreshCw, RotateCcw } from "../../../shared/ui/icons";
 import { Popover, type PopoverDismissReason } from "../../../shared/ui/Popover";
 import { remoteRequest } from "../model/connections";
-import { AUTO_HOST_ACCOUNT, refreshHostAccounts, reloadHostAccounts } from "../model/hostAccounts";
+import {
+  AUTO_HOST_ACCOUNT,
+  refreshHostAccounts,
+  reloadHostAccounts,
+  setHostAccountBalanced,
+} from "../model/hostAccounts";
 import type { HostAccountSummary, RemoteProvider } from "../model/protocol";
 import { useRemoteAccountSlot } from "./remoteAccountSlot";
 
@@ -149,6 +154,62 @@ function MiniBar({ account }: { account: HostAccountSummary | undefined }) {
   );
 }
 
+/** On an account's row: whether the balanced choice uses it, and its own
+ * sign-in again. */
+function AccountActions({
+  account,
+  canBalance,
+  toggling,
+  onToggleBalanced,
+  onReconnect,
+}: {
+  account: HostAccountSummary;
+  canBalance: boolean;
+  toggling: boolean;
+  onToggleBalanced: () => void;
+  onReconnect?: () => void;
+}) {
+  const balanced = !!account.balanced;
+  return (
+    <span className="absolute right-1 top-1 flex items-center gap-0.5">
+      {canBalance ? (
+        <button
+          type="button"
+          role="menuitemcheckbox"
+          aria-checked={balanced}
+          aria-label={`Use ${account.label} in Balanced`}
+          title={balanced ? "In the Balanced rotation · click to take it out" : "Not in the Balanced rotation · click to add it"}
+          disabled={toggling}
+          className={`h-5 rounded-md border px-1.5 text-[10px] leading-none transition-colors disabled:opacity-50 ${
+            balanced
+              ? "border-transparent bg-content/12 text-content/75 hover:bg-content/18"
+              : "border-dashed border-content/20 text-content/35 hover:border-content/35 hover:text-content/60"
+          }`}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onToggleBalanced}
+        >
+          Balanced
+        </button>
+      ) : null}
+      {onReconnect ? (
+        <button
+          type="button"
+          role="menuitem"
+          aria-label={`Reconnect ${account.label}`}
+          title={`Sign ${account.label} in again`}
+          className={`grid size-5 place-items-center rounded-md hover:bg-content/10 hover:text-content ${
+            account.usage?.error ? "text-amber-600 dark:text-amber-300" : "text-content/35"
+          }`}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onReconnect}
+        >
+          <RotateCcw className="size-3" strokeWidth={1.75} aria-hidden />
+        </button>
+      ) : null}
+    </span>
+  );
+}
+
 type LoginStep =
   | { kind: "starting" }
   | { kind: "code"; loginId: string; url: string; busy?: boolean; error?: string }
@@ -222,7 +283,7 @@ function HostSignIn({
 
   const title = account ? `Reconnect ${account.label}` : "Add a Claude account";
   return (
-    <div className="flex w-[19rem] flex-col gap-2 p-1.5 text-[12px] text-content">
+    <div className="flex w-full min-w-0 flex-col gap-2 p-1.5 text-[12px] text-content">
       <div className="flex items-center gap-1.5">
         <button
           type="button"
@@ -273,7 +334,7 @@ function HostSignIn({
             placeholder="Paste code"
             spellCheck={false}
             autoComplete="off"
-            className="h-7 rounded-md border border-content/15 bg-content/3 px-2 font-mono text-[12px] outline-none focus:border-content/35"
+            className="h-7 w-full min-w-0 rounded-md border border-content/15 bg-content/3 px-2 font-mono text-[12px] text-content outline-none focus:border-content/35"
             value={code}
             disabled={step.busy}
             onChange={(event) => setCode(event.target.value)}
@@ -286,7 +347,7 @@ function HostSignIn({
           <button
             type="submit"
             disabled={step.busy || !code.trim()}
-            className="h-7 self-end rounded-md bg-content px-3 text-[12px] font-medium text-surface hover:opacity-90 disabled:opacity-40"
+            className="h-7 self-end rounded-md bg-content px-3 text-[12px] font-medium text-background-base hover:bg-content/85 disabled:opacity-40"
           >
             {step.busy ? "Connecting…" : "Connect"}
           </button>
@@ -328,6 +389,7 @@ export function RemoteAccountPicker({
   canSignIn = false,
   canImport = false,
   canRefresh = false,
+  canBalance = false,
   accounts,
   value,
   disabled,
@@ -342,6 +404,8 @@ export function RemoteAccountPicker({
   canImport?: boolean;
   /** The host can read its accounts' usage on demand. */
   canRefresh?: boolean;
+  /** The host can put accounts in the balanced pool and take them out. */
+  canBalance?: boolean;
   accounts: HostAccountSummary[];
   value: string | undefined;
   disabled?: boolean;
@@ -349,15 +413,15 @@ export function RemoteAccountPicker({
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const [view, setView] = useState<
-    "menu" | "reconnect" | { signIn: HostAccountSummary | undefined }
-  >("menu");
+  const [view, setView] = useState<"menu" | { signIn: HostAccountSummary | undefined }>("menu");
   const slot = useRemoteAccountSlot(sessionId);
   const signIn = canSignIn && harness === "claude";
   const [found, setFound] = useFoundAccounts(machineId, open && canImport && harness === "claude");
   const [importing, setImporting] = useState<string>();
   const [importError, setImportError] = useState<string>();
   const [refreshing, setRefreshing] = useState(false);
+  const [toggling, setToggling] = useState<string>();
+  const [balanceError, setBalanceError] = useState<string>();
   const [now, setNow] = useState(() => Date.now());
   const refresh = async () => {
     if (refreshing) return;
@@ -408,10 +472,24 @@ export function RemoteAccountPicker({
     }
   };
 
+  const toggleBalanced = async (account: HostAccountSummary) => {
+    if (toggling) return;
+    setToggling(account.id);
+    setBalanceError(undefined);
+    try {
+      await setHostAccountBalanced(machineId, account.id, !account.balanced);
+    } catch (error) {
+      setBalanceError(message(error));
+    } finally {
+      setToggling(undefined);
+    }
+  };
+
   const dismiss = (reason: PopoverDismissReason) => {
     setOpen(false);
     setView("menu");
     setImportError(undefined);
+    setBalanceError(undefined);
     if (reason === "escape") requestAnimationFrame(() => trigger.current?.focus());
   };
 
@@ -460,29 +538,6 @@ export function RemoteAccountPicker({
                 setView("menu");
               }}
             />
-          ) : view === "reconnect" ? (
-            <>
-              <button
-                type="button"
-                className={`${MENU_ITEM} text-content/60`}
-                onClick={() => setView("menu")}
-              >
-                <ArrowLeft className="size-3 shrink-0" aria-hidden />
-                <span>Reconnect an account</span>
-              </button>
-              {named.map((account) => (
-                <button
-                  key={account.id}
-                  type="button"
-                  role="menuitem"
-                  className={MENU_ITEM}
-                  onClick={() => setView({ signIn: account })}
-                >
-                  <span className="size-3 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{account.label}</span>
-                </button>
-              ))}
-            </>
           ) : (
           <>
           <div className="flex h-7 items-center gap-2 pl-2 pr-0.5 text-[11px] text-content/40">
@@ -514,46 +569,63 @@ export function RemoteAccountPicker({
             )}
           </div>
           {options.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              role="menuitemradio"
-              aria-checked={option.id === selected}
-              className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] leading-none text-content hover:bg-content/10"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                setOpen(false);
-                if (option.id !== selected)
-                  onChange(option.id === DEFAULT ? undefined : option.id);
-              }}
-            >
-              <span className="grid size-3 shrink-0 place-items-center pt-px">
-                {option.id === selected ? (
-                  <Check className="size-3" strokeWidth={2} aria-hidden />
-                ) : null}
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                <span className="truncate">{option.label}</span>
-                {option.id === AUTO_HOST_ACCOUNT ? (
-                  <span className="text-[10px] leading-[13px] text-content/40">
-                    {balancedOver(accounts) ? (
-                      <>
-                        Between <span className="text-content/60">{balancedOver(accounts)}</span>
-                        {" · "}
-                      </>
-                    ) : null}
-                    starts on the most weekly room, moves on at a limit
+            <div key={option.id} className="relative">
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={option.id === selected}
+                className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] leading-none text-content hover:bg-content/10"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  setOpen(false);
+                  if (option.id !== selected)
+                    onChange(option.id === DEFAULT ? undefined : option.id);
+                }}
+              >
+                <span className="grid size-3 shrink-0 place-items-center pt-px">
+                  {option.id === selected ? (
+                    <Check className="size-3" strokeWidth={2} aria-hidden />
+                  ) : null}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <span className={`truncate ${option.account ? "pr-24" : ""}`}>
+                    {option.label}
                   </span>
-                ) : option.account ? (
-                  <AccountUsageRows account={option.account} now={now} />
-                ) : (
-                  <span className="text-[10px] leading-3 text-content/40">
-                    The host's own Claude sign-in
-                  </span>
-                )}
-              </span>
-            </button>
+                  {option.id === AUTO_HOST_ACCOUNT ? (
+                    <span className="text-[10px] leading-[13px] text-content/40">
+                      {balancedOver(accounts) ? (
+                        <>
+                          Between <span className="text-content/60">{balancedOver(accounts)}</span>
+                          {" · "}
+                        </>
+                      ) : null}
+                      starts on the most weekly room, moves on at a limit
+                    </span>
+                  ) : option.account ? (
+                    <AccountUsageRows account={option.account} now={now} />
+                  ) : (
+                    <span className="text-[10px] leading-3 text-content/40">
+                      The host's own Claude sign-in
+                    </span>
+                  )}
+                </span>
+              </button>
+              {option.account ? (
+                <AccountActions
+                  account={option.account}
+                  canBalance={canBalance}
+                  toggling={toggling === option.account.id}
+                  onToggleBalanced={() => void toggleBalanced(option.account!)}
+                  onReconnect={signIn ? () => setView({ signIn: option.account }) : undefined}
+                />
+              ) : null}
+            </div>
           ))}
+          {balanceError ? (
+            <p role="alert" className="px-2 py-1 text-[11px] text-red-600 dark:text-red-300">
+              {balanceError}
+            </p>
+          ) : null}
           {found.length ? (
             <>
               <div role="separator" className="my-1 h-px bg-content/10" />
@@ -598,19 +670,6 @@ export function RemoteAccountPicker({
                 <Plus className="size-3 shrink-0" aria-hidden />
                 <span>Add account…</span>
               </button>
-              {named.length ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={MENU_ITEM}
-                  onClick={() =>
-                    setView(named.length === 1 ? { signIn: named[0] } : "reconnect")
-                  }
-                >
-                  <RefreshCw className="size-3 shrink-0" aria-hidden />
-                  <span>Reconnect…</span>
-                </button>
-              ) : null}
             </>
           ) : null}
           </>

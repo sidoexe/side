@@ -127,13 +127,39 @@ it("reconnects a chosen account and shows a refused code", async () => {
   };
   await render();
   await openMenu();
-  await act(async () => item("Reconnect").click());
-  await act(async () => item("benchoubane.sid").click());
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('button[aria-label="Reconnect benchoubane.sid"]')!.click(),
+  );
   expect(requests.at(-1)).toEqual({ method: "accounts.login", params: { accountId: "perso-2" } });
   await typeCode("bad");
   expect(document.querySelector('[role="alert"]')?.textContent).toBe(
     "Login failed: Request failed with status code 400",
   );
+});
+
+it("takes an account out of Balanced and puts it back", async () => {
+  await render({
+    canBalance: true,
+    accounts: [
+      { id: "auto", provider: "claude", label: "Balanced", pool: ["perso-1", "perso-2"] },
+      { id: "perso-1", provider: "claude", label: "6ido.exe", balanced: true },
+      { id: "perso-2", provider: "claude", label: "benchoubane.sid", balanced: false },
+    ],
+  });
+  await openMenu();
+  const toggle = (label: string) =>
+    document.querySelector<HTMLButtonElement>(`button[aria-label="Use ${label} in Balanced"]`)!;
+  expect(toggle("6ido.exe").getAttribute("aria-checked")).toBe("true");
+  await act(async () => toggle("6ido.exe").click());
+  expect(requests.at(-1)).toEqual({
+    method: "accounts.balance",
+    params: { accountId: "perso-1", balanced: false },
+  });
+  await act(async () => toggle("benchoubane.sid").click());
+  expect(requests.at(-1)).toEqual({
+    method: "accounts.balance",
+    params: { accountId: "perso-2", balanced: true },
+  });
 });
 
 it("stops the host's sign-in when it is left midway", async () => {

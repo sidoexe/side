@@ -411,6 +411,7 @@ fn supported_remote_method(method: &str) -> bool {
             | "git.action"
             | "accounts.list"
             | "accounts.refresh"
+            | "accounts.balance"
             | "accounts.login"
             | "accounts.loginCode"
             | "accounts.loginCancel"

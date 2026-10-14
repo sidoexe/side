@@ -18,6 +18,20 @@ export async function refreshHostAccounts(machineId: string): Promise<void> {
   reloadHostAccounts(machineId);
 }
 
+/** Puts a host account in the balanced pool or takes it out. */
+export async function setHostAccountBalanced(
+  machineId: string,
+  accountId: string,
+  balanced: boolean,
+): Promise<void> {
+  const value = await remoteRequest<HostAccountSummary[]>(machineId, "accounts.balance", {
+    accountId,
+    balanced,
+  });
+  if (Array.isArray(value)) cached.set(machineId, value);
+  reloadHostAccounts(machineId);
+}
+
 /** The accounts a host offers, for hosts that advertise them. */
 export function useHostAccounts(
   machineId: string,

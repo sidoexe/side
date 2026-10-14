@@ -56,6 +56,8 @@ export type HostAccountSummary = {
   usage?: AccountUsage;
   /** For the balanced choice: the accounts it spreads conversations over. */
   pool?: string[];
+  /** For a named account: the balanced choice may use it. */
+  balanced?: boolean;
 };
 
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
@@ -129,9 +131,31 @@ export class HostAccounts {
     }
   }
 
-  /** Declares a newly signed-in profile, and pools it for balancing.
-   * Everything else in the file is kept as written. */
+  /** Declares a newly signed-in profile, and pools it for balancing. */
   addAccount(account: HostAccount): void {
+    this.edit((raw) => {
+      const accounts = Array.isArray(raw.accounts) ? raw.accounts : [];
+      const balance = Array.isArray(raw.balance) ? raw.balance : [];
+      return {
+        ...raw,
+        accounts: [...accounts, { ...account, configDir: home(account.configDir) }],
+        balance: balance.includes(account.id) ? balance : [...balance, account.id],
+      };
+    });
+  }
+
+  /** Puts an account in the balanced pool or takes it out. */
+  setBalanced(id: string, balanced: boolean): void {
+    if (!this.config().accounts.some((account) => account.id === id))
+      throw new Error(`Unknown account "${id}" on this host`);
+    this.edit((raw) => {
+      const balance = (Array.isArray(raw.balance) ? raw.balance : []).filter((entry) => entry !== id);
+      return { ...raw, balance: balanced ? [...balance, id] : balance };
+    });
+  }
+
+  /** Rewrites the config file, keeping everything else as written. */
+  private edit(change: (raw: Record<string, unknown>) => Record<string, unknown>): void {
     let raw: Record<string, unknown> = {};
     try {
       const value: unknown = JSON.parse(readFileSync(this.configPath, "utf8"));
@@ -139,15 +163,8 @@ export class HostAccounts {
     } catch {
       /* a host without accounts yet */
     }
-    const accounts = Array.isArray(raw.accounts) ? raw.accounts : [];
-    const balance = Array.isArray(raw.balance) ? raw.balance : [];
-    const next = {
-      ...raw,
-      accounts: [...accounts, { ...account, configDir: home(account.configDir) }],
-      balance: balance.includes(account.id) ? balance : [...balance, account.id],
-    };
     const tmp = `${this.configPath}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+    writeFileSync(tmp, `${JSON.stringify(change(raw), null, 2)}\n`, { mode: 0o600 });
     renameSync(tmp, this.configPath);
   }
 
@@ -178,6 +195,7 @@ export class HostAccounts {
       provider: account.provider,
       label: account.label,
       usage: usage[account.id],
+      balanced: config.balance.includes(account.id),
     }));
     for (const provider of PROVIDERS)
       if (this.pool(provider).length > 1)
