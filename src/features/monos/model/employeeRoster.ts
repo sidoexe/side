@@ -7,7 +7,9 @@ import { employeeHome } from "./employeeStorage";
  * Keeps this desktop's roster and the home machine's in step, so every
  * desktop lists the same employees with the same look and projects. The host
  * keeps a revision; a push over a stale one is refused, and the two rosters
- * are then merged against the last one both sides agreed on.
+ * are then merged against the last one both sides agreed on. Employees kept
+ * on this computer only never reach the host, and the host's copy of one
+ * made local here is dropped.
  */
 
 type HostRoster = { revision: number; roster: unknown[] };
@@ -57,6 +59,21 @@ export function mergeRosters(
 const same = (a: readonly unknown[], b: readonly unknown[]) =>
   JSON.stringify(a) === JSON.stringify(b);
 
+/** The shared roster with this desktop's local-only employees put back
+ * after the one each followed, or first when none did. */
+export function withLocalOnly(shared: readonly unknown[], all: readonly Mono[]): unknown[] {
+  const roster = [...shared];
+  let after: string | undefined;
+  for (const mono of all) {
+    if (mono.localOnly) {
+      const index = after === undefined ? -1 : roster.findIndex((entry) => entryId(entry) === after);
+      roster.splice(index + 1, 0, mono);
+    }
+    after = mono.id;
+  }
+  return roster;
+}
+
 /** One desktop's sync with the home machine's roster. */
 export class EmployeeRosterSync {
   private base?: { environmentId: string; revision: number; roster: unknown[] };
@@ -96,13 +113,17 @@ export class EmployeeRosterSync {
     if (this.base?.environmentId !== home.environmentId) this.base = undefined;
     for (let attempt = 0; attempt < 3; attempt++) {
       const remote = await this.request<HostRoster>(home, "employees.roster");
-      const local = this.local();
+      const all = this.local();
+      const local = all.filter((mono) => !mono.localOnly);
+      const localOnly = new Set(all.filter((mono) => mono.localOnly).map((mono) => mono.id));
       // First contact: the host's employees stay as they are and this
       // desktop's own ones join them, so no desktop's are lost.
-      const merged = this.base
-        ? mergeRosters(this.base.roster, local, remote.roster)
-        : mergeRosters(remote.roster, remote.roster, [...remote.roster, ...local]);
-      if (!same(merged, local)) this.replace(merged);
+      const merged = (
+        this.base
+          ? mergeRosters(this.base.roster, local, remote.roster)
+          : mergeRosters(remote.roster, remote.roster, [...remote.roster, ...local])
+      ).filter((entry) => !localOnly.has(entryId(entry)!));
+      if (!same(merged, local)) this.replace(withLocalOnly(merged, all));
       if (same(merged, remote.roster)) {
         this.base = { environmentId: home.environmentId, ...remote };
         return;

@@ -80,3 +80,27 @@ it("pushes a local change and merges when another desktop saved first", async ()
   expect(host.roster).toEqual([mono("a", { name: "New" }), mono("other")]);
   expect(state.local).toEqual(host.roster);
 });
+
+it("never sends an employee kept on this computer only to the host", async () => {
+  const { host, state, sync } = harness(
+    { revision: 1, roster: [mono("h")] },
+    [mono("a"), mono("solo", { localOnly: true }), mono("b")],
+  );
+  await sync.sync();
+  expect(host.roster).toEqual([mono("h"), mono("a"), mono("b")]);
+  expect(state.local).toEqual([mono("h"), mono("a"), mono("solo", { localOnly: true }), mono("b")]);
+  await sync.sync();
+  expect(host.saves).toBe(1);
+});
+
+it("drops the host's copy of an employee made local here", async () => {
+  const { host, state, sync } = harness({ revision: 1, roster: [mono("a"), mono("b")] }, [
+    mono("a"),
+    mono("b"),
+  ]);
+  await sync.sync();
+  state.local = [mono("a", { localOnly: true }), mono("b")];
+  await sync.sync();
+  expect(host.roster).toEqual([mono("b")]);
+  expect(state.local).toEqual([mono("a", { localOnly: true }), mono("b")]);
+});

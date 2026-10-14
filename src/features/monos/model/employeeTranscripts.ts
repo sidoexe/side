@@ -2,11 +2,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { remoteRequest } from "../../connections/model/connections";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import { employeeHome } from "./employeeStorage";
+import { monoForSession } from "./mono";
 
 /**
  * Employees' conversations follow their files (see `employeeStorage.ts`):
  * on the home machine's host when it keeps employees, so every desktop opens
- * the same chat, and in this computer's session store otherwise. The calls
+ * the same chat, and in this computer's session store otherwise or when the
+ * employee is kept on this computer only. The calls
  * take and return what the native `mono_session_*` commands do.
  */
 
@@ -34,21 +36,41 @@ function markImported(key: string): void {
   }
 }
 
-/** Every saved block of a local chat, oldest first. */
-async function localBlocks(sessionId: string, record: Record): Promise<unknown[]> {
+type PageArgs = {
+  sessionId: string;
+  before: number | null;
+  beforeBlockId: string | null;
+  aroundBlockId: string | null;
+};
+
+/** Every saved block of a chat, oldest first, `page` reading earlier ones. */
+async function allBlocks(
+  sessionId: string,
+  record: Record,
+  page: (args: PageArgs) => Promise<Page>,
+): Promise<unknown[]> {
   let blocks = record.blocks;
   let before = record.monoTranscript?.before ?? null;
   while (before != null) {
-    const page = await invoke<Page>("mono_session_page", {
-      sessionId,
-      before,
-      beforeBlockId: null,
-      aroundBlockId: null,
-    });
-    blocks = [...page.blocks, ...blocks];
-    before = page.before;
+    const earlier = await page({ sessionId, before, beforeBlockId: null, aroundBlockId: null });
+    blocks = [...earlier.blocks, ...blocks];
+    before = earlier.before;
   }
   return blocks;
+}
+
+const localPage = (args: PageArgs) => invoke<Page>("mono_session_page", args);
+
+/** The record without what each store keeps for itself. */
+function headerOf(record: Record): { [key: string]: unknown } {
+  const {
+    blocks: _blocks,
+    monoTranscript: _transcript,
+    createdAt: _created,
+    updatedAt: _updated,
+    ...header
+  } = record;
+  return header;
 }
 
 function chunks(blocks: unknown[]): unknown[][] {
@@ -69,6 +91,34 @@ function chunks(blocks: unknown[]): unknown[][] {
   return out;
 }
 
+/** Writes this computer's chat over the host's, in chunks the host takes.
+ * `hostLast` is the host's last block, so its blocks are replaced, not merged. */
+async function upload(
+  home: RemoteMachine,
+  sessionId: string,
+  local: Record,
+  hostLast: string | null,
+): Promise<void> {
+  const header = headerOf(local);
+  let last = hostLast;
+  const parts = chunks(await allBlocks(sessionId, local, localPage));
+  for (const [index, blocks] of (parts.length ? parts : [[]]).entries()) {
+    await remoteRequest(home.id, "employees.sessionUpsert", {
+      session: { ...header, blocks },
+      blocksChanged: true,
+      appendOnly: index > 0,
+      baseLastBlockId: last,
+    });
+    const tail = blocks[blocks.length - 1] as { id?: unknown } | undefined;
+    if (typeof tail?.id === "string") last = tail.id;
+  }
+}
+
+function lastBlockId(record: Record | null): string | null {
+  const tail = record?.blocks[record.blocks.length - 1] as { id?: unknown } | undefined;
+  return typeof tail?.id === "string" ? tail.id : null;
+}
+
 const importing = new Map<string, Promise<void>>();
 
 /** Copies a chat this computer kept to the host, once, when the host has none. */
@@ -80,27 +130,7 @@ function importOnce(home: RemoteMachine, sessionId: string): Promise<void> {
     pending = (async () => {
       const onHost = await remoteRequest<Record | null>(home.id, "employees.sessionGet", { sessionId });
       const local = onHost ? null : await invoke<Record | null>("mono_session_get", { sessionId });
-      if (local) {
-        const {
-          blocks: _blocks,
-          monoTranscript: _transcript,
-          createdAt: _created,
-          updatedAt: _updated,
-          ...header
-        } = local;
-        let last: string | null = null;
-        const parts = chunks(await localBlocks(sessionId, local));
-        for (const [index, blocks] of (parts.length ? parts : [[]]).entries()) {
-          await remoteRequest(home.id, "employees.sessionUpsert", {
-            session: { ...header, blocks },
-            blocksChanged: true,
-            appendOnly: index > 0,
-            baseLastBlockId: last,
-          });
-          const tail = blocks[blocks.length - 1] as { id?: unknown } | undefined;
-          if (typeof tail?.id === "string") last = tail.id;
-        }
-      }
+      if (local) await upload(home, sessionId, local, null);
       markImported(key);
     })().finally(() => importing.delete(key));
     importing.set(key, pending);
@@ -108,12 +138,38 @@ function importOnce(home: RemoteMachine, sessionId: string): Promise<void> {
   return pending;
 }
 
+/** Replaces the host's chat with this computer's, when it becomes shared. */
+export async function copyTranscriptToHost(home: RemoteMachine, sessionId: string): Promise<void> {
+  const local = await invoke<Record | null>("mono_session_get", { sessionId });
+  if (local) {
+    const onHost = await remoteRequest<Record | null>(home.id, "employees.sessionGet", { sessionId });
+    await upload(home, sessionId, local, lastBlockId(onHost));
+  }
+  markImported(`${home.environmentId}:${sessionId}`);
+}
+
+/** Replaces this computer's chat with the host's, when it stays here only. */
+export async function copyTranscriptHere(home: RemoteMachine, sessionId: string): Promise<void> {
+  const onHost = await remoteRequest<Record | null>(home.id, "employees.sessionGet", { sessionId });
+  if (!onHost) return;
+  const blocks = await allBlocks(sessionId, onHost, (args) =>
+    remoteRequest<Page>(home.id, "employees.sessionPage", args),
+  );
+  await invoke("mono_session_upsert", {
+    session: { ...headerOf(onHost), blocks },
+    afterBlockId: null,
+    fromBlockId: null,
+    blocksChanged: true,
+    appendOnly: false,
+  });
+}
+
 async function onHome<T>(
   sessionId: string,
   local: () => Promise<T>,
   remote: (home: RemoteMachine) => Promise<T>,
 ): Promise<T> {
-  const home = await employeeHome();
+  const home = monoForSession(sessionId)?.localOnly ? undefined : await employeeHome();
   if (!home) return local();
   await importOnce(home, sessionId);
   return remote(home);
@@ -167,7 +223,7 @@ export function saveEmployeeTranscript<T>(args: {
 
 /** Removes the host's copy; this computer's own is deleted as any session. */
 export async function deleteEmployeeTranscript(sessionId: string): Promise<void> {
-  const home = await employeeHome();
+  const home = monoForSession(sessionId)?.localOnly ? undefined : await employeeHome();
   if (!home) return;
   markImported(`${home.environmentId}:${sessionId}`);
   await remoteRequest(home.id, "employees.sessionDelete", { sessionId });

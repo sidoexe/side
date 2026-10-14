@@ -52,6 +52,10 @@ export type Mono = {
   showStartedSessionsInSidebar?: boolean;
   /** Files the sessions it starts into a sidebar folder named after it. */
   useSidebarFolders?: boolean;
+  /** Kept on this computer only, even when a home machine keeps the others
+   * (see `employeeStorage.ts`): left out of the shared roster, its files and
+   * conversation stay in this computer's data folder. */
+  localOnly?: boolean;
   /** Superseded by SOUL.md; only read once, to seed it. */
   instructions?: string;
   /**
@@ -180,6 +184,7 @@ function parseMono(value: unknown): Mono | undefined {
       ? { showStartedSessionsInSidebar: entry.showStartedSessionsInSidebar }
       : {}),
     ...(entry.useSidebarFolders === true ? { useSidebarFolders: true } : {}),
+    ...(entry.localOnly === true ? { localOnly: true } : {}),
     ...(instructions ? { instructions } : {}),
     ...(legacyProject ? { legacyProject } : {}),
   };

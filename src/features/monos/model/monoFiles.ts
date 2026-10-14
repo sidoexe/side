@@ -177,6 +177,11 @@ export async function writeAgentFile(
   }
 }
 
+/** Tells open views to read the files again, after they moved. */
+export function notifyMonoFilesChanged(): void {
+  window.dispatchEvent(new CustomEvent(FILES_CHANGED));
+}
+
 export function subscribeMonoFiles(onChange: () => void): () => void {
   window.addEventListener(FILES_CHANGED, onChange);
   return () => window.removeEventListener(FILES_CHANGED, onChange);

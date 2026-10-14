@@ -98,3 +98,16 @@ it("stays local when the home machine's host does not keep employees yet", async
   expect((await storage.loadEmployeeFiles("e1", null)).memory).toBe("- local");
   expect(host.calls).toEqual(["environment.describe"]);
 });
+
+it("keeps an employee kept on this computer only off the home machine", async () => {
+  const host: Host = { capabilities: ["employees"], files: {}, calls: [] };
+  answer(host, { "MEMORY.md": "- local" });
+  localStorage.setItem(
+    "monocode:mono-roster",
+    JSON.stringify([{ id: "e1", mascot: "crab", color: "red", projects: [], localOnly: true }]),
+  );
+  const storage = await import("./employeeStorage");
+  expect((await storage.loadEmployeeFiles("e1", null)).memory).toBe("- local");
+  expect(await storage.saveEmployeeFile("e1", null, "MEMORY.md", "x", null)).toBe("local-hash");
+  expect(host.calls).toEqual([]);
+});

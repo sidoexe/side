@@ -18,6 +18,7 @@ import { recordArtifactCard } from "../../artifacts/artifacts";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../monos/model/mono", () => ({
   isMonoSession: (id: string) => id.startsWith("mono"),
+  monoForSession: () => undefined,
 }));
 vi.mock("../../monos/model/employeeStorage", () => ({
   employeeHome: async () => undefined,

@@ -23,6 +23,8 @@ import {
   type MonoLook,
   type MonoState,
 } from "../model/mono";
+import { setEmployeeLocalOnly } from "../model/employeeScope";
+import { employeeHome } from "../model/employeeStorage";
 import { ConfirmReset } from "./ConfirmReset";
 import { MemoryPage, SoulPage, useMonoFiles } from "./MonoFilePages";
 import { MonoProjects } from "./MonoProjects";
@@ -242,6 +244,8 @@ function GeneralSection({
         />
       </SettingGroup>
 
+      <LocalOnlyGroup monoId={monoId} />
+
       {onReset ? (
         <>
           <GroupHeading title="Conversation" />
@@ -274,6 +278,58 @@ function GeneralSection({
         </>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Whether it is shared through the home machine or kept on this computer.
+ * Only shown when a home machine keeps employees; without one, every
+ * employee is this computer's already.
+ */
+function LocalOnlyGroup({ monoId }: { monoId: string }) {
+  const [home, setHome] = useState<string>();
+  const [moving, setMoving] = useState(false);
+  const [error, setError] = useState<string>();
+  const localOnly = useSyncExternalStore(
+    subscribeMonos,
+    () => findMono(monoId)?.localOnly === true,
+  );
+  useEffect(() => {
+    let live = true;
+    employeeHome()
+      .then((machine) => live && setHome(machine?.name))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (!home) return null;
+  const change = (on: boolean) => {
+    setMoving(true);
+    setError(undefined);
+    setEmployeeLocalOnly(monoId, on)
+      .catch(() =>
+        setError(`Could not reach ${home}. Nothing was moved; try again once it is back.`),
+      )
+      .finally(() => setMoving(false));
+  };
+  return (
+    <>
+      <GroupHeading
+        title="Where it lives"
+        description={`Colleagues are shared through ${home}, so every computer has the same ones.`}
+      />
+      <SettingGroup>
+        <SwitchRow
+          label="Keep on this computer only"
+          description={`Its soul, memory, habits and conversation stay here, and your other computers no longer list it. Turning it off shares it through ${home} again.`}
+          on={localOnly}
+          disabled={moving}
+          onChange={change}
+        />
+      </SettingGroup>
+      {error ? <p className="px-1 pt-2 text-[12px] text-red-400">{error}</p> : null}
+    </>
   );
 }
 
