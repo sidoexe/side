@@ -1,4 +1,5 @@
-/** Sessions that finished while unfocused, until the user looks at them. */
+/** Sessions that finished while unfocused, until they work again. Looking
+ * at one keeps it done so the user is still reminded to follow up. */
 
 export function nextUnseenFinishedSessions({
   previousBusyIds,
@@ -12,8 +13,8 @@ export function nextUnseenFinishedSessions({
   previousUnseenIds: ReadonlySet<string>;
   focusedSessionId?: string;
   /** Sessions the user cannot focus or see as done, such as orchestration
-   * workers and inbox discussions. An unseen session stays loaded until it
-   * is looked at, so marking one of these would keep it in memory for good. */
+   * workers and inbox discussions. A done session stays loaded until it
+   * works again, so marking one of these would keep it in memory for good. */
   untrackedIds?: ReadonlySet<string>;
 }): Set<string> {
   const next = new Set(previousUnseenIds);
@@ -21,7 +22,6 @@ export function nextUnseenFinishedSessions({
     if (!busyIds.has(id) && id !== focusedSessionId) next.add(id);
   }
   for (const id of busyIds) next.delete(id);
-  if (focusedSessionId) next.delete(focusedSessionId);
   if (untrackedIds) for (const id of untrackedIds) next.delete(id);
   return next;
 }

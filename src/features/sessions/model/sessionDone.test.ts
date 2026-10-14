@@ -27,7 +27,7 @@ describe("nextUnseenFinishedSessions", () => {
     ).toEqual(new Set());
   });
 
-  it("clears done when the session is focused", () => {
+  it("keeps done when the session is focused", () => {
     expect(
       nextUnseenFinishedSessions({
         previousBusyIds: new Set(),
@@ -35,7 +35,7 @@ describe("nextUnseenFinishedSessions", () => {
         previousUnseenIds: new Set(["a"]),
         focusedSessionId: "a",
       }),
-    ).toEqual(new Set());
+    ).toEqual(new Set(["a"]));
   });
 
   it("clears done when the session starts working again", () => {
@@ -47,17 +47,6 @@ describe("nextUnseenFinishedSessions", () => {
         focusedSessionId: "b",
       }),
     ).toEqual(new Set());
-  });
-
-  it("keeps done on other sessions while one is focused", () => {
-    expect(
-      nextUnseenFinishedSessions({
-        previousBusyIds: new Set(),
-        busyIds: new Set(),
-        previousUnseenIds: new Set(["a", "b"]),
-        focusedSessionId: "a",
-      }),
-    ).toEqual(new Set(["b"]));
   });
 
   it("never marks sessions the user cannot look at", () => {

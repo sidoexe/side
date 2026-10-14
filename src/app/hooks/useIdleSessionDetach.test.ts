@@ -347,7 +347,7 @@ describe("orchestration worker detachment", () => {
     },
   );
 
-  it("keeps ordinary unseen finished chats until they are focused", async () => {
+  it("keeps finished chats done and loaded until they work again", async () => {
     const workspace = mountWorkspace({
       sessions: [chat("ordinary", { busy: true }), chat("other")],
       tabs: [newTab("other")],
@@ -366,17 +366,15 @@ describe("orchestration worker detachment", () => {
       activeSessionId: "ordinary",
     });
     await advance();
-    expect(workspace.snapshot().unseenFinishedIds.size).toBe(0);
-    expect(mocks.forgetHarnessSession).not.toHaveBeenCalledWith(
-      "claude",
-      "ordinary",
+    expect(workspace.snapshot().unseenFinishedIds).toEqual(
+      new Set(["ordinary"]),
     );
     workspace.update({ tabs: [], activeSessionId: "other" });
     await advance();
     expect(
       workspace.snapshot().sessions.map((session) => session.id),
-    ).not.toContain("ordinary");
-    expect(mocks.forgetHarnessSession).toHaveBeenCalledWith(
+    ).toContain("ordinary");
+    expect(mocks.forgetHarnessSession).not.toHaveBeenCalledWith(
       "claude",
       "ordinary",
     );
@@ -426,7 +424,12 @@ describe("orchestration worker detachment", () => {
     const finishedWorker = workspace
       .snapshot()
       .sessions.find((session) => session.id === "worker")!;
-    workspace.update({ tabs: [newTab("other")], activeSessionId: "other" });
+    // A done lead stays loaded while Live Agents shows it.
+    workspace.update({
+      tabs: [newTab("other")],
+      activeSessionId: "other",
+      liveAgentsEnabled: false,
+    });
     await advance();
     expect(workspace.snapshot().sessions.map((session) => session.id)).toEqual([
       "other",
