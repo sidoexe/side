@@ -203,6 +203,7 @@ pub fn is_workspace_window(label: &str) -> bool {
         && label != QUICK_COMPOSER_GIT_LABEL
         && label != "mono-chat"
         && !label.starts_with(MONO_CHAT_PREFIX)
+        && !label.starts_with(crate::web_embed::POPUP_PREFIX)
 }
 
 /// Every workspace window, sorted by label.
@@ -623,6 +624,7 @@ mod tests {
         assert!(!is_workspace_window("mono-chat-second"));
         assert!(!is_workspace_window(QUICK_COMPOSER_LABEL));
         assert!(!is_workspace_window(QUICK_COMPOSER_GIT_LABEL));
+        assert!(!is_workspace_window("web-popup-0b7d4c55"));
     }
 
     #[test]

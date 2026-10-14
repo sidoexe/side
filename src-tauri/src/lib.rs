@@ -51,6 +51,7 @@ mod skills;
 pub mod ssh_askpass;
 #[cfg(target_os = "macos")]
 mod trackpad_zoom;
+mod web_embed;
 mod window;
 mod window_transfer;
 mod worktree_lifecycle;
@@ -351,6 +352,10 @@ pub fn run() {
             linear::linear_issue_details,
             linear::linear_issue_thread,
             linear::linear_issue_comment,
+            web_embed::web_embed_show,
+            web_embed::web_embed_hide,
+            web_embed::web_embed_reload,
+            web_embed::web_embed_forget,
             jira::jira_status,
             jira::jira_set_config,
             jira::jira_list_projects,

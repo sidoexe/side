@@ -1,0 +1,282 @@
+//! Web apps (Linear, Notion, Slack…) as native child webviews of the window.
+//! Most of them refuse to be framed (`X-Frame-Options`), so each page lives in
+//! its own WKWebView laid over the area the Web view reserves.
+//!
+//! Each app is signed in to one account: its own webview over its own
+//! persistent data store, so two logins to the same site never share or
+//! overwrite each other's cookies. Webviews stay alive while hidden; the
+//! stores keep logins across launches.
+
+use std::path::PathBuf;
+
+use tauri::webview::{NewWindowFeatures, NewWindowResponse, WebviewBuilder};
+use tauri::{
+    AppHandle, LogicalPosition, LogicalSize, Manager, Rect, Url, WebviewUrl, WebviewWindowBuilder,
+    Window,
+};
+
+/// The first app, whose id predates UUIDs. It gets a store of its own like
+/// every other: WebKit's default store is the one sIDE's own UI lives in, so
+/// signing an app out must never clear it.
+const DEFAULT_APP: &str = "default";
+const DEFAULT_APP_STORE: uuid::Uuid = uuid::uuid!("5ce1a7e0-6d2b-4b8e-9f3a-2c7d1e0b4a91");
+
+/// Sign-in popups opened by an embedded app: their own windows, never
+/// workspaces.
+pub const POPUP_PREFIX: &str = "web-popup-";
+
+/// Google sign-in rejects embedded browsers it doesn't recognise; present as
+/// Safari, which shares the WebKit engine anyway.
+#[cfg(target_os = "macos")]
+const USER_AGENT: Option<&str> = Some(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+);
+#[cfg(not(target_os = "macos"))]
+const USER_AGENT: Option<&str> = None;
+
+#[derive(serde::Deserialize, Clone, Copy, Debug)]
+pub struct WebEmbedBounds {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+/// The id of an app's dedicated data store.
+fn app_store(app: &str) -> Result<uuid::Uuid, String> {
+    if app == DEFAULT_APP {
+        return Ok(DEFAULT_APP_STORE);
+    }
+    uuid::Uuid::parse_str(app).map_err(|_| format!("Unknown web app: {app}"))
+}
+
+/// Only the web: no `file:`, no custom schemes, nothing local to the machine.
+fn app_url(url: &str) -> Result<Url, String> {
+    let parsed: Url = url
+        .trim()
+        .parse()
+        .map_err(|_| format!("Invalid URL: {url}"))?;
+    match parsed.scheme() {
+        "https" | "http" if parsed.host_str().is_some() => Ok(parsed),
+        _ => Err(format!("Only web addresses can be embedded: {url}")),
+    }
+}
+
+fn label_prefix(window: &Window) -> String {
+    format!("web-embed-{}-", window.label())
+}
+
+fn embed_label(window: &Window, store: uuid::Uuid) -> String {
+    format!("{}{}", label_prefix(window), store.simple())
+}
+
+fn rect(bounds: WebEmbedBounds) -> Rect {
+    Rect {
+        position: LogicalPosition::new(bounds.x, bounds.y).into(),
+        size: LogicalSize::new(bounds.width.max(1.0), bounds.height.max(1.0)).into(),
+    }
+}
+
+/// Pages stay in the webview; anything that isn't the web (mailto:, linear://)
+/// is dropped rather than handed to the OS on the page's say-so.
+fn allows_navigation(url: &Url) -> bool {
+    matches!(url.scheme(), "https" | "http" | "about" | "blob" | "data")
+}
+
+fn open_externally(url: &Url) {
+    if matches!(url.scheme(), "https" | "http") {
+        let _ = open::that_detached(url.as_str());
+    }
+}
+
+/// `window.open` with a size is a popup the page talks back to, typically
+/// "Sign in with Google": it must share the app's store, so it opens here.
+/// A plain new tab is an outside link and goes to the browser.
+fn open_new_window(
+    app: &AppHandle,
+    url: Url,
+    features: NewWindowFeatures,
+) -> NewWindowResponse<tauri::Wry> {
+    if features.size().is_none() || !allows_navigation(&url) {
+        open_externally(&url);
+        return NewWindowResponse::Deny;
+    }
+    let label = format!("{POPUP_PREFIX}{}", uuid::Uuid::new_v4().simple());
+    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::External(url))
+        .window_features(features)
+        .title("Sign in")
+        .on_navigation(allows_navigation)
+        .on_document_title_changed(|window, title| {
+            let _ = window.set_title(&title);
+        });
+    if let Some(agent) = USER_AGENT {
+        builder = builder.user_agent(agent);
+    }
+    match builder.build() {
+        Ok(window) => NewWindowResponse::Create { window },
+        Err(_) => NewWindowResponse::Deny,
+    }
+}
+
+/// Where a dedicated store lives off macOS, where WebKit has no store ids.
+fn store_directory(window: &Window, id: uuid::Uuid) -> Result<PathBuf, String> {
+    Ok(window
+        .app_handle()
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("web-apps")
+        .join(id.simple().to_string()))
+}
+
+fn hide_others(window: &Window, keep: &str) {
+    let prefix = label_prefix(window);
+    for (label, webview) in window.app_handle().webviews() {
+        if label.starts_with(&prefix) && label != keep {
+            let _ = webview.hide();
+        }
+    }
+}
+
+/// Show `app`'s webview at `bounds` (logical pixels, relative to the window),
+/// opening `url` on first use, and hide the window's other apps. Async:
+/// `add_child` hops to the main thread and waits, which would deadlock a
+/// command already running there.
+#[tauri::command]
+pub async fn web_embed_show(
+    window: Window,
+    app: String,
+    url: String,
+    bounds: WebEmbedBounds,
+) -> Result<(), String> {
+    let store = app_store(&app)?;
+    let label = embed_label(&window, store);
+    hide_others(&window, &label);
+    if let Some(webview) = window.app_handle().get_webview(&label) {
+        webview
+            .set_bounds(rect(bounds))
+            .map_err(|e| e.to_string())?;
+        webview.show().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    let handle = window.app_handle().clone();
+    let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(app_url(&url)?))
+        .on_navigation(allows_navigation)
+        .on_new_window(move |url, features| open_new_window(&handle, url, features));
+    if let Some(agent) = USER_AGENT {
+        builder = builder.user_agent(agent);
+    }
+    builder = if cfg!(target_vendor = "apple") {
+        builder.data_store_identifier(*store.as_bytes())
+    } else {
+        builder.data_directory(store_directory(&window, store)?)
+    };
+    let r = rect(bounds);
+    window
+        .add_child(builder, r.position, r.size)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Keep the webviews, and so the pages and their logins, but take them off
+/// screen.
+#[tauri::command]
+pub async fn web_embed_hide(window: Window) -> Result<(), String> {
+    hide_others(&window, "");
+    Ok(())
+}
+
+/// Reload `app`, or go back to its `home` page when given.
+#[tauri::command]
+pub async fn web_embed_reload(
+    window: Window,
+    app: String,
+    home: Option<String>,
+) -> Result<(), String> {
+    let label = embed_label(&window, app_store(&app)?);
+    let Some(webview) = window.app_handle().get_webview(&label) else {
+        return Ok(());
+    };
+    match home {
+        Some(url) => webview.navigate(app_url(&url)?).map_err(|e| e.to_string()),
+        None => webview.reload().map_err(|e| e.to_string()),
+    }
+}
+
+/// Close `app` and sign it out for good: its cookies and storage go too.
+#[tauri::command]
+pub async fn web_embed_forget(window: Window, app: String) -> Result<(), String> {
+    let store = app_store(&app)?;
+    if let Some(webview) = window
+        .app_handle()
+        .get_webview(&embed_label(&window, store))
+    {
+        let _ = webview.clear_all_browsing_data();
+        webview.close().map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_vendor = "apple")]
+    {
+        // WebKit refuses while the store is still in use; the cleared data
+        // above is what matters, the empty store is best-effort.
+        let _ = window
+            .app_handle()
+            .remove_data_store(*store.as_bytes())
+            .await;
+    }
+    #[cfg(not(target_vendor = "apple"))]
+    {
+        let _ = std::fs::remove_dir_all(store_directory(&window, store)?);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn navigation_stays_on_the_web() {
+        assert!(allows_navigation(
+            &"https://linear.app/team/issue/ABC-1".parse().unwrap()
+        ));
+        assert!(allows_navigation(
+            &"https://accounts.google.com/o/oauth2".parse().unwrap()
+        ));
+        assert!(!allows_navigation(&"linear://open".parse().unwrap()));
+        assert!(!allows_navigation(&"file:///etc/passwd".parse().unwrap()));
+    }
+
+    #[test]
+    fn only_web_addresses_are_embedded() {
+        assert!(app_url("https://linear.app").is_ok());
+        assert!(app_url(" http://localhost:3000/ ").is_ok());
+        assert!(app_url("file:///etc/passwd").is_err());
+        assert!(app_url("javascript:alert(1)").is_err());
+        assert!(app_url("linear.app").is_err());
+    }
+
+    #[test]
+    fn bounds_never_collapse_to_zero() {
+        let r = rect(WebEmbedBounds {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: -4.0,
+        });
+        let tauri::Size::Logical(size) = r.size else {
+            panic!("logical size")
+        };
+        assert_eq!((size.width, size.height), (1.0, 1.0));
+    }
+
+    #[test]
+    fn every_app_has_its_own_store() {
+        // Never nil: that would be no store id at all, i.e. sIDE's own.
+        assert_eq!(app_store("default"), Ok(DEFAULT_APP_STORE));
+        assert!(!DEFAULT_APP_STORE.is_nil());
+        let id = "6f1c2a4e-0b7d-4c55-9a3e-2f8b1d6c7e90";
+        assert_eq!(app_store(id), Ok(uuid::Uuid::parse_str(id).unwrap()));
+        assert!(app_store("../../etc").is_err());
+        assert!(app_store("").is_err());
+    }
+}

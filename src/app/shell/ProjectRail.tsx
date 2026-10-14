@@ -88,6 +88,7 @@ import {
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { useProjectMenu } from "./useProjectMenu";
 import { MonoRailSection, type MonoRailProps } from "./MonoRailSection";
+import { WebAppsRailSection } from "./WebAppsRailSection";
 
 type Props = {
   visible?: boolean;
@@ -107,7 +108,9 @@ type Props = {
   onOpenNotes?: () => void;
   notesActive?: boolean;
   onOpenAutomations?: () => void;
+  onOpenWeb?: () => void;
   automationsActive?: boolean;
+  webActive?: boolean;
   onTogglePanel?: () => void;
   onSelectProject: (path: string) => void;
   onOpenProject: () => void;
@@ -146,7 +149,9 @@ export function ProjectRail({
   onOpenNotes,
   notesActive = false,
   onOpenAutomations,
+  onOpenWeb,
   automationsActive = false,
+  webActive = false,
   onTogglePanel,
   onSelectProject,
   onOpenProject,
@@ -333,6 +338,7 @@ export function ProjectRail({
     inboxActive ||
     notesActive ||
     automationsActive ||
+    webActive ||
     !!monos?.activeId;
   const pinnedIds = sections.pinned.map((item) => item.path);
   const projectIds = groupedProjectSections.ungrouped.map((item) => item.path);
@@ -426,6 +432,9 @@ export function ProjectRail({
             className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none pb-2"
           >
             {monos ? <MonoRailSection {...monos} /> : null}
+            {onOpenWeb ? (
+              <WebAppsRailSection webActive={webActive} onOpenWeb={onOpenWeb} />
+            ) : null}
 
             {sections.pinned.length > 0 ? (
               <ProjectSection
