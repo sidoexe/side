@@ -403,3 +403,37 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: r
 .theme-toggle.on { color: var(--text); }
 .sidebar footer { gap: 10px; }
 .sidebar footer label { margin-right: auto; }
+
+/* Suggestions for @ files and / skills */
+.suggestions { margin: 6px 6px 0; padding: 4px; border: 1px solid var(--stroke-strong); border-radius: 8px; background: var(--sidebar-bg); display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; }
+.suggestions button { display: flex; align-items: baseline; gap: 8px; padding: 6px 8px; border-radius: 5px; text-align: left; min-width: 0; }
+.suggestions button.active, .suggestions button:hover { background: var(--fill); }
+.suggestion-label { font-family: var(--mono); font-size: 12.5px; flex: none; }
+.suggestion-detail { color: var(--faint); font-size: 12px; flex: 1; }
+
+/* Files panel */
+.browser-entry.ignored { opacity: 0.5; }
+.file-title { flex: 1; font-size: 12px; font-weight: 400; }
+.code-view pre { margin: 0; padding: 8px 0; font-size: 12px; line-height: 1.55; }
+.code-line { display: flex; white-space: pre; width: max-content; min-width: 100%; }
+.code-view { overflow: auto; }
+.file-markdown { padding: 12px 10px; }
+.panel .search { margin: 8px 10px; }
+
+/* Colleagues and automations */
+.nav-links { display: flex; gap: 2px; padding: 6px 8px 0; }
+.nav-link { flex: 1; text-align: center; padding: 5px 0; border-radius: 6px; color: var(--muted); font-size: 12.5px; }
+.nav-link:hover { background: var(--fill-subtle); color: var(--text); }
+.nav-link.active { background: var(--fill); color: var(--text); }
+.page { flex: 1; min-height: 0; overflow-y: auto; }
+.page-head { display: flex; align-items: center; gap: 12px; max-width: 760px; margin: 0 auto; padding: 16px 18px 4px; }
+.page-title { font-size: 16px; font-weight: 600; }
+.page-body { max-width: 760px; margin: 0 auto; padding: 8px 10px 24px; }
+.tabs { display: flex; gap: 2px; max-width: 760px; margin: 8px auto 0; padding: 0 16px; }
+.tabs button { padding: 5px 10px; border-radius: 6px; color: var(--muted); }
+.tabs button.on { background: var(--fill); color: var(--text); }
+.mono-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.session.automation .btn { flex: none; height: 24px; font-size: 12px; }
+button.session { text-align: left; width: 100%; }
+.sidebar footer { height: auto; min-height: 40px; flex-wrap: wrap; row-gap: 2px; column-gap: 12px; padding: 8px 14px; }
+.sidebar footer > * { white-space: nowrap; }

@@ -103,7 +103,14 @@ Saves of an employee file are checked against the version the writer read, on th
 
 ## Open the host in a browser
 
-The host serves a responsive web app at `/web` for a phone or any browser: every project's sessions, live transcripts, sending and queuing messages, stopping a turn, approvals, questions, new sessions, and account usage.
+The host serves a responsive web app at `/web` for a phone or any browser. It looks like the desktop and covers what you do there with a host's sessions:
+
+- every project's sessions, live transcripts, sending, queuing, steering and stopping, approvals and questions, editing the last message;
+- new sessions in a project, a worktree or a folder opened from the host, with model, effort, permissions and account chips that also change an open session;
+- attachments, Plan mode and Build, `@` files and `/` skills, context usage;
+- the review card after a turn, a Changes panel to stage, commit and push, and a read-only file explorer;
+- rename, pin, archive and delete; colleagues (read-only) and automations, run now as a session;
+- notifications when a session needs you or finishes (**Notifications** in the sidebar; on iPhone, add the app to the Home Screen first).
 
 1. Create a credential for the browser on the host: `~/.side-host/bin/side-host pair --name "Web"`.
 2. Publish only `/web` on your tailnet (HTTPS, reachable from your devices only):

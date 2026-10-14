@@ -4,12 +4,18 @@ import type { RuntimeMode } from "../../src/features/sessions/model/session";
 import { buildQuestionReply, type UserQuestionPrompt, type UserQuestionReply } from "../../src/features/sessions/model/userQuestion";
 import { rpc, uploadAttachment } from "./api";
 
-export type Route = { kind: "home" } | { kind: "session"; projectId: string; sessionId: string } | { kind: "new"; projectId: string };
+export type Route =
+  | { kind: "home" }
+  | { kind: "session"; projectId: string; sessionId: string }
+  | { kind: "new"; projectId: string }
+  | { kind: "colleagues" }
+  | { kind: "automations" };
 
 export function parseRoute(): Route {
   const [kind, projectId, sessionId] = location.hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
   if (kind === "s" && projectId && sessionId) return { kind: "session", projectId, sessionId };
   if (kind === "new" && projectId) return { kind: "new", projectId };
+  if (kind === "colleagues" || kind === "automations") return { kind };
   return { kind: "home" };
 }
 
@@ -19,7 +25,9 @@ export function go(route: Route) {
       ? `#/s/${encodeURIComponent(route.projectId)}/${encodeURIComponent(route.sessionId)}`
       : route.kind === "new"
         ? `#/new/${encodeURIComponent(route.projectId)}`
-        : "#/";
+        : route.kind === "colleagues" || route.kind === "automations"
+          ? `#/${route.kind}`
+          : "#/";
 }
 
 export function useRoute(): Route {
@@ -121,7 +129,75 @@ export function Toggle({ on, onChange, children }: { on: boolean; onChange: (on:
   );
 }
 
-export type Outgoing = { text: string; attachments: RemoteAttachment[]; plan: boolean };
+export type Outgoing = {
+  text: string;
+  attachments: RemoteAttachment[];
+  plan: boolean;
+  /** What the provider receives when skills were expanded into the text. */
+  prompt?: string;
+};
+
+type Skill = { name: string; description: string; path: string };
+type Suggestion = { label: string; detail?: string; insert: string };
+// Harnesses that run `/skill` themselves; others get the skill's body.
+const NATIVE_SKILLS = new Set(["pi", "omp", "devin"]);
+
+/** Files after `@` and skills after a leading `/`, from the host. */
+function useSuggestions(text: string, caret: number, scope?: { projectId: string; cwd: string; harness?: string }) {
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [files, setFiles] = useState<Suggestion[]>([]);
+  const before = text.slice(0, caret);
+  const mention = /(^|\s)@([^\s@]*)$/.exec(before);
+  const command = /^\/([\w:.-]*)$/.exec(before);
+  useEffect(() => {
+    if (!scope) return;
+    rpc<Skill[]>("workspace.run", { command: "list_skills", args: { cwd: scope.cwd } }).then(setSkills, () => setSkills([]));
+  }, [scope?.cwd]);
+  const query = mention?.[2];
+  useEffect(() => {
+    if (!scope || query === undefined) return setFiles([]);
+    const timer = setTimeout(() => {
+      rpc<{ name: string; path: string; isDir: boolean }[]>("files.search", { projectId: scope.projectId, query }).then(
+        (found) => setFiles(found.slice(0, 8).map((file) => ({ label: file.name, detail: file.path, insert: `@${file.path}${file.isDir ? "/" : ""} ` }))),
+        () => setFiles([]),
+      );
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [query, scope?.projectId]);
+  if (!scope) return { items: [], replace: 0, skills };
+  if (mention) return { items: files, replace: mention[2].length + 1, skills };
+  if (command) {
+    const typed = command[1].toLowerCase();
+    const items = skills
+      .filter((skill) => skill.name.toLowerCase().includes(typed))
+      .slice(0, 8)
+      .map((skill) => ({ label: `/${skill.name}`, detail: skill.description, insert: `/${skill.name} ` }));
+    return { items, replace: command[1].length + 1, skills };
+  }
+  return { items: [], replace: 0, skills };
+}
+
+/** The text an agent receives: each `/skill` used is preceded by its body,
+ * as the desktop sends it. */
+async function withSkills(text: string, skills: Skill[], harness?: string): Promise<string | undefined> {
+  if (!harness || NATIVE_SKILLS.has(harness)) return undefined;
+  const used = skills.filter((skill) => new RegExp(`(^|\\s)/${skill.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=\\s|$)`).test(text));
+  if (!used.length) return undefined;
+  const bodies = await Promise.all(
+    used.map((skill) => rpc<string>("workspace.run", { command: "read_text_file", args: { path: skill.path } }).catch(() => "")),
+  );
+  const blocks = used.flatMap((skill, index) => (bodies[index].trim() ? [`## /${skill.name}\n\n${bodies[index].trim()}`] : []));
+  if (!blocks.length) return undefined;
+  return [
+    "The user invoked skill(s) with /name. Follow every instruction in each skill body.",
+    "",
+    blocks.join("\n\n"),
+    "",
+    "---",
+    "",
+    text,
+  ].join("\n");
+}
 
 export function Composer({
   placeholder,
@@ -133,8 +209,11 @@ export function Composer({
   tools,
   seed,
   banner,
+  scope,
   children,
 }: {
+  /** Where `@` finds files and `/` finds skills. */
+  scope?: { projectId: string; cwd: string; harness?: string };
   placeholder: string;
   context?: ReactNode;
   tools?: ReactNode;
@@ -153,7 +232,22 @@ export function Composer({
   const [plan, setPlan] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [caret, setCaret] = useState(0);
+  const [active, setActive] = useState(0);
+  const suggestions = useSuggestions(text, caret, scope);
   const area = useRef<HTMLTextAreaElement>(null);
+  const pick = (item: Suggestion) => {
+    const start = caret - suggestions.replace;
+    const next = text.slice(0, start) + item.insert + text.slice(caret);
+    setText(next);
+    const position = start + item.insert.length;
+    setCaret(position);
+    setActive(0);
+    requestAnimationFrame(() => {
+      area.current?.focus();
+      area.current?.setSelectionRange(position, position);
+    });
+  };
   const picker = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!seed) return;
@@ -177,7 +271,8 @@ export function Composer({
     try {
       const attachments = [];
       for (const file of files) attachments.push(await uploadAttachment(file));
-      await onSend({ text: value, attachments, plan: planned });
+      const prompt = await withSkills(value, suggestions.skills, scope?.harness);
+      await onSend({ text: value, attachments, plan: planned, ...(prompt ? { prompt } : {}) });
       setText("");
       setFiles([]);
       setPlan(false);
@@ -213,12 +308,33 @@ export function Composer({
             ))}
           </div>
         ) : null}
+        {suggestions.items.length ? (
+          <div className="suggestions">
+            {suggestions.items.map((item, index) => (
+              <button
+                key={item.insert}
+                type="button"
+                className={index === active ? "active" : ""}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => pick(item)}
+              >
+                <span className="suggestion-label">{item.label}</span>
+                {item.detail ? <span className="suggestion-detail ellipsis">{item.detail}</span> : null}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <textarea
           ref={area}
           rows={1}
           value={text}
           placeholder={plan ? "Describe what to plan…" : placeholder}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value);
+            setCaret(event.target.selectionStart ?? event.target.value.length);
+            setActive(0);
+          }}
+          onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
           onPaste={(event) => {
             const pasted = Array.from(event.clipboardData.files);
             if (pasted.length) {
@@ -227,6 +343,19 @@ export function Composer({
             }
           }}
           onKeyDown={(event) => {
+            if (suggestions.items.length) {
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                const step = event.key === "ArrowDown" ? 1 : -1;
+                setActive((active + step + suggestions.items.length) % suggestions.items.length);
+                return;
+              }
+              if (event.key === "Enter" || event.key === "Tab") {
+                event.preventDefault();
+                pick(suggestions.items[active]);
+                return;
+              }
+            }
             // Enter sends on a keyboard; on touch screens the button does.
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && matchMedia("(pointer: fine)").matches) {
               event.preventDefault();

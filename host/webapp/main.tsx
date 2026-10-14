@@ -13,6 +13,7 @@ import { sessionDisplayTitle, type RuntimeMode } from "../../src/features/sessio
 import { command, describe, login, logout, rpc, Unauthorized } from "./api";
 import { SessionView } from "./SessionView";
 import { ChangesPanel, FolderBrowser } from "./workspace";
+import { AutomationsPage, ColleaguesPage, FilesPanel } from "./extras";
 import { ago, BranchIcon, Chip, Composer, go, MODES, tilde, useNotifications, usePoll, useRoute, type Route } from "./ui";
 import { HarnessIcon } from "../../src/features/sessions/ui/HarnessIcon";
 import { findModel, setHarnessModels } from "../../src/features/sessions/model/models";
@@ -151,6 +152,13 @@ function Sidebar({
           <svg className="glyph" viewBox="0 0 16 16" aria-hidden><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
         </button>
       </header>
+      <div className="nav-links">
+        {(["colleagues", "automations"] as const).map((kind) => (
+          <a key={kind} className={`nav-link${route.kind === kind ? " active" : ""}`} href={`#/${kind}`} onClick={onClose}>
+            {kind === "colleagues" ? "Colleagues" : "Automations"}
+          </a>
+        ))}
+      </div>
       <input className="search" placeholder="Filter sessions" value={filter} onChange={(e) => setFilter(e.target.value)} />
       <div className="projects">
         {projects.map((project) => {
@@ -287,7 +295,8 @@ function NewSession({
       <div className="empty-session">
         <div className="empty-title ellipsis">{current.name}</div>
         <Composer
-          placeholder="Ask, build…"
+          placeholder="Ask, build, @ for files, / for skills…"
+          scope={{ projectId: current.id, cwd: worktree || current.cwd, harness }}
           disabled={!selected}
           context={<span className="mono ellipsis">{tilde(worktree || current.cwd)}</span>}
           tools={
@@ -335,7 +344,7 @@ function NewSession({
               ) : null}
             </>
           }
-          onSend={async ({ text, attachments, plan }) => {
+          onSend={async ({ text, attachments, plan, prompt }) => {
             if (!selected) return;
             try {
               const receipt = await command({
@@ -352,6 +361,7 @@ function NewSession({
                 sessionId: receipt.sessionId,
                 text,
                 ...(attachments.length ? { attachments } : {}),
+                ...(prompt ? { prompt } : {}),
                 ...(plan ? { intent: "plan" as const } : {}),
               });
               go({ kind: "session", projectId: current.id, sessionId: receipt.sessionId });
@@ -375,6 +385,7 @@ function App() {
   const [accounts, setAccounts] = useState<HostAccountSummary[]>([]);
   const [menu, setMenu] = useState(false);
   const [changes, setChanges] = useState(false);
+  const [files, setFiles] = useState(false);
   const [browsing, setBrowsing] = useState(false);
   const [error, setError] = useState("");
   const onError = useCallback((reason: unknown) => {
@@ -420,7 +431,7 @@ function App() {
     if (route.kind !== "session") return undefined;
     return sessions[route.projectId]?.find((session) => session.id === route.sessionId);
   }, [route, sessions]);
-  const project = route.kind !== "home" ? projects.find((item) => item.id === route.projectId) : undefined;
+  const project = route.kind === "session" || route.kind === "new" ? projects.find((item) => item.id === route.projectId) : undefined;
   // The working copy the Changes panel shows: the session's worktree, else the project.
   const workCwd = summary ? summary.worktreeCwd ?? summary.cwd ?? project?.cwd : project?.cwd;
   const attention = Object.values(sessions).flat().filter((session) => session.needsInput && !session.archived).length;
@@ -453,7 +464,7 @@ function App() {
             {attention ? <span className="badge">{attention}</span> : null}
           </button>
           <div className="topbar-title">
-            <span>{route.kind === "new" ? `New session · ${project?.name ?? ""}` : (summary && sessionDisplayTitle(summary.title, summary.harness)) || (route.kind === "home" ? host.name : "")}</span>
+            <span>{route.kind === "colleagues" ? "Colleagues" : route.kind === "automations" ? "Automations" : route.kind === "new" ? `New session · ${project?.name ?? ""}` : (summary && sessionDisplayTitle(summary.title, summary.harness)) || (route.kind === "home" ? host.name : "")}</span>
             {summary ? (
               <span className="muted">
                 {project?.name} · {modelName(summary)}
@@ -462,10 +473,29 @@ function App() {
               </span>
             ) : null}
           </div>
-          {workCwd ? (
-            <button className={`topbar-button${changes ? " on" : ""}`} onClick={() => setChanges(!changes)} aria-pressed={changes}>
-              Changes
-            </button>
+          {workCwd && project ? (
+            <>
+              <button
+                className={`topbar-button${files ? " on" : ""}`}
+                onClick={() => {
+                  setFiles(!files);
+                  setChanges(false);
+                }}
+                aria-pressed={files}
+              >
+                Files
+              </button>
+              <button
+                className={`topbar-button${changes ? " on" : ""}`}
+                onClick={() => {
+                  setChanges(!changes);
+                  setFiles(false);
+                }}
+                aria-pressed={changes}
+              >
+                Changes
+              </button>
+            </>
           ) : null}
           {summary ? <SessionMenu summary={summary} onError={onError} /> : null}
         </div>
@@ -482,6 +512,10 @@ function App() {
             review={host.capabilities.includes("sessions.review")}
             onError={onError}
           />
+        ) : route.kind === "colleagues" ? (
+          <ColleaguesPage onError={onError} />
+        ) : route.kind === "automations" ? (
+          <AutomationsPage onError={onError} />
         ) : route.kind === "new" && project ? (
           <NewSession key={project.id} host={host} project={project} accounts={accounts} onError={onError} />
         ) : (
@@ -495,6 +529,9 @@ function App() {
           </>
         )}
       </main>
+      {files && workCwd && project ? (
+        <FilesPanel key={workCwd} projectId={project.id} cwd={workCwd} onClose={() => setFiles(false)} onError={onError} />
+      ) : null}
       {changes && workCwd ? <ChangesPanel key={workCwd} cwd={workCwd} onClose={() => setChanges(false)} onError={onError} /> : null}
       {browsing ? (
         <FolderBrowser

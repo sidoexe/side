@@ -6,7 +6,7 @@ import type {
   RemoteProvider,
 } from "../../src/features/connections/model/protocol";
 import type { Block, RuntimeMode } from "../../src/features/sessions/model/session";
-import { modelEffortSetting } from "../../src/features/sessions/model/models";
+import { findModel, modelEffortSetting } from "../../src/features/sessions/model/models";
 import { contextRatio } from "../../src/features/sessions/model/contextUsage";
 import { harnessSupportsEditLastTurn, lastUserTurnBlock } from "../../src/features/sessions/model/editLastTurn";
 import { HarnessIcon } from "../../src/features/sessions/ui/HarnessIcon";
@@ -43,7 +43,7 @@ function SessionChips({
         onChange={(id) => onConfigure({ model: id })}
         disabled={!models.length}
         icon={<HarnessIcon harness={harness} className="harness" />}
-        label={model?.name ?? session.model.split(":").pop() ?? session.model}
+        label={model?.name ?? findModel(session.model)?.name ?? session.model.split(":").pop() ?? session.model}
       >
         {model ? null : <option value={session.model}>{session.model}</option>}
         {models.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -140,8 +140,8 @@ export function SessionView({
   const editable =
     !running && harnessSupportsEditLastTurn(session.harness) ? lastUserTurnBlock(session.blocks) : undefined;
   const ratio = contextRatio(session.context);
-  const send = ({ text, attachments, plan }: Outgoing) => {
-    const files = attachments.length ? { attachments } : {};
+  const send = ({ text, attachments, plan, prompt }: Outgoing) => {
+    const files = { ...(attachments.length ? { attachments } : {}), ...(prompt ? { prompt } : {}) };
     if (editing) {
       setEditing(false);
       return run({ type: "editLast", sessionId, text, ...files });
@@ -219,7 +219,8 @@ export function SessionView({
         </div>
       </div>
       <Composer
-        placeholder={running ? "Queue a follow-up…" : "Ask, build…"}
+        placeholder={running ? "Queue a follow-up…" : "Ask, build, @ for files, / for skills…"}
+        scope={{ projectId, cwd: session.worktreeCwd ?? session.cwd, harness: session.harness }}
         running={running}
         seed={seed}
         banner={
