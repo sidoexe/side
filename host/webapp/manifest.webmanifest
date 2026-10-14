@@ -1,0 +1,9 @@
+{
+  "name": "sIDE Host",
+  "short_name": "sIDE",
+  "start_url": "/web/",
+  "scope": "/web/",
+  "display": "standalone",
+  "background_color": "#111113",
+  "icons": [{ "src": "side.png", "sizes": "1024x1024", "type": "image/png" }]
+}

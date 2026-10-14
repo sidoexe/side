@@ -5,6 +5,7 @@ import {
   writeFile,
   chmod,
   copyFile,
+  cp,
   rm,
 } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
@@ -73,6 +74,7 @@ for (const target of targets) {
     `${stem}/LICENSE`,
   ]);
   await copyFile("build/host/side-host.mjs", join(folder, "host.mjs"));
+  await cp("build/host/web", join(folder, "web"), { recursive: true });
   await copyFile("host/provider-guard.mjs", join(folder, "provider-guard.mjs"));
   await copyFile("LICENSE", join(folder, "MONOCODE-LICENSE"));
   await writeFile(

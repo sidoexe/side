@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:browser": "playwright test",
-    "host:build": "tsc --noEmit -p host/tsconfig.json && node host/build.mjs",
+    "host:build": "tsc --noEmit -p host/tsconfig.json && tsc --noEmit -p host/webapp/tsconfig.json && node host/build.mjs",
     "host:package": "npm run host:build && node host/package.mjs",
     "host": "node build/host/side-host.mjs",
     "pretest:host": "npm run host:build",

@@ -101,6 +101,23 @@ Employees' conversations live there too, so any desktop opens the same chat. A d
 
 Saves of an employee file are checked against the version the writer read, on the host, so a habit is claimed by exactly one desktop even with several open: the others see the claim and skip that run. With no home machine, or a host too old to keep employees, a desktop uses its own data folder as before.
 
+## Open the host in a browser
+
+The host serves a responsive web app at `/web` for a phone or any browser: every project's sessions, live transcripts, sending and queuing messages, stopping a turn, approvals, questions, new sessions, and account usage.
+
+1. Create a credential for the browser on the host: `~/.side-host/bin/side-host pair --name "Web"`.
+2. Publish only `/web` on your tailnet (HTTPS, reachable from your devices only):
+
+   ```sh
+   tailscale serve --bg --set-path /web http://127.0.0.1:3775/web
+   ```
+
+3. Open `https://<machine>.<tailnet>.ts.net/web/` and paste the token. On iPhone, **Share → Add to Home Screen** opens it full screen.
+
+The token is kept in an `HttpOnly`, `SameSite=Strict` cookie scoped to `/web` for 30 days. `/web/rpc` answers only requests from the page's own origin; the desktop endpoint `/rpc` still refuses every browser. **Sign out** clears the cookie; `side-host revoke DEVICE_ID` ends access everywhere. Like any device token, it controls the host as its OS user: do not publish `/web` with `tailscale funnel` or another public tunnel.
+
+On the host machine itself, `http://127.0.0.1:3775/web/` works without Tailscale.
+
 ## Manage the host
 
 ```sh

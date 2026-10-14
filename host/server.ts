@@ -19,6 +19,7 @@ import { writeAttachmentChunk, readAttachmentChunk } from "./attachments";
 import type { LinkedWorkItem } from "../src/features/sessions/model/session";
 import { parseGithubWorkItemUrl } from "../src/features/sessions/model/sessionWorkItem";
 import { SyncTransfers } from "./sync-transfer";
+import { DEFAULT_WEB_ROOT, sameOrigin, serveWeb, webSecurityHeaders, webToken } from "./web";
 import { browseHostDirectories } from "./browse";
 import {
   createHostBranch,
@@ -139,6 +140,8 @@ export function createHostServer(
   lifecycle?: (request: IncomingMessage, response: ServerResponse) => void,
   /** The command an agent on this host runs for the app CLI. */
   appCli?: string,
+  /** Where the browser app's files are. */
+  webRoot = DEFAULT_WEB_ROOT,
 ) {
   const catalogs = new Map<
     string,
@@ -240,6 +243,14 @@ export function createHostServer(
         }
         return;
       }
+      // The browser app reaches the same methods at /web/rpc, from its own
+      // page only, with the device credential in an HttpOnly cookie.
+      const web = request.url === "/web/rpc";
+      if (!web && (request.url === "/web" || request.url?.startsWith("/web/"))) {
+        await serveWeb(request, response, (token) => engine.store.authenticated(token), webRoot);
+        return;
+      }
+      if (web) webSecurityHeaders(response);
       response.setHeader("Content-Type", "application/json");
       response.setHeader("Cache-Control", "no-store");
       response.setHeader("X-Content-Type-Options", "nosniff");
@@ -247,9 +258,11 @@ export function createHostServer(
         // Desktop native HTTP supplies credentials. This endpoint intentionally
         // accepts no browser origin and provides no permissive CORS escape hatch.
         if (
-          request.headers.origin ||
-          request.method !== "POST" ||
-          request.url !== "/rpc"
+          web
+            ? request.method !== "POST" || !sameOrigin(request)
+            : request.headers.origin ||
+              request.method !== "POST" ||
+              request.url !== "/rpc"
         ) {
           response
             .writeHead(403)
@@ -258,9 +271,11 @@ export function createHostServer(
             );
           return;
         }
-        const token = request.headers.authorization?.match(
-          /^Bearer ([A-Za-z0-9_-]{43})$/,
-        )?.[1];
+        const token = web
+          ? webToken(request)
+          : request.headers.authorization?.match(
+              /^Bearer ([A-Za-z0-9_-]{43})$/,
+            )?.[1];
         if (!token || !engine.store.authenticated(token)) {
           response.writeHead(401).end(
             JSON.stringify({
