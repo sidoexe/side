@@ -1,12 +1,15 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { clampUsedPercent, formatUsagePercent } from "../../providers/model/rateLimits";
 import { barClass } from "../../providers/ui/ProviderAccountUsage";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
-import { Check } from "../../../shared/ui/icons";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { ArrowLeft, Check, Plus, RefreshCw } from "../../../shared/ui/icons";
 import { Popover, type PopoverDismissReason } from "../../../shared/ui/Popover";
-import type { HostAccountSummary } from "../model/protocol";
+import { remoteRequest } from "../model/connections";
+import { AUTO_HOST_ACCOUNT, reloadHostAccounts } from "../model/hostAccounts";
+import type { HostAccountSummary, RemoteProvider } from "../model/protocol";
 import { useRemoteAccountSlot } from "./remoteAccountSlot";
 
 const DEFAULT = "default";
@@ -63,16 +66,170 @@ function MiniBar({ account }: { account: HostAccountSummary | undefined }) {
   );
 }
 
+type LoginStep =
+  | { kind: "starting" }
+  | { kind: "code"; loginId: string; url: string; busy?: boolean; error?: string }
+  | { kind: "failed"; error: string };
+
+const MENU_ITEM =
+  "flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-[12px] leading-none text-content hover:bg-content/10";
+
+const message = (error: unknown) => String(error).replace(/^Error: /, "");
+
+/** Signs a host account in from here: the host runs Claude's sign-in, this
+ * computer opens its page, and the code it shows goes back to the host. */
+function HostSignIn({
+  machineId,
+  account,
+  onBack,
+  onDone,
+}: {
+  machineId: string;
+  /** The account to sign in again; none adds a new one. */
+  account?: HostAccountSummary;
+  onBack: () => void;
+  onDone: () => void;
+}) {
+  const [step, setStep] = useState<LoginStep>({ kind: "starting" });
+  const [code, setCode] = useState("");
+  const loginId = useRef<string | undefined>(undefined);
+  const finished = useRef(false);
+
+  useEffect(() => {
+    let disposed = false;
+    void remoteRequest<{ loginId: string; url: string }>(machineId, "accounts.login", {
+      accountId: account?.id,
+    })
+      .then((started) => {
+        loginId.current = started.loginId;
+        if (disposed) return;
+        setStep({ kind: "code", loginId: started.loginId, url: started.url });
+        void openUrl(started.url).catch(() => undefined);
+      })
+      .catch((error) => {
+        if (!disposed) setStep({ kind: "failed", error: message(error) });
+      });
+    return () => {
+      disposed = true;
+      // Leaving midway stops the sign-in on the host too.
+      if (loginId.current && !finished.current)
+        void remoteRequest(machineId, "accounts.loginCancel", {
+          loginId: loginId.current,
+        }).catch(() => undefined);
+    };
+  }, [machineId, account?.id]);
+
+  const submit = async () => {
+    if (step.kind !== "code" || step.busy || !code.trim()) return;
+    setStep({ ...step, busy: true, error: undefined });
+    try {
+      await remoteRequest(machineId, "accounts.loginCode", {
+        loginId: step.loginId,
+        code: code.trim(),
+      });
+      finished.current = true;
+      reloadHostAccounts(machineId);
+      onDone();
+    } catch (error) {
+      // The host's sign-in ends with a refused code; the next try starts anew.
+      finished.current = true;
+      setStep({ kind: "failed", error: message(error) });
+    }
+  };
+
+  const title = account ? `Reconnect ${account.label}` : "Add a Claude account";
+  return (
+    <div className="flex w-[19rem] flex-col gap-2 p-1.5 text-[12px] text-content">
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          aria-label="Back"
+          className="grid size-5 place-items-center rounded text-content/50 hover:bg-content/10 hover:text-content"
+          onClick={onBack}
+        >
+          <ArrowLeft className="size-3.5" aria-hidden />
+        </button>
+        <span className="font-medium">{title}</span>
+      </div>
+      {step.kind === "starting" ? (
+        <p className="text-content/55">Starting Claude sign-in on the host…</p>
+      ) : step.kind === "failed" ? (
+        <>
+          <p role="alert" className="text-red-600 dark:text-red-300">
+            {step.error}
+          </p>
+          <button
+            type="button"
+            className="self-start rounded-md px-2 py-1 text-content/70 hover:bg-content/8 hover:text-content"
+            onClick={onBack}
+          >
+            Back
+          </button>
+        </>
+      ) : (
+        <form
+          className="flex flex-col gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          <p className="text-content/55">
+            Sign in to Claude in your browser, then paste the code it shows.{" "}
+            <button
+              type="button"
+              className="text-content/75 underline underline-offset-2 hover:text-content"
+              onClick={() => void openUrl(step.url).catch(() => undefined)}
+            >
+              Open the page again
+            </button>
+          </p>
+          <input
+            autoFocus
+            aria-label="Sign-in code"
+            placeholder="Paste code"
+            spellCheck={false}
+            autoComplete="off"
+            className="h-7 rounded-md border border-content/15 bg-content/3 px-2 font-mono text-[12px] outline-none focus:border-content/35"
+            value={code}
+            disabled={step.busy}
+            onChange={(event) => setCode(event.target.value)}
+          />
+          {step.error ? (
+            <p role="alert" className="text-red-600 dark:text-red-300">
+              {step.error}
+            </p>
+          ) : null}
+          <button
+            type="submit"
+            disabled={step.busy || !code.trim()}
+            className="h-7 self-end rounded-md bg-content px-3 text-[12px] font-medium text-surface hover:opacity-90 disabled:opacity-40"
+          >
+            {step.busy ? "Connecting…" : "Connect"}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 /** Which host account a remote session runs on, in the app footer where
  * this computer's usage chips would be. */
 export function RemoteAccountPicker({
   sessionId,
+  machineId,
+  harness,
+  canSignIn = false,
   accounts,
   value,
   disabled,
   onChange,
 }: {
   sessionId: string;
+  machineId: string;
+  harness: RemoteProvider;
+  /** The host can sign its Claude accounts in from here. */
+  canSignIn?: boolean;
   accounts: HostAccountSummary[];
   value: string | undefined;
   disabled?: boolean;
@@ -80,11 +237,16 @@ export function RemoteAccountPicker({
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  const [view, setView] = useState<
+    "menu" | "reconnect" | { signIn: HostAccountSummary | undefined }
+  >("menu");
   const slot = useRemoteAccountSlot(sessionId);
-  if (!accounts.length || !slot) return null;
+  const signIn = canSignIn && harness === "claude";
+  if ((!accounts.length && !signIn) || !slot) return null;
   const selected = value ?? DEFAULT;
   const active = accounts.find((account) => account.id === selected);
-  const provider = accounts[0].provider;
+  const provider = harness;
+  const named = accounts.filter((account) => account.id !== AUTO_HOST_ACCOUNT);
   const options = [
     ...accounts.map((account) => ({ id: account.id, label: account.label, account })),
     { id: DEFAULT, label: DEFAULT_LABEL, account: undefined },
@@ -92,6 +254,7 @@ export function RemoteAccountPicker({
 
   const dismiss = (reason: PopoverDismissReason) => {
     setOpen(false);
+    setView("menu");
     if (reason === "escape") requestAnimationFrame(() => trigger.current?.focus());
   };
 
@@ -106,7 +269,10 @@ export function RemoteAccountPicker({
         aria-haspopup="menu"
         title="Account this conversation runs on, on the host"
         disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          setOpen((current) => !current);
+          setView("menu");
+        }}
       >
         <HarnessIcon harness={provider} className="size-3 shrink-0" />
         <span className="max-w-32 truncate text-content/45">
@@ -123,10 +289,45 @@ export function RemoteAccountPicker({
           gap={7}
           autoFocus
           onDismiss={dismiss}
-          role="menu"
-          aria-label="Host accounts"
+          role={typeof view === "object" ? "dialog" : "menu"}
+          aria-label={typeof view === "object" ? "Sign in a host account" : "Host accounts"}
           className="min-w-[15rem] p-1"
         >
+          {typeof view === "object" ? (
+            <HostSignIn
+              machineId={machineId}
+              account={view.signIn}
+              onBack={() => setView("menu")}
+              onDone={() => {
+                setOpen(false);
+                setView("menu");
+              }}
+            />
+          ) : view === "reconnect" ? (
+            <>
+              <button
+                type="button"
+                className={`${MENU_ITEM} text-content/60`}
+                onClick={() => setView("menu")}
+              >
+                <ArrowLeft className="size-3 shrink-0" aria-hidden />
+                <span>Reconnect an account</span>
+              </button>
+              {named.map((account) => (
+                <button
+                  key={account.id}
+                  type="button"
+                  role="menuitem"
+                  className={MENU_ITEM}
+                  onClick={() => setView({ signIn: account })}
+                >
+                  <span className="size-3 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{account.label}</span>
+                </button>
+              ))}
+            </>
+          ) : (
+          <>
           {options.map((option) => (
             <button
               key={option.id}
@@ -152,6 +353,35 @@ export function RemoteAccountPicker({
               </span>
             </button>
           ))}
+          {signIn ? (
+            <>
+              <div role="separator" className="my-1 h-px bg-content/10" />
+              <button
+                type="button"
+                role="menuitem"
+                className={MENU_ITEM}
+                onClick={() => setView({ signIn: undefined })}
+              >
+                <Plus className="size-3 shrink-0" aria-hidden />
+                <span>Add account…</span>
+              </button>
+              {named.length ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={MENU_ITEM}
+                  onClick={() =>
+                    setView(named.length === 1 ? { signIn: named[0] } : "reconnect")
+                  }
+                >
+                  <RefreshCw className="size-3 shrink-0" aria-hidden />
+                  <span>Reconnect…</span>
+                </button>
+              ) : null}
+            </>
+          ) : null}
+          </>
+          )}
         </Popover>
       ) : null}
     </>,

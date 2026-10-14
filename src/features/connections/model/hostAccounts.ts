@@ -4,6 +4,12 @@ import type { HostAccountSummary, RemoteProvider } from "./protocol";
 
 export const AUTO_HOST_ACCOUNT = "auto";
 const cached = new Map<string, HostAccountSummary[]>();
+const CHANGED = "side:host-accounts-changed";
+
+/** Reads a host's accounts again, after one was added or signed in. */
+export function reloadHostAccounts(machineId: string) {
+  window.dispatchEvent(new CustomEvent(CHANGED, { detail: machineId }));
+}
 
 /** The accounts a host offers, for hosts that advertise them. */
 export function useHostAccounts(
@@ -11,6 +17,14 @@ export function useHostAccounts(
   enabled: boolean,
 ): HostAccountSummary[] {
   const [accounts, setAccounts] = useState(() => cached.get(machineId) ?? []);
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    const changed = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === machineId) setReload((value) => value + 1);
+    };
+    window.addEventListener(CHANGED, changed);
+    return () => window.removeEventListener(CHANGED, changed);
+  }, [machineId]);
   useEffect(() => {
     if (!enabled) return;
     let disposed = false;
@@ -26,7 +40,7 @@ export function useHostAccounts(
     return () => {
       disposed = true;
     };
-  }, [machineId, enabled]);
+  }, [machineId, enabled, reload]);
   return accounts;
 }
 

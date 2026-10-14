@@ -1,0 +1,135 @@
+// @vitest-environment happy-dom
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { RemoteAccountPicker } from "./RemoteAccountPicker";
+import { setRemoteAccountSlot } from "./remoteAccountSlot";
+import type { HostAccountSummary } from "../model/protocol";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => undefined) }));
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const accounts: HostAccountSummary[] = [
+  { id: "auto", provider: "claude", label: "Balanced" },
+  { id: "perso-1", provider: "claude", label: "6ido.exe" },
+  { id: "perso-2", provider: "claude", label: "benchoubane.sid" },
+];
+
+let root: Root;
+let footer: HTMLDivElement;
+let requests: { method: string; params: Record<string, unknown> }[];
+let codeResult: () => unknown;
+
+beforeEach(() => {
+  requests = [];
+  codeResult = () => ({ accountId: "perso-3", label: "new.person" });
+  vi.mocked(invoke).mockReset();
+  vi.mocked(invoke).mockImplementation(async (_command, input) => {
+    const { method, params } = input as { method: string; params: Record<string, unknown> };
+    requests.push({ method, params });
+    if (method === "accounts.login")
+      return { loginId: "login-1", url: "https://claude.com/cai/oauth/authorize?code=true", accountId: "perso-3" };
+    if (method === "accounts.loginCode") return codeResult();
+    return {};
+  });
+  footer = document.createElement("div");
+  document.body.append(footer);
+  setRemoteAccountSlot({ sessionId: "shell", element: footer });
+  root = createRoot(document.createElement("div"));
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  setRemoteAccountSlot(undefined);
+  document.body.innerHTML = "";
+});
+
+async function render(props: Partial<Parameters<typeof RemoteAccountPicker>[0]> = {}) {
+  await act(async () =>
+    root.render(
+      createElement(RemoteAccountPicker, {
+        sessionId: "shell",
+        machineId: "machine",
+        harness: "claude",
+        canSignIn: true,
+        accounts,
+        value: "auto",
+        onChange: () => undefined,
+        ...props,
+      }),
+    ),
+  );
+}
+
+const item = (text: string) =>
+  [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes(text),
+  )!;
+
+async function openMenu() {
+  await act(async () => footer.querySelector<HTMLButtonElement>("button")!.click());
+}
+
+async function typeCode(value: string) {
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="Sign-in code"]')!;
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => item("Connect").click());
+}
+
+it("adds a host account: opens Claude's page here and hands the code to the host", async () => {
+  const reloaded = vi.fn();
+  window.addEventListener("side:host-accounts-changed", reloaded);
+  await render();
+  await openMenu();
+  await act(async () => item("Add account").click());
+  expect(requests.at(-1)).toEqual({ method: "accounts.login", params: { accountId: undefined } });
+  expect(openUrl).toHaveBeenCalledWith("https://claude.com/cai/oauth/authorize?code=true");
+  await typeCode("  abc#state ");
+  expect(requests.at(-1)).toEqual({
+    method: "accounts.loginCode",
+    params: { loginId: "login-1", code: "abc#state" },
+  });
+  expect(reloaded).toHaveBeenCalled();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(requests.some((request) => request.method === "accounts.loginCancel")).toBe(false);
+});
+
+it("reconnects a chosen account and shows a refused code", async () => {
+  codeResult = () => {
+    throw new Error("Login failed: Request failed with status code 400");
+  };
+  await render();
+  await openMenu();
+  await act(async () => item("Reconnect").click());
+  await act(async () => item("benchoubane.sid").click());
+  expect(requests.at(-1)).toEqual({ method: "accounts.login", params: { accountId: "perso-2" } });
+  await typeCode("bad");
+  expect(document.querySelector('[role="alert"]')?.textContent).toBe(
+    "Login failed: Request failed with status code 400",
+  );
+});
+
+it("stops the host's sign-in when it is left midway", async () => {
+  await render();
+  await openMenu();
+  await act(async () => item("Add account").click());
+  await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Back"]')!.click());
+  expect(requests.at(-1)).toEqual({ method: "accounts.loginCancel", params: { loginId: "login-1" } });
+});
+
+it("offers signing in only where the host can do it for that provider", async () => {
+  await render({ harness: "codex", accounts: [{ id: "work", provider: "codex", label: "Work" }] });
+  await openMenu();
+  expect(item("Add account")).toBeUndefined();
+  await act(async () => root.render(createElement("div")));
+  await render({ accounts: [], value: undefined });
+  expect(footer.querySelector("button")?.getAttribute("aria-label")).toBe("Host account: Default account");
+});

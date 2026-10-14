@@ -166,6 +166,10 @@ export function createHostServer(
     if (!engine.employees) throw new Error("Colleagues are unavailable on this host");
     return engine.employees;
   };
+  const accountLogins = () => {
+    if (!engine.accountLogins) throw new Error("Signing in is unavailable on this host");
+    return engine.accountLogins;
+  };
   const automations = () => {
     if (!engine.automations) throw new Error("Automations are unavailable on this host");
     return engine.automations;
@@ -338,6 +342,7 @@ export function createHostServer(
                 ...(engine.automations ? ["automations"] : []),
                 ...(engine.app ? ["app"] : []),
                 "accounts",
+                ...(engine.accountLogins ? ["accounts.login"] : []),
               ],
             };
             break;
@@ -346,6 +351,16 @@ export function createHostServer(
             break;
           case "accounts.list":
             result = engine.accountSummaries();
+            break;
+          case "accounts.login":
+            result = await accountLogins().start(params);
+            break;
+          case "accounts.loginCode":
+            result = await accountLogins().finish(params);
+            break;
+          case "accounts.loginCancel":
+            accountLogins().cancel(params);
+            result = {};
             break;
           case "projects.browse":
             result = await browseHostDirectories(params.path);

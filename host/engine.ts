@@ -44,6 +44,7 @@ import {
   claudeConfigDir,
   type HostAccounts,
 } from "./accounts";
+import type { HostAccountLogins } from "./account-login";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments";
 import {
   lastUserTurnBlock,
@@ -335,6 +336,7 @@ export class HostEngine {
   employees?: HostEmployees;
   automations?: HostAutomations;
   app?: HostAppBridge;
+  accountLogins?: HostAccountLogins;
 
   /** Whether a turn of this session is running now. */
   isRunning(sessionId: string): boolean {

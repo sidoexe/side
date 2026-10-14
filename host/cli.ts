@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { HostCheckpoints } from "./checkpoints";
 import { HostEmployees } from "./employees";
+import { HostAccountLogins } from "./account-login";
 import { HostAutomations } from "./automations";
 import { HostAppBridge } from "./app-bridge";
 import { runAppCli } from "./app-cli";
@@ -261,6 +262,7 @@ Connect another computer using an SSH forward to the loopback port.`);
     const engine = new HostEngine(store, hostProviders, accounts);
     engine.checkpoints = new HostCheckpoints(join(directory, "checkpoints"));
     engine.employees = new HostEmployees(join(directory, "employees"));
+    engine.accountLogins = new HostAccountLogins(accounts, () => backend.resolve("claude"));
     engine.automations = new HostAutomations(join(directory, "automations.db"));
     const app = new HostAppBridge(join(directory, "app-access.json"), (id) => engine.isRunning(id));
     engine.app = app;
@@ -337,6 +339,7 @@ Connect another computer using an SSH forward to the loopback port.`);
     cleanup = () => {
       rmSync(statePath, { force: true });
       engine.employees?.close();
+      engine.accountLogins?.close();
       engine.automations?.close();
       store.close();
       releaseOwner();

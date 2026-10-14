@@ -1528,6 +1528,9 @@ function ConnectedRemoteSession({
         <div className="min-h-0 flex-1">{render(overrides)}</div>
         <RemoteAccountPicker
           sessionId={shell.id}
+          machineId={machine.id}
+          harness={configuration.harness}
+          canSignIn={!!descriptor?.capabilities.includes("accounts.login")}
           accounts={accountsFor(hostAccounts, configuration.harness)}
           value={configuration.account}
           disabled={!online || busy}

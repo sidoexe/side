@@ -64,6 +64,12 @@ function expand(path: string): string {
   return path === "~" ? homedir() : path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
 }
 
+/** `~/…` for a path under the home folder, as the file is written by hand. */
+function home(path: string): string {
+  const root = homedir();
+  return path.startsWith(`${root}/`) ? `~/${path.slice(root.length + 1)}` : path;
+}
+
 export function parseAccountConfig(raw: unknown): HostAccountConfig {
   const value = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   const accounts: HostAccount[] = [];
@@ -110,6 +116,28 @@ export class HostAccounts {
     } catch {
       return { accounts: [], balance: [], binaries: {} };
     }
+  }
+
+  /** Declares a newly signed-in profile, and pools it for balancing.
+   * Everything else in the file is kept as written. */
+  addAccount(account: HostAccount): void {
+    let raw: Record<string, unknown> = {};
+    try {
+      const value: unknown = JSON.parse(readFileSync(this.configPath, "utf8"));
+      if (value && typeof value === "object" && !Array.isArray(value)) raw = value as Record<string, unknown>;
+    } catch {
+      /* a host without accounts yet */
+    }
+    const accounts = Array.isArray(raw.accounts) ? raw.accounts : [];
+    const balance = Array.isArray(raw.balance) ? raw.balance : [];
+    const next = {
+      ...raw,
+      accounts: [...accounts, { ...account, configDir: home(account.configDir) }],
+      balance: balance.includes(account.id) ? balance : [...balance, account.id],
+    };
+    const tmp = `${this.configPath}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+    renameSync(tmp, this.configPath);
   }
 
   binary(provider: string): string | undefined {
