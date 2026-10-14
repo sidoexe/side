@@ -3,12 +3,19 @@ name: Release
 # A `v*` tag publishes a GitHub release: the macOS DMG, the updater archive
 # and its `latest.json` feed (which installed copies poll), and the host
 # packages that SSH setup and "Update Host" download for that exact version.
-# Running it by hand builds everything without publishing.
+# Running it by hand builds everything without publishing. A push to main
+# builds without publishing too, which keeps the Rust cache warm: a tag run
+# can only restore caches saved on main, not ones from earlier tags.
 on:
   push:
+    branches: [main]
     tags:
       - "v*"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -48,6 +55,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-aarch64-apple-darwin
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
 
       - name: Check tag matches app version
