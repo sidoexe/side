@@ -6,11 +6,13 @@ import type {
   HostModelCatalog,
   HostProject,
   HostSessionSummary,
+  HostWorktree,
   RemoteProvider,
 } from "../../src/features/connections/model/protocol";
 import { sessionDisplayTitle, type RuntimeMode } from "../../src/features/sessions/model/session";
 import { command, describe, login, logout, rpc, Unauthorized } from "./api";
 import { SessionView } from "./SessionView";
+import { ChangesPanel, FolderBrowser } from "./workspace";
 import { ago, BranchIcon, Chip, Composer, go, MODES, tilde, usePoll, useRoute, type Route } from "./ui";
 import { HarnessIcon } from "../../src/features/sessions/ui/HarnessIcon";
 import { findModel, setHarnessModels } from "../../src/features/sessions/model/models";
@@ -120,6 +122,7 @@ function Sidebar({
   accounts,
   route,
   onClose,
+  onOpenFolder,
   onLogout,
 }: {
   host: HostDescriptor;
@@ -128,6 +131,7 @@ function Sidebar({
   accounts: HostAccountSummary[];
   route: Route;
   onClose: () => void;
+  onOpenFolder: () => void;
   onLogout: () => void;
 }) {
   const [showArchived, setShowArchived] = useState(false);
@@ -139,6 +143,9 @@ function Sidebar({
         <img src="side.png" alt="" width={18} height={18} />
         <span className="host-name">{host.name}</span>
         <span className="version">{host.version}</span>
+        <button className="icon" onClick={onOpenFolder} aria-label="Open folder" title="Open folder">
+          <svg className="glyph" viewBox="0 0 16 16" aria-hidden><path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" strokeWidth="1.2" /><path d="M8 7.5v3M6.5 9h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
+        </button>
         <button className="icon close" onClick={onClose} aria-label="Close menu">
           <svg className="glyph" viewBox="0 0 16 16" aria-hidden><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
         </button>
@@ -219,7 +226,27 @@ function NewSession({
   const [choice, setChoice] = useState("");
   const [mode, setMode] = useState<RuntimeMode>("supervised");
   const [account, setAccount] = useState("");
+  const [worktrees, setWorktrees] = useState<HostWorktree[]>([]);
+  const [worktree, setWorktree] = useState("");
   useEffect(() => setProjectId(project.id), [project.id]);
+  useEffect(() => {
+    setWorktree("");
+    rpc<{ worktrees: HostWorktree[] }>("git.worktrees", { projectId: current.id }).then(
+      (listed) => setWorktrees(listed.worktrees.filter((tree) => !tree.isMain && !tree.missing)),
+      () => setWorktrees([]),
+    );
+  }, [current.id]);
+  const newWorktree = async () => {
+    const branch = prompt("Branch for the new worktree")?.trim();
+    if (!branch) return;
+    try {
+      const created = await rpc<HostWorktree>("git.worktreeCreate", { projectId: current.id, branch });
+      setWorktrees((list) => [...list, created]);
+      setWorktree(created.path);
+    } catch (error) {
+      onError(error);
+    }
+  };
   useEffect(() => {
     rpc<HostModelCatalog>("models.list", { projectId: current.id }).then(setCatalog, onError);
   }, [current.id, onError]);
@@ -246,7 +273,7 @@ function NewSession({
         <Composer
           placeholder="Ask, build…"
           disabled={!selected}
-          context={<span className="mono ellipsis">{tilde(current.cwd)}</span>}
+          context={<span className="mono ellipsis">{tilde(worktree || current.cwd)}</span>}
           tools={
             <>
               {projects && projects.length > 1 ? (
@@ -271,6 +298,16 @@ function NewSession({
                   ) : null,
                 )}
               </Chip>
+              <Chip
+                value={worktree}
+                onChange={(value) => (value === "+new" ? void newWorktree() : setWorktree(value))}
+                icon={<BranchIcon />}
+                label={worktree ? worktrees.find((tree) => tree.path === worktree)?.branch ?? worktree.split("/").pop()! : "Local"}
+              >
+                <option value="">Local checkout</option>
+                {worktrees.map((tree) => <option key={tree.path} value={tree.path}>{tree.branch ?? tree.path.split("/").pop()}</option>)}
+                <option value="+new">New worktree…</option>
+              </Chip>
               <Chip value={mode} onChange={setMode} label={MODES.find((item) => item.id === mode)!.label}>
                 {MODES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
               </Chip>
@@ -288,6 +325,7 @@ function NewSession({
               const receipt = await command({
                 type: "create",
                 projectId: current.id,
+                ...(worktree ? { worktreeCwd: worktree } : {}),
                 harness: selected.harness,
                 model: selected.model.id,
                 runtimeMode: mode,
@@ -320,6 +358,8 @@ function App() {
   const [sessions, setSessions] = useState<Record<string, HostSessionSummary[]>>({});
   const [accounts, setAccounts] = useState<HostAccountSummary[]>([]);
   const [menu, setMenu] = useState(false);
+  const [changes, setChanges] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
   const [error, setError] = useState("");
   const onError = useCallback((reason: unknown) => {
     if (reason instanceof Unauthorized) setHost(null);
@@ -365,6 +405,8 @@ function App() {
     return sessions[route.projectId]?.find((session) => session.id === route.sessionId);
   }, [route, sessions]);
   const project = route.kind !== "home" ? projects.find((item) => item.id === route.projectId) : undefined;
+  // The working copy the Changes panel shows: the session's worktree, else the project.
+  const workCwd = summary ? summary.worktreeCwd ?? summary.cwd ?? project?.cwd : project?.cwd;
   const attention = Object.values(sessions).flat().filter((session) => session.needsInput && !session.archived).length;
   useEffect(() => {
     document.title = attention ? `(${attention}) sIDE Host` : "sIDE Host";
@@ -381,6 +423,10 @@ function App() {
         accounts={accounts}
         route={route}
         onClose={() => setMenu(false)}
+        onOpenFolder={() => {
+          setMenu(false);
+          setBrowsing(true);
+        }}
         onLogout={() => void logout().then(() => setHost(null))}
       />
       <div className="scrim" onClick={() => setMenu(false)} />
@@ -400,6 +446,11 @@ function App() {
               </span>
             ) : null}
           </div>
+          {workCwd ? (
+            <button className={`topbar-button${changes ? " on" : ""}`} onClick={() => setChanges(!changes)} aria-pressed={changes}>
+              Changes
+            </button>
+          ) : null}
           {summary ? <SessionMenu summary={summary} onError={onError} /> : null}
         </div>
         {error ? (
@@ -412,6 +463,7 @@ function App() {
             projectId={route.projectId}
             branch={summary?.branch}
             accounts={accounts}
+            review={host.capabilities.includes("sessions.review")}
             onError={onError}
           />
         ) : route.kind === "new" && project ? (
@@ -427,6 +479,20 @@ function App() {
           </>
         )}
       </main>
+      {changes && workCwd ? <ChangesPanel key={workCwd} cwd={workCwd} onClose={() => setChanges(false)} onError={onError} /> : null}
+      {browsing ? (
+        <FolderBrowser
+          onClose={() => setBrowsing(false)}
+          onError={onError}
+          onOpen={(cwd) =>
+            void rpc<HostProject>("projects.open", { cwd }).then((opened) => {
+              setBrowsing(false);
+              setProjects((list) => (list.some((item) => item.id === opened.id) ? list : [...list, opened]));
+              go({ kind: "new", projectId: opened.id });
+            }, onError)
+          }
+        />
+      ) : null}
     </div>
   );
 }

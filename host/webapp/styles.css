@@ -348,3 +348,55 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: r
 .popover button { text-align: left; padding: 7px 10px; border-radius: 5px; font-size: 13px; }
 .popover button:hover { background: var(--fill); }
 .popover button.danger { color: var(--del-fg); }
+
+/* Changes panel: on the right like the IDE's, a full sheet on phones. */
+.topbar-button { height: 26px; padding: 0 9px; border-radius: 6px; color: var(--muted); font-size: 12.5px; }
+.topbar-button:hover, .topbar-button.on { background: var(--fill); color: var(--text); }
+.panel {
+  width: 380px; flex: none; display: flex; flex-direction: column; min-height: 0;
+  border-left: 1px solid var(--stroke); background: var(--sidebar-bg);
+  padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+}
+.panel-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--stroke); flex: none; }
+.panel-title { font-weight: 600; }
+.panel-branch { flex: 1; text-align: right; font-size: 12px; }
+.panel-commit { padding: 10px; border-bottom: 1px solid var(--stroke); display: flex; flex-direction: column; gap: 8px; flex: none; }
+.panel-commit textarea { resize: none; border: 1px solid var(--stroke); background: var(--fill-subtle); border-radius: 6px; padding: 7px 9px; outline: none; font-size: 13px; }
+.panel-buttons { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.panel-body { flex: 1; overflow-y: auto; padding: 0 6px 16px; }
+.panel-label { display: flex; align-items: center; gap: 6px; padding: 12px 8px 4px; }
+.panel-label .link { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 12px; }
+.count { display: inline-grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--fill); font-size: 10px; letter-spacing: 0; }
+.file-row { display: flex; align-items: center; gap: 6px; border-radius: 6px; }
+.file-row:hover, .file-row.open { background: var(--fill-subtle); }
+.file-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 6px 8px; text-align: left; }
+.file-name { flex: none; max-width: 60%; }
+.file-dir { flex: 1; color: var(--faint); font-size: 11.5px; }
+.file-status { width: 14px; flex: none; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--amber); }
+.file-status.added, .file-status.untracked { color: var(--add-fg); }
+.file-status.deleted { color: var(--del-fg); }
+.file-actions { display: flex; gap: 10px; padding-right: 8px; flex: none; font-size: 12px; }
+.file-row + .diff-body, .file-row + .diff-note, div > .diff-body { margin: 2px 0 8px; border: 1px solid var(--stroke); border-radius: 6px; max-height: 420px; overflow: auto; }
+.diff-gap { color: var(--faint); padding: 0 0 0 46px; font-size: 11px; background: var(--fill-subtle); }
+.diff-note { padding: 8px 10px; font-size: 12px; }
+.link:disabled { opacity: 0.4; }
+
+/* Review card after a turn */
+.card.review { padding: 6px 6px 6px 12px; }
+.review-head { display: flex; align-items: center; gap: 8px; }
+.review-head .row-button { color: var(--text); gap: 8px; }
+.review-actions { margin-left: auto; display: flex; gap: 12px; padding-right: 6px; font-size: 12.5px; }
+
+/* Folder picker */
+.modal-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.45); display: grid; place-items: center; padding: 16px; }
+.modal { width: min(520px, 100%); max-height: min(640px, 90dvh); display: flex; flex-direction: column; background: var(--sidebar-bg); border: 1px solid var(--stroke-strong); border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+.browser-path { padding: 8px 14px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--stroke); }
+.browser-list { flex: 1; overflow-y: auto; padding: 4px; display: flex; flex-direction: column; }
+.browser-entry { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; text-align: left; }
+.browser-entry:hover { background: var(--fill); }
+.modal-foot { padding: 10px; border-top: 1px solid var(--stroke); }
+
+@media (max-width: 760px) {
+  .panel { position: fixed; inset: 0; z-index: 25; width: auto; border-left: none; background: var(--bg); }
+  .file-dir { display: none; }
+}

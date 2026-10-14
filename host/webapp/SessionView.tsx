@@ -13,6 +13,7 @@ import { HarnessIcon } from "../../src/features/sessions/ui/HarnessIcon";
 import { command, rpc, syncSession } from "./api";
 import { BranchIcon, Chip, Composer, MODES, Question, tilde, usePoll, type Outgoing } from "./ui";
 import { Transcript } from "./Transcript";
+import { ReviewCard } from "./workspace";
 
 /** The open session's settings as chips: model, effort, permissions and
  * account. A change applies to the next turn, as on the desktop. */
@@ -81,12 +82,15 @@ export function SessionView({
   projectId,
   branch,
   accounts,
+  review,
   onError,
 }: {
   sessionId: string;
   projectId: string;
   branch?: string;
   accounts: HostAccountSummary[];
+  /** The host keeps a review of each turn's changes. */
+  review: boolean;
   onError: (error: unknown) => void;
 }) {
   const [value, setValue] = useState<HostSession>();
@@ -194,6 +198,7 @@ export function SessionView({
                     }).catch(() => undefined)
             }
           />
+          {review && !running ? <ReviewCard sessionId={sessionId} revision={value.revision} /> : null}
           {value.status === "interrupted" ? <div className="system interrupt">Interrupted</div> : null}
           {session.usageLimit ? (
             <div className="system error">
