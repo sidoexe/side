@@ -318,3 +318,33 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: r
   .narrow-only { display: block; }
   .empty-session { padding: 24px 2px; justify-content: flex-end; }
 }
+
+/* Composer extras: files, edit banner, Plan, context meter. */
+.chip.on { background: color-mix(in srgb, var(--accent) 18%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--text); }
+.square.ghost { color: var(--muted); }
+.square.ghost:hover { background: var(--fill); color: var(--text); }
+.square.send.busy { opacity: 0.5; }
+.composer-banner { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 12px 0; font-size: 12px; color: var(--accent); }
+.composer-error { padding: 0 12px 4px; color: var(--del-fg); font-size: 12px; }
+.composer-files { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px 0; }
+.file-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 30px; padding: 0 4px 0 4px; border: 1px solid var(--stroke-strong); border-radius: 6px; font-size: 12px; }
+.file-chip img { width: 22px; height: 22px; border-radius: 4px; object-fit: cover; }
+.file-chip button { color: var(--muted); display: grid; place-items: center; width: 20px; height: 20px; border-radius: 4px; }
+.file-chip button:hover { background: var(--fill); color: var(--text); }
+.context-meter { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); flex: none; }
+.context-meter svg { width: 12px; height: 12px; }
+.message-action { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.message-action:hover { color: var(--text); }
+.plan-status { margin-top: 6px; font-size: 12px; }
+
+/* Session menu */
+.menu-anchor { position: relative; }
+.menu-backdrop { position: fixed; inset: 0; z-index: 30; }
+.popover {
+  position: absolute; right: 0; top: 30px; z-index: 31; min-width: 160px; padding: 4px;
+  background: var(--sidebar-bg); border: 1px solid var(--stroke-strong); border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column;
+}
+.popover button { text-align: left; padding: 7px 10px; border-radius: 5px; font-size: 13px; }
+.popover button:hover { background: var(--fill); }
+.popover button.danger { color: var(--del-fg); }

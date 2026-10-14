@@ -3,6 +3,7 @@ import {
   HOST_PROTOCOL_VERSION,
   type HostCommand,
   type HostSession,
+  type RemoteAttachment,
   type SessionSync,
   type SessionSyncChunk,
   type SessionSyncResponse,
@@ -88,4 +89,39 @@ export function command(input: CommandInput) {
     ...input,
     commandId: crypto.randomUUID(),
   });
+}
+
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+// Keep each request well below the host's request limit.
+const CHUNK_CHARS = 4 * Math.floor((512 * 1024) / 3);
+
+/** A file picked in the browser, uploaded to the host's attachment store
+ * in chunks, as the desktop does. */
+export async function uploadAttachment(file: File): Promise<RemoteAttachment> {
+  if (file.size > MAX_ATTACHMENT_BYTES) throw new Error(`${file.name} is too large (20 MB maximum)`);
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ""));
+    reader.onerror = () => reject(reader.error ?? new Error(`Cannot read ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+  const id = crypto.randomUUID();
+  let offset = 0;
+  if (!data.length) await rpc("attachments.upload", { id, offset: 0, size: file.size, data: "" });
+  for (let index = 0; index < data.length; index += CHUNK_CHARS)
+    offset = (await rpc<{ offset: number }>("attachments.upload", {
+      id,
+      offset,
+      size: file.size,
+      data: data.slice(index, index + CHUNK_CHARS),
+    })).offset;
+  if (offset !== file.size) throw new Error(`Could not finish uploading ${file.name}`);
+  const mimeType = file.type || "application/octet-stream";
+  return {
+    id,
+    name: file.name,
+    mimeType,
+    kind: mimeType.startsWith("image/") ? "image" : mimeType.startsWith("audio/") ? "audio" : "file",
+    size: file.size,
+  };
 }

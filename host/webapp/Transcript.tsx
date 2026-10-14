@@ -107,15 +107,16 @@ function Activity({ blocks, cwd, live, worked }: { blocks: Block[]; cwd: string;
   );
 }
 
-function Item({
-  block,
-  canDecide,
-  onDecide,
-}: {
-  block: Block;
+type ItemActions = {
   canDecide: boolean;
   onDecide: (requestId: number, decision: "allow" | "deny") => void;
-}) {
+  /** The user message that can be edited and sent again. */
+  editableId?: string;
+  onEdit?: (block: Block) => void;
+  onBuild?: (block: Block) => void;
+};
+
+function Item({ block, canDecide, onDecide, editableId, onEdit, onBuild }: ItemActions & { block: Block }) {
   switch (block.role) {
     case "user":
       return (
@@ -123,6 +124,9 @@ function Item({
           {block.text}
           {block.attachments?.length ? (
             <div className="attachments">{block.attachments.map((a) => a.name).join(", ")}</div>
+          ) : null}
+          {block.id === editableId && onEdit ? (
+            <button className="message-action" onClick={() => onEdit(block)}>Edit</button>
           ) : null}
         </div>
       );
@@ -161,6 +165,13 @@ function Item({
         <div className="card plan">
           <div className="card-label">Plan</div>
           <Markdown text={block.text} streaming={block.streaming} />
+          {block.plan?.status === "ready" && onBuild ? (
+            <div className="actions">
+              <button className="btn primary" onClick={() => onBuild(block)}>Build</button>
+            </div>
+          ) : block.plan?.status === "building" || block.plan?.status === "built" ? (
+            <div className="muted plan-status">{block.plan.status === "built" ? "Built" : "Building…"}</div>
+          ) : null}
         </div>
       );
     case "system":
@@ -175,14 +186,11 @@ export function Transcript({
   blocks,
   cwd,
   running,
-  canDecide,
-  onDecide,
-}: {
+  ...actions
+}: ItemActions & {
   blocks: Block[];
   cwd: string;
   running: boolean;
-  canDecide: boolean;
-  onDecide: (requestId: number, decision: "allow" | "deny") => void;
 }) {
   const turns = groupTurns(blocks);
   return (
@@ -196,7 +204,7 @@ export function Transcript({
           <div key={turn[0]?.id ?? turnIndex} className="turn">
             {items.map((item, index) =>
               item.type === "block" ? (
-                <Item key={item.block.id} block={item.block} canDecide={canDecide} onDecide={onDecide} />
+                <Item key={item.block.id} block={item.block} {...actions} />
               ) : (
                 <Activity
                   key={item.blocks[0].id}

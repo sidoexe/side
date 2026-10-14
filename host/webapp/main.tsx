@@ -1,99 +1,23 @@
-import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { StrictMode, useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type {
   HostAccountSummary,
   HostDescriptor,
   HostModelCatalog,
   HostProject,
-  HostSession,
   HostSessionSummary,
   RemoteProvider,
 } from "../../src/features/connections/model/protocol";
 import { sessionDisplayTitle, type RuntimeMode } from "../../src/features/sessions/model/session";
-import { buildQuestionReply, type UserQuestionPrompt } from "../../src/features/sessions/model/userQuestion";
-import { command, describe, login, logout, rpc, syncSession, Unauthorized } from "./api";
-import { Transcript } from "./Transcript";
+import { command, describe, login, logout, rpc, Unauthorized } from "./api";
+import { SessionView } from "./SessionView";
+import { ago, BranchIcon, Chip, Composer, go, MODES, tilde, usePoll, useRoute, type Route } from "./ui";
 import { HarnessIcon } from "../../src/features/sessions/ui/HarnessIcon";
 import { findModel, setHarnessModels } from "../../src/features/sessions/model/models";
 import "./styles.css";
 
-type Route = { kind: "home" } | { kind: "session"; projectId: string; sessionId: string } | { kind: "new"; projectId: string };
-
-function parseRoute(): Route {
-  const [kind, projectId, sessionId] = location.hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
-  if (kind === "s" && projectId && sessionId) return { kind: "session", projectId, sessionId };
-  if (kind === "new" && projectId) return { kind: "new", projectId };
-  return { kind: "home" };
-}
-
-function go(route: Route) {
-  location.hash =
-    route.kind === "session"
-      ? `#/s/${encodeURIComponent(route.projectId)}/${encodeURIComponent(route.sessionId)}`
-      : route.kind === "new"
-        ? `#/new/${encodeURIComponent(route.projectId)}`
-        : "#/";
-}
-
-function useRoute(): Route {
-  const [route, setRoute] = useState(parseRoute);
-  useEffect(() => {
-    const update = () => setRoute(parseRoute());
-    addEventListener("hashchange", update);
-    return () => removeEventListener("hashchange", update);
-  }, []);
-  return route;
-}
-
-/** Runs `tick` now and every `ms` while the page is visible. */
-function usePoll(tick: () => Promise<void> | void, ms: number, deps: unknown[]) {
-  const latest = useRef(tick);
-  latest.current = tick;
-  useEffect(() => {
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const loop = async () => {
-      if (!document.hidden) await Promise.resolve(latest.current()).catch(() => undefined);
-      if (!stopped) timer = setTimeout(loop, ms);
-    };
-    const wake = () => {
-      if (document.hidden) return;
-      clearTimeout(timer);
-      void loop();
-    };
-    void loop();
-    document.addEventListener("visibilitychange", wake);
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-      document.removeEventListener("visibilitychange", wake);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ms, ...deps]);
-}
-
-const ago = (time?: number) => {
-  if (!time) return "";
-  const s = Math.max(0, (Date.now() - time) / 1000);
-  if (s < 60) return "now";
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
-};
-
-const tilde = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
-
 const modelName = (session: HostSessionSummary) =>
   (session.model && findModel(session.model)?.name) || session.model?.split(":").pop() || session.harness;
-
-const BranchIcon = () => (
-  <svg className="glyph" viewBox="0 0 16 16" aria-hidden>
-    <circle cx="5" cy="4" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.2" />
-    <circle cx="5" cy="12" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.2" />
-    <circle cx="11" cy="6" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.2" />
-    <path d="M5 5.6v4.8M11 7.6c0 2-2 2.4-4.6 3.4" fill="none" stroke="currentColor" strokeWidth="1.2" />
-  </svg>
-);
 
 /** One session as the IDE's sidebar shows it: agent and model, title, branch. */
 function SessionRow({ session, active, onClick }: { session: HostSessionSummary; active?: boolean; onClick?: () => void }) {
@@ -274,276 +198,6 @@ function Sidebar({
   );
 }
 
-function Question({ prompt, onReply }: { prompt: UserQuestionPrompt; onReply: (reply: ReturnType<typeof buildQuestionReply>) => void }) {
-  const [answers, setAnswers] = useState<Record<string, string[]>>({});
-  const [custom, setCustom] = useState<Record<string, string>>({});
-  return (
-    <div className="question">
-      {prompt.questions.map((question) => (
-        <fieldset key={question.id}>
-          <legend>{question.prompt}</legend>
-          {question.options.map((option) => {
-            const selected = answers[question.id]?.includes(option.id) ?? false;
-            return (
-              <button
-                key={option.id}
-                className={`option${selected ? " selected" : ""}`}
-                onClick={() =>
-                  setAnswers({
-                    ...answers,
-                    [question.id]: question.multiSelect
-                      ? selected
-                        ? answers[question.id].filter((id) => id !== option.id)
-                        : [...(answers[question.id] ?? []), option.id]
-                      : [option.id],
-                  })
-                }
-              >
-                <strong>{option.label}</strong>
-                {option.description ? <span>{option.description}</span> : null}
-              </button>
-            );
-          })}
-          {question.allowCustom ? (
-            <input
-              placeholder="Other answer"
-              value={custom[question.id] ?? ""}
-              onChange={(event) => setCustom({ ...custom, [question.id]: event.target.value })}
-            />
-          ) : null}
-        </fieldset>
-      ))}
-      <div className="row">
-        <button className="primary" onClick={() => onReply(buildQuestionReply(prompt.questions, answers, custom))}>
-          Answer
-        </button>
-        <button onClick={() => onReply({ kind: "skipped" })}>Skip</button>
-      </div>
-    </div>
-  );
-}
-
-function Composer({
-  placeholder,
-  running,
-  disabled,
-  onSend,
-  onStop,
-  context,
-  tools,
-  children,
-}: {
-  placeholder: string;
-  context?: React.ReactNode;
-  tools?: React.ReactNode;
-  running?: boolean;
-  disabled?: boolean;
-  onSend: (text: string) => Promise<void>;
-  onStop?: () => void;
-  children?: React.ReactNode;
-}) {
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const area = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    const el = area.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
-  }, [text]);
-  const submit = async () => {
-    const value = text.trim();
-    if (!value || sending || disabled) return;
-    setSending(true);
-    try {
-      await onSend(value);
-      setText("");
-    } finally {
-      setSending(false);
-    }
-  };
-  return (
-    <div className="composer">
-      {children}
-      <div className="composer-box">
-        {context ? <div className="composer-context">{context}</div> : null}
-        <textarea
-          ref={area}
-          rows={1}
-          value={text}
-          placeholder={placeholder}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            // Enter sends on a keyboard; on touch screens the button does.
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && matchMedia("(pointer: fine)").matches) {
-              event.preventDefault();
-              void submit();
-            }
-          }}
-        />
-        <div className="composer-bar">
-          <span className="composer-tools">{tools ?? (running ? <span className="composer-hint">Queues until the turn ends</span> : null)}</span>
-          {running && onStop ? (
-            <button className="square stop" onClick={onStop} aria-label="Stop">
-              <svg className="glyph" viewBox="0 0 16 16" aria-hidden><rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" /></svg>
-            </button>
-          ) : null}
-          <button className="square send" disabled={!text.trim() || sending || disabled} onClick={() => void submit()} aria-label="Send">
-            <svg className="glyph" viewBox="0 0 16 16" aria-hidden><path d="M8 12.5v-9M4 7.5l4-4 4 4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SessionView({ sessionId, branch, onError }: { sessionId: string; branch?: string; onError: (error: unknown) => void }) {
-  const [value, setValue] = useState<HostSession>();
-  const known = useRef<HostSession | undefined>(undefined);
-  const scroller = useRef<HTMLDivElement>(null);
-  const pinned = useRef(true);
-  useEffect(() => {
-    known.current = undefined;
-    pinned.current = true;
-    setValue(undefined);
-  }, [sessionId]);
-  const refresh = useCallback(async () => {
-    try {
-      const next = await syncSession(sessionId, known.current);
-      if (next !== known.current) {
-        known.current = next;
-        setValue(next);
-      }
-    } catch (error) {
-      onError(error);
-    }
-  }, [sessionId, onError]);
-  usePoll(refresh, value?.status === "running" ? 750 : 3000, [sessionId, value?.status === "running"]);
-  useEffect(() => {
-    const el = scroller.current;
-    if (el && pinned.current) el.scrollTop = el.scrollHeight;
-  }, [value]);
-  const run = async (input: Parameters<typeof command>[0]) => {
-    try {
-      await command(input);
-      await refresh();
-    } catch (error) {
-      onError(error);
-    }
-  };
-  if (!value) return <div className="empty">Loading…</div>;
-  const session = value.session;
-  const running = value.status === "running";
-  return (
-    <div className="session-view">
-      <div
-        className="transcript"
-        ref={scroller}
-        onScroll={(event) => {
-          const el = event.currentTarget;
-          pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-        }}
-      >
-        <div className="transcript-inner">
-          <Transcript
-            blocks={session.blocks}
-            cwd={session.cwd}
-            running={running}
-            canDecide={running && !!value.runId}
-            onDecide={(requestId, decision) =>
-              void run({ type: "approve", sessionId, runId: value.runId!, requestId, decision })
-            }
-          />
-          {value.status === "interrupted" ? <div className="system interrupt">Interrupted</div> : null}
-          {session.usageLimit ? (
-            <div className="system error">
-              Usage limit reached{session.usageLimit.resetsAt ? `, resets at ${new Date(session.usageLimit.resetsAt).toLocaleString()}` : ""}.
-              <div className="row">
-                <button onClick={() => void run({ type: "send", sessionId, text: "Continue." })}>Resume</button>
-                <button
-                  onClick={() =>
-                    void rpc("sessions.update", { projectId: value.projectId, sessionId, usageLimit: { resumeAtReset: true } }).then(refresh, onError)
-                  }
-                  disabled={session.usageLimit.resumeAtReset}
-                >
-                  {session.usageLimit.resumeAtReset ? "Resumes at reset" : "Resume at reset"}
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </div>
-      <Composer
-        placeholder={running ? "Queue a follow-up…" : "Ask, build…"}
-        running={running}
-        context={
-          <>
-            <span className="mono ellipsis">{tilde(session.worktreeCwd ?? session.cwd)}</span>
-            {branch ? <span className="mono"><BranchIcon /> {branch}</span> : null}
-          </>
-        }
-        onStop={value.runId ? () => void run({ type: "cancel", sessionId, runId: value.runId! }) : undefined}
-        onSend={(text) => run(running ? { type: "queue", sessionId, text } : { type: "send", sessionId, text })}
-      >
-        {session.pendingQuestion && value.runId ? (
-          <Question
-            prompt={session.pendingQuestion}
-            onReply={(reply) =>
-              void run({ type: "answer", sessionId, runId: value.runId!, requestId: session.pendingQuestion!.requestId, reply })
-            }
-          />
-        ) : null}
-        {session.queuedMessages?.length ? (
-          <div className="queue">
-            {session.queuedMessages.map((message) => (
-              <div key={message.id} className="queued">
-                <span>{message.text}</span>
-                <button className="icon" aria-label="Remove" onClick={() => void run({ type: "queueRemove", sessionId, messageId: message.id })}>✕</button>
-              </div>
-            ))}
-            {session.queueStatus === "paused" ? (
-              <button className="link" onClick={() => void run({ type: "queueResume", sessionId })}>Resume queue</button>
-            ) : null}
-          </div>
-        ) : null}
-      </Composer>
-    </div>
-  );
-}
-
-const MODES: { id: RuntimeMode; label: string }[] = [
-  { id: "supervised", label: "Ask" },
-  { id: "auto-accept-edits", label: "Accept edits" },
-  { id: "auto", label: "Auto" },
-  { id: "full-access", label: "Full access" },
-];
-
-/** A native select dressed as one of the composer's chips. */
-function Chip<T extends string>({
-  value,
-  onChange,
-  children,
-  icon,
-  label,
-  disabled,
-}: {
-  value: T;
-  onChange: (value: T) => void;
-  children: React.ReactNode;
-  icon?: React.ReactNode;
-  label: string;
-  disabled?: boolean;
-}) {
-  return (
-    <label className={`chip${disabled ? " disabled" : ""}`}>
-      {icon}
-      <span className="ellipsis">{label}</span>
-      <svg className="chip-caret" viewBox="0 0 16 16" aria-hidden><path d="M4.5 6.5L8 10l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
-      <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value as T)}>{children}</select>
-    </label>
-  );
-}
-
 /** The IDE's empty session: the project's name over a composer whose chips
  * pick the project, agent and model, permissions and account. */
 function NewSession({
@@ -628,7 +282,7 @@ function NewSession({
               ) : null}
             </>
           }
-          onSend={async (text) => {
+          onSend={async ({ text, attachments, plan }) => {
             if (!selected) return;
             try {
               const receipt = await command({
@@ -639,7 +293,13 @@ function NewSession({
                 runtimeMode: mode,
                 ...(account ? { providerAccountId: account } : {}),
               });
-              await command({ type: "send", sessionId: receipt.sessionId, text });
+              await command({
+                type: "send",
+                sessionId: receipt.sessionId,
+                text,
+                ...(attachments.length ? { attachments } : {}),
+                ...(plan ? { intent: "plan" as const } : {}),
+              });
               go({ kind: "session", projectId: current.id, sessionId: receipt.sessionId });
             } catch (error) {
               onError(error);
@@ -740,26 +400,20 @@ function App() {
               </span>
             ) : null}
           </div>
-          {summary ? (
-            <button
-              className="link"
-              title={summary.archived ? "Unarchive" : "Archive"}
-              onClick={() =>
-                void rpc("sessions.update", { projectId: summary.projectId, sessionId: summary.id, archived: !summary.archived }).then(
-                  () => !summary.archived && go({ kind: "home" }),
-                  onError,
-                )
-              }
-            >
-              {summary.archived ? "Unarchive" : "Archive"}
-            </button>
-          ) : null}
+          {summary ? <SessionMenu summary={summary} onError={onError} /> : null}
         </div>
         {error ? (
           <div className="toast" onClick={() => setError("")}>{error}</div>
         ) : null}
         {route.kind === "session" ? (
-          <SessionView key={route.sessionId} sessionId={route.sessionId} branch={summary?.branch} onError={onError} />
+          <SessionView
+            key={route.sessionId}
+            sessionId={route.sessionId}
+            projectId={route.projectId}
+            branch={summary?.branch}
+            accounts={accounts}
+            onError={onError}
+          />
         ) : route.kind === "new" && project ? (
           <NewSession key={project.id} host={host} project={project} accounts={accounts} onError={onError} />
         ) : (
@@ -773,6 +427,62 @@ function App() {
           </>
         )}
       </main>
+    </div>
+  );
+}
+
+/** Rename, pin, archive or delete the open session. */
+function SessionMenu({ summary, onError }: { summary: HostSessionSummary; onError: (error: unknown) => void }) {
+  const [open, setOpen] = useState(false);
+  const update = (patch: Record<string, unknown>) =>
+    rpc("sessions.update", { projectId: summary.projectId, sessionId: summary.id, ...patch }).catch(onError);
+  const actions: [string, () => unknown][] = [
+    [
+      "Rename",
+      () => {
+        const title = prompt("Session name", sessionDisplayTitle(summary.title, summary.harness));
+        if (title?.trim()) void update({ title: title.trim() });
+      },
+    ],
+    [summary.pinned ? "Unpin" : "Pin", () => void update({ pinned: !summary.pinned })],
+    [
+      summary.archived ? "Unarchive" : "Archive",
+      () => void update({ archived: !summary.archived }).then(() => !summary.archived && go({ kind: "home" })),
+    ],
+    [
+      "Delete",
+      () => {
+        if (!confirm(`Delete "${sessionDisplayTitle(summary.title, summary.harness)}"? Its transcript is removed from the host.`)) return;
+        void rpc("sessions.delete", { projectId: summary.projectId, sessionId: summary.id }).then(() => go({ kind: "home" }), onError);
+      },
+    ],
+  ];
+  return (
+    <div className="menu-anchor">
+      <button className="icon" aria-label="Session actions" onClick={() => setOpen(!open)}>
+        <svg className="glyph" viewBox="0 0 16 16" aria-hidden>
+          <circle cx="3.5" cy="8" r="1.2" fill="currentColor" /><circle cx="8" cy="8" r="1.2" fill="currentColor" /><circle cx="12.5" cy="8" r="1.2" fill="currentColor" />
+        </svg>
+      </button>
+      {open ? (
+        <>
+          <div className="menu-backdrop" onClick={() => setOpen(false)} />
+          <div className="popover">
+            {actions.map(([label, action]) => (
+              <button
+                key={label}
+                className={label === "Delete" ? "danger" : ""}
+                onClick={() => {
+                  setOpen(false);
+                  action();
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
