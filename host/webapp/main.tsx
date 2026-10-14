@@ -14,6 +14,7 @@ import { command, describe, login, logout, rpc, Unauthorized } from "./api";
 import { SessionView } from "./SessionView";
 import { ChangesPanel, FolderBrowser } from "./workspace";
 import { AutomationsPage, ColleaguesPage, FilesPanel } from "./extras";
+import { backgroundUrl, ProjectBackground, ProjectBadge, ProjectMenu, visibleProjects, type HostRailState } from "./rail";
 import { ago, BranchIcon, Chip, Composer, go, MODES, tilde, useNotifications, usePoll, useRoute, type Route } from "./ui";
 import { HarnessIcon } from "../../src/features/sessions/ui/HarnessIcon";
 import { findModel, setHarnessModels } from "../../src/features/sessions/model/models";
@@ -122,12 +123,20 @@ function Sidebar({
   sessions,
   accounts,
   route,
+  rail,
+  allProjects,
+  onRail,
+  onError,
   onClose,
   onOpenFolder,
   onLogout,
 }: {
   host: HostDescriptor;
   projects: HostProject[];
+  allProjects: HostProject[];
+  rail?: HostRailState;
+  onRail: (rail: HostRailState) => void;
+  onError: (error: unknown) => void;
   sessions: Record<string, HostSessionSummary[]>;
   accounts: HostAccountSummary[];
   route: Route;
@@ -170,7 +179,11 @@ function Sidebar({
           return (
             <section key={project.id}>
               <div className="project">
-                <span title={project.cwd}>{project.name}</span>
+                <ProjectBadge cwd={project.cwd} busy={list.some((session) => session.status === "running")} />
+                <span className="project-name ellipsis" title={project.cwd}>{project.name}</span>
+                {host.capabilities.includes("projects.rail") ? (
+                  <ProjectMenu project={project} rail={rail} projects={allProjects} onRail={onRail} onError={onError} />
+                ) : null}
                 <button
                   className="icon"
                   aria-label={`New session in ${project.name}`}
@@ -236,12 +249,14 @@ function NewSession({
   project,
   projects,
   accounts,
+  background,
   onError,
 }: {
   host: HostDescriptor;
   project: HostProject;
   projects?: HostProject[];
   accounts: HostAccountSummary[];
+  background?: (cwd: string) => string | undefined;
   onError: (error: unknown) => void;
 }) {
   const [projectId, setProjectId] = useState(project.id);
@@ -292,6 +307,7 @@ function NewSession({
   }, [harness, accounts.length]);
   return (
     <div className="session-view">
+      <ProjectBackground url={background?.(current.cwd)} />
       <div className="empty-session">
         <div className="empty-title ellipsis">{current.name}</div>
         <Composer
@@ -383,6 +399,7 @@ function App() {
   const [projects, setProjects] = useState<HostProject[]>([]);
   const [sessions, setSessions] = useState<Record<string, HostSessionSummary[]>>({});
   const [accounts, setAccounts] = useState<HostAccountSummary[]>([]);
+  const [rail, setRail] = useState<HostRailState>();
   const [menu, setMenu] = useState(false);
   const [changes, setChanges] = useState(false);
   const [files, setFiles] = useState(false);
@@ -420,6 +437,7 @@ function App() {
         );
         setSessions(Object.fromEntries(entries));
         setAccounts(await rpc<HostAccountSummary[]>("accounts.list"));
+        if (host.capabilities.includes("projects.rail")) setRail(await rpc<HostRailState>("projects.rail"));
       } catch (reason) {
         onError(reason);
       }
@@ -427,6 +445,7 @@ function App() {
     5000,
     [host?.environmentId],
   );
+  const shown = useMemo(() => visibleProjects(projects, rail), [projects, rail]);
   const summary = useMemo(() => {
     if (route.kind !== "session") return undefined;
     return sessions[route.projectId]?.find((session) => session.id === route.sessionId);
@@ -445,7 +464,11 @@ function App() {
     <div className={`app${menu ? " menu-open" : ""}`}>
       <Sidebar
         host={host}
-        projects={projects}
+        projects={shown}
+        allProjects={projects}
+        rail={rail}
+        onRail={setRail}
+        onError={onError}
         sessions={sessions}
         accounts={accounts}
         route={route}
@@ -510,6 +533,7 @@ function App() {
             branch={summary?.branch}
             accounts={accounts}
             review={host.capabilities.includes("sessions.review")}
+            background={project ? backgroundUrl(project.cwd, rail) : undefined}
             onError={onError}
           />
         ) : route.kind === "colleagues" ? (
@@ -517,13 +541,13 @@ function App() {
         ) : route.kind === "automations" ? (
           <AutomationsPage onError={onError} />
         ) : route.kind === "new" && project ? (
-          <NewSession key={project.id} host={host} project={project} accounts={accounts} onError={onError} />
+          <NewSession key={project.id} host={host} project={project} accounts={accounts} background={(cwd) => backgroundUrl(cwd, rail)} onError={onError} />
         ) : (
           <>
             <Home sessions={sessions} />
             {projects.length ? (
               <div className="wide-only">
-                <NewSession host={host} project={recentProject(projects, sessions)} projects={projects} accounts={accounts} onError={onError} />
+                <NewSession host={host} project={recentProject(shown, sessions)} projects={shown} accounts={accounts} background={(cwd) => backgroundUrl(cwd, rail)} onError={onError} />
               </div>
             ) : null}
           </>
@@ -538,9 +562,17 @@ function App() {
           onClose={() => setBrowsing(false)}
           onError={onError}
           onOpen={(cwd) =>
-            void rpc<HostProject>("projects.open", { cwd }).then((opened) => {
+            void rpc<HostProject>("projects.open", { cwd }).then(async (opened) => {
               setBrowsing(false);
               setProjects((list) => (list.some((item) => item.id === opened.id) ? list : [...list, opened]));
+              // An opened folder joins the list, as it joins the desktop's rail.
+              if (rail && !shown.some((item) => item.cwd === opened.cwd))
+                setRail(
+                  await rpc<HostRailState>("projects.setRail", {
+                    projects: [...shown.map((item) => item.cwd), opened.cwd],
+                    archived: rail.archived.filter((cwd) => cwd !== opened.cwd),
+                  }).catch(() => rail),
+                );
               go({ kind: "new", projectId: opened.id });
             }, onError)
           }

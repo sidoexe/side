@@ -31,6 +31,7 @@ import { HostEngine } from "./engine";
 import { hostProviders } from "./providers";
 import { createHostServer } from "./server";
 import { HostPush } from "./push";
+import { HostRail } from "./rail";
 import {
   REMOTE_PROVIDERS,
   type RemoteProvider,
@@ -269,6 +270,7 @@ Connect another computer using an SSH forward to the loopback port.`);
     engine.app = app;
     engine.push = new HostPush(join(directory, "push.json"));
     engine.push.watch(store);
+    engine.rail = new HostRail(join(directory, "rail"));
     const appCli = appCliCommand();
     backend.sessionEnv = (sessionId) => ({
       MONOCODE_APP_ENDPOINT: `http://127.0.0.1:${port}/app`,

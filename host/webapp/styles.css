@@ -437,3 +437,22 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: r
 button.session { text-align: left; width: 100%; }
 .sidebar footer { height: auto; min-height: 40px; flex-wrap: wrap; row-gap: 2px; column-gap: 12px; padding: 8px 14px; }
 .sidebar footer > * { white-space: nowrap; }
+
+/* Projects as the desktop rail draws them, with their background images. */
+.project { justify-content: flex-start; gap: 7px; }
+.project-name { flex: 1; }
+.project-badge { display: grid; place-items: center; width: 16px; height: 16px; flex: none; }
+.mascot { width: 12px; height: 12px; display: block; }
+.mascot-active .mascot-talk { animation: mascot-talk 0.6s steps(1) infinite; }
+.mascot-active .mascot-rest { animation: mascot-rest 0.6s steps(1) infinite; }
+@keyframes mascot-talk { 0% { opacity: 0; } 50% { opacity: 1; } }
+@keyframes mascot-rest { 0% { opacity: 1; } 50% { opacity: 0; } }
+.project .menu-anchor .icon { width: 22px; height: 22px; }
+.project .popover { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--text); top: 26px; }
+.session-view { position: relative; }
+.project-background {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-size: cover; background-position: center; opacity: 0.2;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0,0,0,0.55) 100%); mask-image: linear-gradient(to bottom, #000 0%, rgba(0,0,0,0.55) 100%);
+}
+.session-view > :not(.project-background) { position: relative; z-index: 1; }

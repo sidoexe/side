@@ -14,6 +14,7 @@ import { command, rpc, syncSession } from "./api";
 import { BranchIcon, Chip, Composer, MODES, Question, tilde, usePoll, type Outgoing } from "./ui";
 import { Transcript } from "./Transcript";
 import { ReviewCard } from "./workspace";
+import { ProjectBackground } from "./rail";
 
 /** The open session's settings as chips: model, effort, permissions and
  * account. A change applies to the next turn, as on the desktop. */
@@ -83,8 +84,10 @@ export function SessionView({
   branch,
   accounts,
   review,
+  background,
   onError,
 }: {
+  background?: string;
   sessionId: string;
   projectId: string;
   branch?: string;
@@ -163,6 +166,7 @@ export function SessionView({
     }).catch(() => undefined);
   return (
     <div className="session-view">
+      <ProjectBackground url={background} />
       <div
         className="transcript"
         ref={scroller}

@@ -8,6 +8,7 @@ import { hostCommitMessage } from "./commit-message";
 import { hostname, homedir } from "node:os";
 import { execFile } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import { promisify } from "node:util";
 import {
   HOST_PROTOCOL_VERSION,
@@ -174,6 +175,10 @@ export function createHostServer(
     if (!engine.accountLogins) throw new Error("Signing in is unavailable on this host");
     return engine.accountLogins;
   };
+  const rail = () => {
+    if (!engine.rail) throw new Error("The project rail is unavailable on this host");
+    return engine.rail;
+  };
   const push = () => {
     if (!engine.push) throw new Error("Notifications are unavailable on this host");
     return engine.push;
@@ -250,6 +255,20 @@ export function createHostServer(
       // The browser app reaches the same methods at /web/rpc, from its own
       // page only, with the device credential in an HttpOnly cookie.
       const web = request.url === "/web/rpc";
+      // A project's background image, for the signed-in browser app.
+      if (request.method === "GET" && request.url?.startsWith("/web/background?")) {
+        webSecurityHeaders(response);
+        const token = webToken(request);
+        const cwd = new URL(request.url, "http://host").searchParams.get("cwd") ?? "";
+        const image = token && engine.store.authenticated(token) ? engine.rail?.background(cwd) : undefined;
+        if (!image) {
+          response.writeHead(token && engine.store.authenticated(token) ? 404 : 401).end();
+          return;
+        }
+        response.writeHead(200, { "Content-Type": image.type, "Cache-Control": "private, max-age=31536000, immutable" });
+        createReadStream(image.path).pipe(response);
+        return;
+      }
       if (!web && (request.url === "/web" || request.url?.startsWith("/web/"))) {
         await serveWeb(request, response, (token) => engine.store.authenticated(token), webRoot);
         return;
@@ -363,6 +382,7 @@ export function createHostServer(
                 ...(engine.automations ? ["automations"] : []),
                 ...(engine.app ? ["app"] : []),
                 ...(engine.push ? ["push"] : []),
+                ...(engine.rail ? ["projects.rail"] : []),
                 "accounts",
                 "accounts.refresh",
                 "accounts.balance",
@@ -790,6 +810,18 @@ export function createHostServer(
             break;
           case "automations.updateRun":
             result = automations().updateRun(params);
+            break;
+          case "projects.rail":
+            result = rail().get();
+            break;
+          case "projects.setRail":
+            result = rail().set(params);
+            break;
+          case "projects.setBackground":
+            result = rail().setBackground(params);
+            break;
+          case "projects.clearBackground":
+            result = rail().clearBackground(params);
             break;
           case "push.key":
             result = { publicKey: push().publicKey() };
