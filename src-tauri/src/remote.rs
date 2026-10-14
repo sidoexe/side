@@ -382,6 +382,7 @@ fn supported_remote_method(method: &str) -> bool {
             | "projects.list"
             | "projects.browse"
             | "projects.open"
+            | "projects.setRail"
             | "models.list"
             | "sessions.list"
             | "sessions.update"

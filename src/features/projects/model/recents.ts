@@ -270,7 +270,10 @@ export function loadProjectRailOrder(): string[] {
 }
 
 export function saveProjectRailOrder(order: string[]) {
+  const before = localStorage.getItem(RAIL_ORDER_KEY);
   savePathList(RAIL_ORDER_KEY, order.map(normalize));
+  // Only an actual reorder is news; the rail saves its order as it renders.
+  if (localStorage.getItem(RAIL_ORDER_KEY) !== before) notifyProjectPathsChanged();
 }
 
 export function loadPinnedProjects(): string[] {
