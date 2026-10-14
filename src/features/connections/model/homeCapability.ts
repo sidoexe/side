@@ -18,6 +18,11 @@ export function machineCapabilities(machine: RemoteMachine): Promise<string[]> {
   return capabilities;
 }
 
+/** Asks a machine again, after its host was updated. */
+export function forgetCapabilities(machineId: string): void {
+  described.delete(machineId);
+}
+
 /** The home machine, when its host advertises `capability`. An unreachable
  * host rejects rather than reading as absent, so callers never fall back to
  * this computer's own copy while the shared one is merely out of reach. */
