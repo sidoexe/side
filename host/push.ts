@@ -9,20 +9,39 @@ import {
 } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { HostStore } from "./store";
+import {
+  apnsToken,
+  apnsTokenGone,
+  loadApnsConfig,
+  sendApns,
+  type ApnsConfig,
+  type ApnsDevice,
+  type ApnsSend,
+} from "./apns";
 import { sessionDisplayTitle } from "../src/features/sessions/model/session";
 
 /**
  * Web Push for the browser app: the host keeps a VAPID key and the browsers
  * subscribed to it, watches its sessions, and tells them when one needs an
  * answer or finishes. Payloads are encrypted as RFC 8291 (aes128gcm) asks.
+ * The iPhone app registers an APNs token instead, sent through Apple once
+ * the host has an APNs key.
  */
 
 export type PushSubscriptionJSON = { endpoint: string; keys: { p256dh: string; auth: string } };
 type PushState = {
   vapid: { publicKey: string; privateKey: string };
   subscriptions: (PushSubscriptionJSON & { createdAt: number })[];
+  apns?: ApnsDevice[];
 };
-export type PushMessage = { title: string; body: string; url: string; tag: string };
+export type PushMessage = {
+  title: string;
+  body: string;
+  url: string;
+  tag: string;
+  projectId?: string;
+  sessionId?: string;
+};
 
 const b64url = (bytes: Buffer) => bytes.toString("base64url");
 
@@ -53,12 +72,81 @@ export class HostPush {
   private state: PushState;
   private seen = new Map<string, { running: boolean; needsInput: boolean }>();
   private timer?: ReturnType<typeof setInterval>;
+  private apnsAuthorization?: { value: string; at: number };
 
   constructor(
     private readonly file: string,
     private readonly send: typeof fetch = fetch,
+    private readonly apns: { config?: ApnsConfig; send: ApnsSend } = { config: loadApnsConfig(file), send: sendApns },
   ) {
     this.state = this.load();
+  }
+
+  /** Whether this host can reach the iPhone app through Apple. */
+  apnsEnabled(): boolean {
+    return !!this.apns.config;
+  }
+
+  registerApns(params: Record<string, unknown>): { registered: true } {
+    const token = String(params.token ?? "");
+    const environment: ApnsDevice["environment"] = params.environment === "production" ? "production" : "development";
+    const bundleId = String(params.bundleId ?? "");
+    if (!/^[0-9a-f]{64,200}$/.test(token) || !/^[A-Za-z0-9.-]+$/.test(bundleId))
+      throw new Error("Invalid APNs registration");
+    this.state.apns = [
+      ...(this.state.apns ?? []).filter((device) => device.token !== token),
+      { token, environment, bundleId, createdAt: Date.now() },
+    ].slice(-20);
+    this.write();
+    return { registered: true };
+  }
+
+  unregisterApns(token: unknown): { registered: false } {
+    this.state.apns = (this.state.apns ?? []).filter((device) => device.token !== token);
+    this.write();
+    return { registered: false };
+  }
+
+  private listeners(): number {
+    return this.state.subscriptions.length + (this.apns.config ? (this.state.apns?.length ?? 0) : 0);
+  }
+
+  /** APNs refuses a provider token older than an hour, and one renewed more
+   * often than every twenty minutes. */
+  private apnsBearer(config: ApnsConfig): string {
+    const now = Date.now();
+    if (!this.apnsAuthorization || now - this.apnsAuthorization.at > 40 * 60_000)
+      this.apnsAuthorization = { value: apnsToken(config, now), at: now };
+    return this.apnsAuthorization.value;
+  }
+
+  private async notifyApns(message: PushMessage): Promise<void> {
+    const config = this.apns.config;
+    if (!config || !this.state.apns?.length) return;
+    const gone: string[] = [];
+    await Promise.all(
+      this.state.apns.map(async (device) => {
+        try {
+          const result = await this.apns.send(device, this.apnsBearer(config), {
+            title: message.title,
+            body: message.body,
+            collapseId: message.tag,
+            threadId: message.sessionId ?? message.tag,
+            data: {
+              ...(message.projectId ? { projectId: message.projectId } : {}),
+              ...(message.sessionId ? { sessionId: message.sessionId } : {}),
+            },
+          });
+          if (apnsTokenGone(result)) gone.push(device.token);
+        } catch {
+          /* the next event tries again */
+        }
+      }),
+    );
+    if (gone.length) {
+      this.state.apns = this.state.apns.filter((device) => !gone.includes(device.token));
+      this.write();
+    }
   }
 
   private load(): PushState {
@@ -136,8 +224,9 @@ export class HostPush {
   async notify(message: PushMessage): Promise<void> {
     const payload = Buffer.from(JSON.stringify(message));
     const gone: string[] = [];
-    await Promise.all(
-      this.state.subscriptions.map(async (subscription) => {
+    await Promise.all([
+      this.notifyApns(message),
+      ...this.state.subscriptions.map(async (subscription) => {
         try {
           const response = await this.send(subscription.endpoint, {
             method: "POST",
@@ -157,7 +246,7 @@ export class HostPush {
           /* the next event tries again */
         }
       }),
-    );
+    ]);
     if (gone.length) {
       this.state.subscriptions = this.state.subscriptions.filter((entry) => !gone.includes(entry.endpoint));
       this.write();
@@ -179,10 +268,11 @@ export class HostPush {
         if (first || !before || session.archived) continue;
         const title = sessionDisplayTitle(session.title, session.harness) || "Session";
         const url = `/web/#/s/${encodeURIComponent(project.id)}/${encodeURIComponent(session.id)}`;
+        const target = { url, projectId: project.id, sessionId: session.id };
         if (now.needsInput && !before.needsInput)
-          messages.push({ title: `${project.name} · needs you`, body: title, url, tag: `input-${session.id}` });
+          messages.push({ title: `${project.name} · needs you`, body: title, tag: `input-${session.id}`, ...target });
         else if (before.running && !now.running && !now.needsInput)
-          messages.push({ title: `${project.name} · done`, body: title, url, tag: `done-${session.id}` });
+          messages.push({ title: `${project.name} · done`, body: title, tag: `done-${session.id}`, ...target });
       }
     }
     // Keep sessions seen before, so a project that is briefly missing does
@@ -194,7 +284,7 @@ export class HostPush {
 
   watch(store: HostStore, every = 2000) {
     this.timer = setInterval(() => {
-      if (!this.state.subscriptions.length) {
+      if (!this.listeners()) {
         this.seen.clear();
         return;
       }

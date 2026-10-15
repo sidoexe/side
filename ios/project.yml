@@ -1,0 +1,43 @@
+name: SideMobile
+options:
+  bundleIdPrefix: dev.sidoexe
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: J2SCD4VA8D
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "0.28.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  SideMobile:
+    type: application
+    platform: iOS
+    sources: [SideMobile]
+    entitlements:
+      path: SideMobile/Support/SideMobile.entitlements
+      properties:
+        aps-environment: development
+    info:
+      path: SideMobile/Support/Info.plist
+      properties:
+        CFBundleDisplayName: sIDE
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIBackgroundModes: [remote-notification]
+        CFBundleURLTypes:
+          - CFBundleURLName: dev.sidoexe.side.mobile.pair
+            CFBundleURLSchemes: [side]
+        NSPhotoLibraryUsageDescription: Attach photos to a message.
+        # Hosts on a tailnet are often plain http on a 100.x address.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.sidoexe.side.mobile
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

@@ -2,7 +2,9 @@ name: Release
 
 # A `v*` tag publishes a GitHub release: the macOS DMG, the updater archive
 # and its `latest.json` feed (which installed copies poll), and the host
-# packages that SSH setup and "Update Host" download for that exact version.
+# packages that SSH setup and "Update Host" download for that exact version,
+# and the unsigned iOS IPA that LiveContainer installs from
+# releases/latest/download/SideMobile.ipa.
 # Running it by hand builds everything without publishing. A push to main
 # builds without publishing too, which keeps the Rust cache warm: a tag run
 # can only restore caches saved on main, not ones from earlier tags.
@@ -103,10 +105,25 @@ jobs:
             target/aarch64-apple-darwin/release/bundle/macos/sIDE.app.tar.gz.sig
           if-no-files-found: error
 
+  ios:
+    name: iOS app (unsigned IPA)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: brew install xcodegen
+      - run: ios/build-ipa.sh --unsigned
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-packages
+          path: ios/build/SideMobile.ipa
+          if-no-files-found: error
+
   release:
     name: Publish the GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [host, macos]
+    needs: [host, macos, ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -122,6 +139,10 @@ jobs:
         with:
           name: host-packages
           path: dist/host
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-packages
+          path: dist/ios
 
       - name: Write the updater feed
         run: |
@@ -154,7 +175,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           PRERELEASE=false
           [[ "$VERSION" == *-* ]] && PRERELEASE=true
-          mapfile -t FILES < <(find dist/macos dist/host -type f; echo dist/latest.json)
+          mapfile -t FILES < <(find dist/macos dist/host dist/ios -type f; echo dist/latest.json)
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "${FILES[@]}" --clobber --repo "$GITHUB_REPOSITORY"
           else

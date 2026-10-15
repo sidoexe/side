@@ -395,6 +395,7 @@ export function createHostServer(
                 ...(engine.automations ? ["automations"] : []),
                 ...(engine.app ? ["app"] : []),
                 ...(engine.push ? ["push"] : []),
+                ...(engine.push?.apnsEnabled() ? ["push.apns"] : []),
                 ...(engine.rail ? ["projects.rail"] : []),
                 ...(engine.webApps ? ["webApps"] : []),
                 "accounts",
@@ -882,6 +883,12 @@ export function createHostServer(
             break;
           case "push.unsubscribe":
             result = push().unsubscribe(params.endpoint);
+            break;
+          case "push.registerApns":
+            result = push().registerApns(params);
+            break;
+          case "push.unregisterApns":
+            result = push().unregisterApns(params.token);
             break;
           case "app.take":
             result = engine.app?.take(params.sessionId, engine.store.deviceId(token)) ?? [];

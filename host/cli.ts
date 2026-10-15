@@ -109,6 +109,7 @@ async function main() {
   status                Check the running host
   stop                  Stop the host and interrupt its running turns
   pair --name <device>  Issue a device credential (shown once)
+    [--url <address>]   Also print a side:// link the iPhone app pairs with
   devices               List paired devices
   revoke <device-id>    Revoke a device credential
   app ACTION            The sIDE app CLI, for agents this host runs (app --help)
@@ -208,9 +209,14 @@ Connect another computer using an SSH forward to the loopback port.`);
   const store = new HostStore(join(directory, "host.db"));
   if (command === "pair") {
     const device = store.issueDevice(option("name", "Desktop"));
+    // The address the iPhone app reaches this host at, as a link it opens.
+    const url = option("url", "");
+    const link = url
+      ? `side://pair?${new URLSearchParams({ host: url, token: device.token })}`
+      : undefined;
     console.log(
       JSON.stringify(
-        { ...device, environmentId: store.environmentId },
+        { ...device, environmentId: store.environmentId, ...(link ? { link } : {}) },
         null,
         args.includes("--json") ? undefined : 2,
       ),

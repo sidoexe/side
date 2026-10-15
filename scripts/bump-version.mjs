@@ -56,4 +56,10 @@ replaceFirst(
   `$1${version}$2`,
 );
 
+replaceFirst(
+  join(root, "ios/project.yml"),
+  /(MARKETING_VERSION: ")[^"]+(")/,
+  `$1${version}$2`,
+);
+
 console.log(`version ${version}`);

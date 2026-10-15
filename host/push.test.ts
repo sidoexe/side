@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createDecipheriv, createECDH, hkdfSync, randomBytes, verify, createPublicKey } from "node:crypto";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { createDecipheriv, createECDH, generateKeyPairSync, hkdfSync, randomBytes, verify, createPublicKey } from "node:crypto";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encryptPayload, HostPush } from "./push";
+import { loadApnsConfig, type ApnsDevice, type ApnsNotification } from "./apns";
 import type { HostStore } from "./store";
 
 const dirs: string[] = [];
@@ -114,5 +115,79 @@ describe("web push", () => {
       ["app · done", "s2"],
     ]);
     expect(push.check(store)).toEqual([]);
+  });
+});
+
+describe("apple push", () => {
+  const token = "ab".repeat(32);
+  function apnsSetup(results: { status: number; reason?: string }[] = []) {
+    const dir = mkdtempSync(join(tmpdir(), "side-apns-"));
+    dirs.push(dir);
+    const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+    writeFileSync(join(dir, "apns.p8"), privateKey.export({ format: "pem", type: "pkcs8" }));
+    writeFileSync(join(dir, "apns.json"), JSON.stringify({ keyId: "KEY123", teamId: "TEAM456" }));
+    const file = join(dir, "push.json");
+    const calls: { device: ApnsDevice; authorization: string; notification: ApnsNotification }[] = [];
+    const push = new HostPush(file, (async () => new Response(null, { status: 201 })) as typeof fetch, {
+      config: loadApnsConfig(file),
+      send: async (device, authorization, notification) => {
+        calls.push({ device, authorization, notification });
+        return results.shift() ?? { status: 200 };
+      },
+    });
+    return { dir, file, push, calls, publicKey };
+  }
+
+  it("is off until the host has a key, and a broken key does not stop the host", () => {
+    const { push } = setup();
+    expect(push.apnsEnabled()).toBe(false);
+    const { dir, file } = apnsSetup();
+    writeFileSync(join(dir, "apns.p8"), "not a key");
+    expect(loadApnsConfig(file)).toBeUndefined();
+  });
+
+  it("refuses a registration that is not an APNs token", () => {
+    const { push } = apnsSetup();
+    expect(() => push.registerApns({ token: "nope", bundleId: "dev.sidoexe.side.mobile" })).toThrow();
+    expect(() => push.registerApns({ token, bundleId: "bad id/" })).toThrow();
+  });
+
+  it("sends a signed notification that opens its session, and forgets a token Apple rejects", async () => {
+    const { file, push, calls, publicKey } = apnsSetup([{ status: 200 }, { status: 410 }]);
+    expect(push.apnsEnabled()).toBe(true);
+    push.registerApns({ token, environment: "production", bundleId: "dev.sidoexe.side.mobile" });
+    const message = {
+      title: "app · needs you", body: "Fix the build", url: "/web/#/s/p/s", tag: "input-s", projectId: "p", sessionId: "s",
+    };
+    await push.notify(message);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].device).toMatchObject({ token, environment: "production", bundleId: "dev.sidoexe.side.mobile" });
+    expect(calls[0].notification).toEqual({
+      title: "app · needs you", body: "Fix the build", collapseId: "input-s", threadId: "s", data: { projectId: "p", sessionId: "s" },
+    });
+    const [h, c, sig] = calls[0].authorization.split(".");
+    expect(JSON.parse(Buffer.from(h, "base64url").toString())).toEqual({ alg: "ES256", kid: "KEY123" });
+    expect(JSON.parse(Buffer.from(c, "base64url").toString()).iss).toBe("TEAM456");
+    expect(verify("sha256", Buffer.from(`${h}.${c}`), { key: publicKey, dsaEncoding: "ieee-p1363" }, Buffer.from(sig, "base64url"))).toBe(true);
+    await push.notify(message);
+    // The provider token is reused rather than renewed per notification.
+    expect(calls[1].authorization).toBe(calls[0].authorization);
+    calls.length = 0;
+    await push.notify(message);
+    expect(calls).toHaveLength(0);
+    expect(new HostPush(file).apnsEnabled()).toBe(true);
+  });
+
+  it("names the session a notification is about", () => {
+    const { push } = setup();
+    const sessions = new Map([["s1", { status: "running", needsInput: false }]]);
+    const store = {
+      projects: () => [{ id: "p", name: "app", cwd: "/x" }],
+      summaries: () =>
+        [...sessions].map(([id, state]) => ({ id, projectId: "p", title: `claude · ${id}`, harness: "claude", updatedAt: 1, revision: 1, ...state })),
+    } as unknown as HostStore;
+    push.check(store);
+    sessions.set("s1", { status: "idle", needsInput: false });
+    expect(push.check(store)).toMatchObject([{ projectId: "p", sessionId: "s1", tag: "done-s1" }]);
   });
 });
