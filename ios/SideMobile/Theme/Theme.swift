@@ -14,9 +14,10 @@ enum Theme {
     static let fillHover = text.opacity(0.15)
     /// The sidebar: the background with a little of the content mixed in.
     static let sidebar = Color(white: 0.157)
-    static let accent = Color(hue: 211 / 360, saturation: 0.92, lightness: 0.62)
+    /// The desktop is monochrome: what it emphasises is drawn in the content
+    /// colour (the white send button), not in a hue.
+    static let accent = text
     static let link = Color(hex: 0x7DD3FC)
-    static let heading = Color(hex: 0xF9A8C9)
     static let add = Color(hex: 0x10B981)
     static let addFg = Color(hex: 0x6EE7B7)
     static let del = Color(hex: 0xF43F5E)
@@ -226,9 +227,44 @@ struct ThemeButtonStyle: ButtonStyle {
             .font(.system(size: 13, weight: .medium))
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .foregroundStyle(primary ? Color.white : danger ? Theme.delFg : Theme.text)
-            .background(primary ? Theme.accent : Theme.fill, in: .rect(cornerRadius: 7))
+            .foregroundStyle(primary ? Theme.bg : danger ? Theme.delFg : Theme.text)
+            .background(primary ? Theme.text : Theme.fill, in: .rect(cornerRadius: 7))
             .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+extension ToolbarContent {
+    /// Plain icons in the bar, as on the desktop, rather than iOS 26's glass capsules.
+    @ToolbarContentBuilder
+    func flat() -> some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            sharedBackgroundVisibility(.hidden)
+        } else {
+            self
+        }
+    }
+}
+
+/// Whether a scroll view shows its end, give or take a line.
+func showsEnd(_ geometry: ScrollGeometry) -> Bool {
+    geometry.visibleRect.maxY >= geometry.contentSize.height - 80
+}
+
+/// Back to the latest message, shown once the reader scrolls up.
+struct JumpToEnd: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.down")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .frame(width: 32, height: 32)
+                .background(Theme.sidebar, in: .circle)
+                .overlay(Circle().strokeBorder(Theme.strokeStrong))
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .transition(.opacity)
     }
 }
 

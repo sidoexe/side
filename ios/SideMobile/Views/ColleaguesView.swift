@@ -86,6 +86,7 @@ struct ColleagueView: View {
     @State private var items: [TranscriptItem] = []
     @State private var inbox: [InboxMessage] = []
     @State private var now = Date()
+    @State private var atEnd = true
 
     private var canWrite: Bool { model.can("employees.inbox") }
 
@@ -112,7 +113,7 @@ struct ColleagueView: View {
                     if let mono { MonoAvatar(mono: mono, size: 16) }
                     Text(mono?.displayName ?? "Colleague").font(.system(size: 15, weight: .semibold))
                 }
-            }
+            }.flat()
         }
         .task(id: id) {
             files = try? await model.client?.rpc("employees.load", ["mono": id], as: MonoFiles.self)
@@ -149,9 +150,13 @@ struct ColleagueView: View {
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
-            .onChange(of: items.count + inbox.count) { proxy.scrollTo("end", anchor: .bottom) }
+            .onScrollGeometryChange(for: Bool.self, of: showsEnd) { _, end in atEnd = end }
+            .onChange(of: items.count + inbox.count) { if atEnd { proxy.scrollTo("end", anchor: .bottom) } }
             .safeAreaInset(edge: .bottom) {
-                Group {
+                VStack(spacing: 6) {
+                    if !atEnd {
+                        JumpToEnd { withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
+                    }
                     if canWrite {
                         ComposerView(
                             placeholder: "Message \(mono?.displayName ?? "")",

@@ -80,8 +80,9 @@ struct HomeView: View {
         .refreshable { await model.refresh() }
         .toolbarBackground(Theme.sidebar, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) { header }
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarLeading) { header }.flat()
+            ToolbarItem(placement: .topBarTrailing) {
+              HStack(spacing: 18) {
                 if model.can("projects.browse") {
                     NavigationLink(value: Route.browse) { Image(systemName: "folder.badge.plus") }
                 }
@@ -89,7 +90,9 @@ struct HomeView: View {
                     NavigationLink(value: Route.newSession(projectId: project.id)) { Image(systemName: "square.and.pencil") }
                 }
                 menu
-            }
+              }
+              .foregroundStyle(Theme.text)
+            }.flat()
         }
         .alert("Rename session", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             RenameField(initial: renaming?.displayName ?? "") { title in
@@ -326,7 +329,7 @@ struct UsageView: View {
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Theme.fill)
-                    Capsule().fill((used ?? 0) >= 90 ? Theme.del : Theme.accent)
+                    Capsule().fill((used ?? 0) >= 90 ? Theme.del : Theme.muted)
                         .frame(width: proxy.size.width * min(1, (used ?? 0) / 100))
                 }
             }

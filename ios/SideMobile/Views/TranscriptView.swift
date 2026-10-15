@@ -230,6 +230,7 @@ struct ApprovalCard: View {
     let block: Block
     let canDecide: Bool
     let onDecide: (Int, String) -> Void
+    @State private var decided = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -244,14 +245,15 @@ struct ApprovalCard: View {
             } else if canDecide, let approval = block.approval {
                 HStack(spacing: 6) {
                     Spacer()
-                    Button("Deny") { onDecide(approval.requestId, "deny") }.buttonStyle(ThemeButtonStyle())
-                    Button("Allow") { onDecide(approval.requestId, "allow") }.buttonStyle(ThemeButtonStyle(primary: true))
+                    Button("Deny") { decided += 1; onDecide(approval.requestId, "deny") }.buttonStyle(ThemeButtonStyle())
+                    Button("Allow") { decided += 1; onDecide(approval.requestId, "allow") }.buttonStyle(ThemeButtonStyle(primary: true))
                 }
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.amber.opacity(0.45)))
+        .sensoryFeedback(.success, trigger: decided)
     }
 }
 
@@ -466,7 +468,7 @@ struct DiffCard: View {
     }
 }
 
-/// Agent replies as the desktop renders Markdown: pink headings, lists,
+/// Agent replies as the desktop renders Markdown: headings, lists,
 /// quotes, tables and fenced code, inline code and links.
 struct MarkdownView: View {
     let text: String
@@ -543,7 +545,7 @@ struct MarkdownView: View {
                 case .paragraph(let text):
                     inline(text)
                 case .heading(_, let text):
-                    inline(text).fontWeight(.semibold).foregroundStyle(Theme.heading).padding(.top, size * 0.3)
+                    inline(text).fontWeight(.semibold).padding(.top, size * 0.3)
                 case .item(let marker, let indent, let text):
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(marker).foregroundStyle(Theme.muted).frame(minWidth: 12, alignment: .trailing)

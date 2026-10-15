@@ -37,6 +37,7 @@ struct ComposerView<Context: View, Tools: View>: View {
     @State private var photos: [PhotosPickerItem] = []
     @State private var importing = false
     @State private var failure: String?
+    @State private var sent = 0
     @FocusState private var focused: Bool
 
     private var canSend: Bool {
@@ -146,6 +147,7 @@ struct ComposerView<Context: View, Tools: View>: View {
         .background(Theme.bg.opacity(0.9), in: .rect(cornerRadius: 10))
         .background(Theme.fillSubtle, in: .rect(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(focused ? Theme.text.opacity(0.2) : Theme.strokeStrong))
+        .sensoryFeedback(.impact(weight: .light), trigger: sent)
         .onChange(of: seed?.nonce) {
             if let seed {
                 text = seed.text
@@ -172,6 +174,7 @@ struct ComposerView<Context: View, Tools: View>: View {
             text = ""
             attachments = []
             plan = false
+            sent += 1
         } catch {
             // The draft stays for another try.
             failure = error.localizedDescription

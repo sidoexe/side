@@ -12,6 +12,8 @@ struct SessionView: View {
     @State private var seed: (text: String, nonce: Int)?
     @State private var renaming = false
     @State private var deleting = false
+    /// Follows new output only while the end is on screen.
+    @State private var atEnd = true
 
     private var summary: HostSessionSummary? { model.summary(route) }
     private var title: String {
@@ -36,8 +38,8 @@ struct SessionView: View {
                     Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
                     Text(subtitle).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1)
                 }
-            }
-            ToolbarItem(placement: .topBarTrailing) { menu }
+            }.flat()
+            ToolbarItem(placement: .topBarTrailing) { menu }.flat()
         }
         .alert("Rename session", isPresented: $renaming) {
             RenameField(initial: title) { name in
@@ -104,10 +106,15 @@ struct SessionView: View {
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
-            .onChange(of: value.blocks.last?.text.count) { proxy.scrollTo("end", anchor: .bottom) }
-            .onChange(of: value.blocks.count) { proxy.scrollTo("end", anchor: .bottom) }
+            .onScrollGeometryChange(for: Bool.self, of: showsEnd) { _, end in atEnd = end }
+            .onChange(of: "\(value.blocks.count)-\(value.blocks.last?.text.count ?? 0)") {
+                if atEnd { proxy.scrollTo("end", anchor: .bottom) }
+            }
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 6) {
+                    if !atEnd {
+                        JumpToEnd { withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
+                    }
                     if let question = value.meta.pendingQuestion, value.runId != nil {
                         QuestionCard(prompt: question) { reply in
                             run(["type": "answer", "runId": value.runId!, "requestId": question.requestId, "reply": reply])
