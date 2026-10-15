@@ -77,6 +77,8 @@ export type HostSession = {
   updatedAt: number;
   archived?: boolean;
   pinned?: boolean;
+  /** Its last turn finished and the user has not checked it yet. */
+  toReview?: boolean;
   /** Temporary branch created by the composer for automatic first-turn naming. */
   autoWorktreeBranch?: string;
   /** Host-only: the revision at which each block last changed. */

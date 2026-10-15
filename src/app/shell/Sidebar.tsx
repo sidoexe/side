@@ -66,6 +66,7 @@ import type { OpenFileFn } from "../../features/search/model/search";
 import { sessionDisplayTitle } from "../../features/sessions/model/session";
 import { ParticleText } from "../../shared/ui/ParticleText";
 import { nextUnseenFinishedSessions } from "../../features/sessions/model/sessionDone";
+import { markSessionsReviewed } from "../../features/sessions/model/sessionReview";
 import { orchestrationTaskLabel } from "../../features/orchestration/model/orchestrationSummary";
 import {
   orderedSessionActionIds,
@@ -463,6 +464,7 @@ function SidebarComponent({
       title?: string;
       archived?: boolean;
       pinned?: boolean;
+      reviewed?: true;
       linkedWorkItem?: LinkedWorkItem | null;
     },
   ) => {
@@ -551,6 +553,13 @@ function SidebarComponent({
         void remoteDelete(sessionIds);
       }
     : onDeleteLocalSessions;
+  const onMarkSessionsChecked = remoteProject
+    ? (sessionIds: readonly string[]) => {
+        void Promise.all(
+          sessionIds.map((id) => remoteChange(id, { reviewed: true })),
+        );
+      }
+    : (sessionIds: readonly string[]) => markSessionsReviewed(sessionIds);
   const onSetSessionLinkedWorkItem = remoteProject
     ? (sessionId: string, item: LinkedWorkItem | undefined) => {
         void remoteChange(sessionId, { linkedWorkItem: item ?? null });
@@ -675,23 +684,26 @@ function SidebarComponent({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pendingFolderSessionIds = useRef(new Set<string>());
   const busyIdsRef = useRef(busySessionIds);
-  const focusedSessionIdRef = useRef(activeSessionId);
   const unseenFinishedLocalRef = useRef<Set<string>>(new Set());
-  if (
-    busyIdsRef.current !== busySessionIds ||
-    focusedSessionIdRef.current !== activeSessionId
-  ) {
+  if (busyIdsRef.current !== busySessionIds) {
     unseenFinishedLocalRef.current = nextUnseenFinishedSessions({
       previousBusyIds: busyIdsRef.current,
       busyIds: busySessionIds,
       previousUnseenIds: unseenFinishedLocalRef.current,
-      focusedSessionId: activeSessionId,
     });
     busyIdsRef.current = busySessionIds;
-    focusedSessionIdRef.current = activeSessionId;
   }
-  const unseenFinishedIds =
-    unseenFinishedIdsProp ?? unseenFinishedLocalRef.current;
+  // A host keeps its own sessions' done state, so every device sees it.
+  const remoteToReviewKey = remote.sessions
+    .flatMap((session) => (session.toReview ? [session.id] : []))
+    .join("\0");
+  const remoteToReviewIds = useMemo(
+    () => new Set(remoteToReviewKey ? remoteToReviewKey.split("\0") : []),
+    [remoteToReviewKey],
+  );
+  const unseenFinishedIds = remoteProject
+    ? remoteToReviewIds
+    : (unseenFinishedIdsProp ?? unseenFinishedLocalRef.current);
   // Revisits render straight from cache, so this is only ever true the first
   // time a project is opened.
   const pendingFirstLoad = remoteProject
@@ -1171,7 +1183,20 @@ function SidebarComponent({
     { kind: "sep" },
     { kind: "item", id: "ungroup", label: "Ungroup" },
   ];
+  const menuDoneSessionIds = menuSessionIds.filter((sessionId) =>
+    unseenFinishedIds.has(sessionId),
+  );
   const sessionMenuItems: ExplorerMenuItem[] = [
+    ...(menuDoneSessionIds.length > 0
+      ? [
+          {
+            kind: "item" as const,
+            id: "mark-checked",
+            label: "Mark checked",
+          },
+          { kind: "sep" as const },
+        ]
+      : []),
     ...(onCancelReminders && menuReminderTimes.length > 0
       ? [
           {
@@ -1340,7 +1365,12 @@ function SidebarComponent({
     const providerSessionId = menuSessions[0]?.providerSessionId;
     const archived = allMenuSessionsArchived;
     const pinned = allMenuSessionsPinned;
+    const doneIds = menuDoneSessionIds;
     closeSessionMenu();
+    if (id === "mark-checked") {
+      onMarkSessionsChecked(doneIds);
+      return;
+    }
     if (id === "reminder:cancel") {
       onCancelReminders?.(sessionIds);
       return;
@@ -1525,6 +1555,7 @@ function SidebarComponent({
     onSessionListDrop,
     onSessionContextMenu,
     onArchiveSession,
+    onMarkSessionsChecked,
     setRenamingSessionId,
     onDeleteSession,
   });
@@ -1536,6 +1567,7 @@ function SidebarComponent({
     onSessionListDrop,
     onSessionContextMenu,
     onArchiveSession,
+    onMarkSessionsChecked,
     setRenamingSessionId,
     onDeleteSession,
   };
@@ -1557,6 +1589,8 @@ function SidebarComponent({
         cardHandlers.current.onSessionContextMenu(sessionId, e),
       archive: (sessionId: string, archived: boolean) =>
         cardHandlers.current.onArchiveSession?.(sessionId, archived),
+      markChecked: (sessionId: string) =>
+        cardHandlers.current.onMarkSessionsChecked([sessionId]),
       rename: (sessionId: string) =>
         cardHandlers.current.setRenamingSessionId(sessionId),
       delete: (sessionId: string) =>
@@ -1617,6 +1651,7 @@ function SidebarComponent({
         onListDropTargetChange={setSessionDrop}
         onContextMenu={cardActions.contextMenu}
         onArchive={onArchiveSession ? cardActions.archive : undefined}
+        onMarkChecked={cardActions.markChecked}
         onRename={onRenameSession ? cardActions.rename : undefined}
         onDelete={onDeleteSession ? cardActions.delete : undefined}
       />
@@ -1625,6 +1660,15 @@ function SidebarComponent({
   const onSessionFiltersChange = (next: SessionSidebarFilters) => {
     setSessionFilters(next);
     saveSessionSidebarFilters(next);
+  };
+
+  const onShowProjectDone = (path: string) => {
+    onSessionFiltersChange({
+      ...sessionFilters,
+      status: { working: false, needsApproval: false, done: true },
+    });
+    onTabChange("sessions");
+    if (!sameProjectPath(path, cwd)) onSelectProject?.(path);
   };
 
   const onFilterButtonClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -2355,6 +2399,7 @@ function SidebarComponent({
           recents={recents}
           inboxUnseen={inboxUnseen}
           busyPaths={busyProjectPaths}
+          onShowProjectDone={onShowProjectDone}
           liveAgents={liveAgents}
           activeSessionId={activeSessionId}
           onSelectAgent={onSelectAgent}
@@ -2903,7 +2948,12 @@ function CompactRailMono({
           : "opacity-65 hover:bg-content/10 hover:opacity-100"
       }`}
     >
-      <MonoRailMascot name={mascot} color={color} avatar={avatar} status={status} />
+      <MonoRailMascot
+        name={mascot}
+        color={color}
+        avatar={avatar}
+        status={status}
+      />
       {unseen ? (
         <span
           aria-hidden
@@ -3402,6 +3452,7 @@ export const SessionCard = memo(function SessionCard({
   onListDropTargetChange,
   onContextMenu,
   onArchive,
+  onMarkChecked,
   onRename,
   onDelete,
 }: {
@@ -3436,6 +3487,8 @@ export const SessionCard = memo(function SessionCard({
     e: ReactMouseEvent<HTMLDivElement>,
   ) => void;
   onArchive?: (sessionId: string, archived: boolean) => void;
+  /** Clears its done state once the user has checked it. */
+  onMarkChecked?: (sessionId: string) => void;
   onRename?: (sessionId: string) => void;
   onDelete?: (sessionId: string) => void;
 }) {
@@ -3486,6 +3539,25 @@ export const SessionCard = memo(function SessionCard({
           <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-accent" />
           <span>Working...</span>
         </>
+      ) : done && onMarkChecked ? (
+        <button
+          type="button"
+          data-no-drag
+          data-tauri-drag-region="false"
+          title="Mark checked"
+          aria-label="Done, mark checked"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onMarkChecked(session.id);
+          }}
+          className="group/done flex cursor-pointer items-center gap-1 rounded hover:text-content"
+        >
+          <Check className="size-3" strokeWidth={2.25} />
+          <span className="group-hover/done:hidden">Done</span>
+          <span className="hidden group-hover/done:inline">Checked</span>
+        </button>
       ) : done ? (
         <>
           <Check className="size-3" strokeWidth={2.25} />

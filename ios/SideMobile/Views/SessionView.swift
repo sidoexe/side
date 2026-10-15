@@ -39,7 +39,18 @@ struct SessionView: View {
                     Text(subtitle).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1)
                 }
             }.flat()
-            ToolbarItem(placement: .topBarTrailing) { menu }.flat()
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 16) {
+                    if let summary, summary.done {
+                        Button("Mark checked", systemImage: "checkmark.circle") {
+                            Task { await model.markChecked(summary) }
+                        }
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(Theme.addFg)
+                    }
+                    menu
+                }
+            }.flat()
         }
         .alert("Rename session", isPresented: $renaming) {
             RenameField(initial: title) { name in
@@ -222,6 +233,9 @@ struct SessionView: View {
     private var menu: some View {
         Menu {
             if let summary {
+                if summary.done {
+                    Button("Mark checked", systemImage: "checkmark.circle") { Task { await model.markChecked(summary) } }
+                }
                 Button("Rename", systemImage: "pencil") { renaming = true }
                 Button(summary.pinned == true ? "Unpin" : "Pin", systemImage: "pin") {
                     Task { await model.update(summary, ["pinned": summary.pinned != true]) }

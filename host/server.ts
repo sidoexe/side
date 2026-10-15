@@ -480,6 +480,10 @@ export function createHostServer(
               if (typeof params.pinned !== "boolean") throw new Error("Invalid pin value");
               patch.pinned = params.pinned;
             }
+            if (params.reviewed !== undefined) {
+              if (params.reviewed !== true) throw new Error("Invalid review value");
+              patch.reviewed = true;
+            }
             if (params.linkedWorkItem !== undefined) {
               const item = params.linkedWorkItem;
               const parsed = item && typeof item === "object" && !Array.isArray(item)

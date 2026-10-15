@@ -202,6 +202,8 @@ export class HostStore {
       title?: string;
       archived?: boolean;
       pinned?: boolean;
+      /** The user checked its finished turn. */
+      reviewed?: boolean;
       linkedWorkItem?: LinkedWorkItem | null;
       /** `null` dismisses the limit notice; `resumeAtReset` arms the resume. */
       usageLimit?: null | { resumeAtReset: boolean };
@@ -217,6 +219,7 @@ export class HostStore {
           revision: current.revision + 1,
           archived: patch.archived ?? current.archived,
           pinned: patch.pinned ?? current.pinned,
+          toReview: patch.reviewed || patch.archived ? undefined : current.toReview,
           session: {
             ...current.session,
             ...(patch.title === undefined ? {} : { title: patch.title.trim() }),
@@ -367,6 +370,7 @@ export function summary(value: HostSession): HostSessionSummary {
     createdAt: value.createdAt ?? value.updatedAt,
     archived: value.archived,
     pinned: value.pinned,
+    toReview: value.toReview,
     linkedWorkItem: value.session.linkedWorkItem,
     needsInput: sessionNeedsInput(value.session),
     draft: value.session.blocks.some((block) => block.role === "user" && block.draft),

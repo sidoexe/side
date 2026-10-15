@@ -5,35 +5,22 @@ import {
 } from "./sessionDone";
 
 describe("nextUnseenFinishedSessions", () => {
-  it("marks a session done when it finishes while unfocused", () => {
+  it("marks a session done when it finishes", () => {
     expect(
       nextUnseenFinishedSessions({
         previousBusyIds: new Set(["a"]),
         busyIds: new Set(),
         previousUnseenIds: new Set(),
-        focusedSessionId: "b",
       }),
     ).toEqual(new Set(["a"]));
   });
 
-  it("does not mark a session done when it finishes while focused", () => {
+  it("marks a session done even when it finishes while watched", () => {
     expect(
       nextUnseenFinishedSessions({
         previousBusyIds: new Set(["a"]),
         busyIds: new Set(),
         previousUnseenIds: new Set(),
-        focusedSessionId: "a",
-      }),
-    ).toEqual(new Set());
-  });
-
-  it("keeps done when the session is focused", () => {
-    expect(
-      nextUnseenFinishedSessions({
-        previousBusyIds: new Set(),
-        busyIds: new Set(),
-        previousUnseenIds: new Set(["a"]),
-        focusedSessionId: "a",
       }),
     ).toEqual(new Set(["a"]));
   });
@@ -44,7 +31,6 @@ describe("nextUnseenFinishedSessions", () => {
         previousBusyIds: new Set(),
         busyIds: new Set(["a"]),
         previousUnseenIds: new Set(["a"]),
-        focusedSessionId: "b",
       }),
     ).toEqual(new Set());
   });
@@ -56,7 +42,6 @@ describe("nextUnseenFinishedSessions", () => {
         previousBusyIds: new Set(["lead", "worker"]),
         busyIds: new Set(),
         previousUnseenIds: new Set(),
-        focusedSessionId: "other",
         untrackedIds: new Set(["worker"]),
       }),
     ).toEqual(new Set(["lead"]));
@@ -68,7 +53,6 @@ describe("nextUnseenFinishedSessions", () => {
         previousBusyIds: new Set(),
         busyIds: new Set(),
         previousUnseenIds: new Set(["lead", "worker"]),
-        focusedSessionId: "other",
         untrackedIds: new Set(["worker"]),
       }),
     ).toEqual(new Set(["lead"]));

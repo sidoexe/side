@@ -37,9 +37,13 @@ struct HostSessionSummary: Decodable, Identifiable, Hashable {
     let repo: String?
     let cwd: String?
     let worktreeCwd: String?
+    /// Its last turn finished and nobody has checked it yet.
+    let toReview: Bool?
 
     var running: Bool { status == "running" }
     var interrupted: Bool { status == "interrupted" }
+    /// Finished and waiting to be checked: it stays until marked so.
+    var done: Bool { toReview == true && !running && needsInput != true }
 }
 
 struct HostAccountSummary: Decodable, Identifiable, Hashable {

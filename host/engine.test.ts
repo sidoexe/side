@@ -209,6 +209,25 @@ describe("headless session ownership", () => {
     expect(provider.send).not.toHaveBeenCalled();
   });
 
+  it("keeps a finished turn to review until checked or sent again", async () => {
+    const { engine, store, turns, id } = setup();
+    engine.command({ type: "send", commandId: "review-1", sessionId: id, text: "Go" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(store.session(id).toReview).toBeUndefined();
+    turns[0].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    expect(store.session(id).toReview).toBe(true);
+    expect(store.summaries(store.session(id).projectId)[0].toReview).toBe(true);
+
+    engine.command({ type: "send", commandId: "review-2", sessionId: id, text: "Again" });
+    expect(store.session(id).toReview).toBeUndefined();
+    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    turns[1].finish();
+    await vi.waitFor(() => expect(store.session(id).toReview).toBe(true));
+    engine.updateSession(id, { reviewed: true });
+    expect(store.session(id).toReview).toBeUndefined();
+  });
+
   it("marks a reviewed host plan as built after its build turn", async () => {
     const { engine, store, turns, id } = setup();
     engine.command({

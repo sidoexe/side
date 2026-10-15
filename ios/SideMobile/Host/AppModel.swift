@@ -209,11 +209,20 @@ final class AppModel {
         projects.first { $0.id == id }
     }
 
-    /// Sessions waiting on the user first, then running, then the rest by recency.
+    /// What needs the user: questions first, then done sessions to check,
+    /// then running ones, each by recency.
     var inbox: [HostSessionSummary] {
-        sessions.values.joined()
-            .filter { $0.archived != true && $0.draft != true && ($0.needsInput == true || $0.running) }
-            .sorted { $0.updatedAt > $1.updatedAt }
+        func rank(_ session: HostSessionSummary) -> Int {
+            session.needsInput == true ? 0 : session.done ? 1 : 2
+        }
+        return sessions.values.joined()
+            .filter { $0.archived != true && $0.draft != true && ($0.needsInput == true || $0.running || $0.done) }
+            .sorted { (rank($0), -$0.updatedAt) < (rank($1), -$1.updatedAt) }
+    }
+
+    /// The user checked a done session; it leaves Now and its project's count.
+    func markChecked(_ summary: HostSessionSummary) async {
+        await update(summary, ["reviewed": true])
     }
 
     func update(_ summary: HostSessionSummary, _ patch: [String: Any]) async {

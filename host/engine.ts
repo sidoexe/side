@@ -938,6 +938,7 @@ export class HostEngine {
           value = {
             ...value,
             status: "running",
+            toReview: undefined,
             runId,
             session: {
               ...value.session,
@@ -1667,7 +1668,12 @@ export class HostEngine {
         text: message,
         streaming: false,
       });
-    return { ...value, status, session };
+    return {
+      ...value,
+      status,
+      toReview: status === "idle" ? true : value.toReview,
+      session,
+    };
   }
 
   async close(): Promise<void> {

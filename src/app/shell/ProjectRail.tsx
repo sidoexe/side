@@ -1,5 +1,6 @@
 import {
   BellOff,
+  Check,
   ChevronDown,
   ChevronRight,
   FolderPlus,
@@ -14,7 +15,20 @@ import {
   Settings,
   Zap,
 } from "../../shared/ui/icons";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type MouseEvent,
+} from "react";
+import {
+  sessionsToReview,
+  subscribeSessionsToReview,
+} from "../../features/sessions/model/sessionReview";
 import { useDragResize } from "../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
 import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
@@ -96,7 +110,10 @@ type Props = {
   cwd: string;
   recents: RecentProject[];
   inboxUnseen?: boolean;
+  /** One folder per working session, so a project can count them. */
   busyPaths?: Iterable<string>;
+  /** Opens the project with its list narrowed to sessions waiting to be checked. */
+  onShowProjectDone?: (path: string) => void;
   canGoBack?: boolean;
   canGoForward?: boolean;
   onGoBack?: () => void;
@@ -138,6 +155,7 @@ export function ProjectRail({
   recents,
   inboxUnseen = false,
   busyPaths,
+  onShowProjectDone,
   canGoBack = false,
   canGoForward = false,
   onGoBack,
@@ -265,6 +283,22 @@ export function ProjectRail({
     for (const path of busyPaths ?? []) set.add(path);
     return set;
   }, [busyPaths]);
+  const toReview = useSyncExternalStore(
+    subscribeSessionsToReview,
+    sessionsToReview,
+  );
+  const projectStatus = useMemo(() => {
+    const counts = new Map<string, ProjectStatusCounts>();
+    const entry = (path: string) => {
+      const key = pathKey(path);
+      let value = counts.get(key);
+      if (!value) counts.set(key, (value = { working: 0, done: 0 }));
+      return value;
+    };
+    for (const path of busyPaths ?? []) entry(path).working += 1;
+    for (const path of toReview.values()) if (path) entry(path).done += 1;
+    return { counts, onShowDone: onShowProjectDone };
+  }, [busyPaths, toReview, onShowProjectDone]);
 
   useEffect(() => {
     setRailOrder((prev) => {
@@ -440,7 +474,8 @@ export function ProjectRail({
             }}
             className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none pb-2"
           >
-            {monos ? <MonoRailSection {...monos} /> : null}
+            <ProjectStatusContext.Provider value={projectStatus}>
+              {monos ? <MonoRailSection {...monos} /> : null}
             {onOpenWeb ? (
               <WebAppsRailSection webActive={webActive} onOpenWeb={onOpenWeb} />
             ) : null}
@@ -546,6 +581,7 @@ export function ProjectRail({
               groupCustomColors={groupCustomColors}
               groupMascots={groupMascots}
             />
+            </ProjectStatusContext.Provider>
           </div>
           <LiveAgentsPreview
             agents={workingAgents}
@@ -603,6 +639,15 @@ export function ProjectRail({
 }
 
 type SortableHandle = ReturnType<typeof useAnimatedReorder>;
+
+type ProjectStatusCounts = { working: number; done: number };
+
+/** Each project's working and done sessions, keyed by folder. A context so
+ * the counts reach every card without threading through each section. */
+const ProjectStatusContext = createContext<{
+  counts: ReadonlyMap<string, ProjectStatusCounts>;
+  onShowDone?: (path: string) => void;
+}>({ counts: new Map() });
 
 function ProjectSection({
   label,
@@ -931,6 +976,9 @@ function ProjectCard({
   const additions = stats?.additions ?? 0;
   const deletions = stats?.deletions ?? 0;
   const hasChanges = files > 0 || additions > 0 || deletions > 0;
+  const projectStatus = useContext(ProjectStatusContext);
+  const { working = 0, done = 0 } =
+    projectStatus.counts.get(pathKey(item.path)) ?? {};
   const remote = remoteProjectFor(item.path);
   const { machines } = useRemoteMachines(!!remote);
   const machine = remote
@@ -1035,6 +1083,17 @@ function ProjectCard({
             {machine.name}
           </span>
         ) : null}
+        {working > 0 || done > 0 ? (
+          <ProjectStatusPills
+            working={working}
+            done={done}
+            onShowDone={
+              projectStatus.onShowDone
+                ? () => projectStatus.onShowDone?.(item.path)
+                : undefined
+            }
+          />
+        ) : null}
         {hasChanges ? (
           <span className="project-card-stats shrink-0 group-hover:hidden group-has-[:focus-visible]:hidden">
             <ProjectDiffStat additions={additions} deletions={deletions} />
@@ -1113,6 +1172,64 @@ function ProjectCard({
         )}
       </button>
     </div>
+  );
+}
+
+/** How many sessions work and how many wait to be checked. */
+function ProjectStatusPills({
+  working,
+  done,
+  onShowDone,
+}: {
+  working: number;
+  done: number;
+  onShowDone?: () => void;
+}) {
+  const doneLabel = `${done} done, waiting to be checked`;
+  const doneContent = (
+    <>
+      <Check className="size-3" strokeWidth={2.25} />
+      {done}
+    </>
+  );
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 font-sans text-[11px] font-semibold tabular-nums group-hover:hidden group-has-[:focus-visible]:hidden">
+      {working > 0 ? (
+        <span
+          title={`${working} working`}
+          aria-label={`${working} working`}
+          className="flex items-center gap-1 text-accent"
+        >
+          <span className="size-1.5 rounded-full bg-accent" />
+          {working}
+        </span>
+      ) : null}
+      {done > 0 && onShowDone ? (
+        <span
+          role="button"
+          tabIndex={-1}
+          data-no-drag
+          title={`${doneLabel}. Click to show them`}
+          aria-label={doneLabel}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onShowDone();
+          }}
+          className="flex cursor-pointer items-center gap-0.5 rounded text-emerald-400 hover:underline"
+        >
+          {doneContent}
+        </span>
+      ) : done > 0 ? (
+        <span
+          title={doneLabel}
+          aria-label={doneLabel}
+          className="flex items-center gap-0.5 text-emerald-400"
+        >
+          {doneContent}
+        </span>
+      ) : null}
+    </span>
   );
 }
 

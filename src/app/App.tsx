@@ -521,6 +521,7 @@ import { hiddenApprovalNotices } from "../features/notifications/model/approvalT
 import { useSessionReminders } from "../features/notifications/hooks/useSessionReminders";
 import { ReminderNotices } from "../features/sessions/ui/ReminderNotices";
 import { useUnseenFinishedSessions } from "../features/sessions/hooks/useUnseenFinishedSessions";
+import { markSessionsReviewed } from "../features/sessions/model/sessionReview";
 import { useUnseenReplyCounts } from "../features/sessions/hooks/useUnseenReplyCounts";
 import {
   loadNotificationsEnabled,
@@ -2156,7 +2157,6 @@ function Workspace({
   const unseenFinishedIds = useUnseenFinishedSessions(
     sessions,
     busySessionIds,
-    activeSessionId,
   );
   const monoSessionIds = useMemo(
     () =>
@@ -5507,6 +5507,7 @@ function Workspace({
             );
           }
         }
+        if (removed) markSessionsReviewed([sessionId]);
         return removed;
       } catch (error) {
         if (origin === "cli") throw error;

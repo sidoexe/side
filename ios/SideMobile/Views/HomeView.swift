@@ -188,6 +188,7 @@ struct HomeView: View {
                     .tracking(0.66)
                     .foregroundStyle(Theme.muted)
                     .lineLimit(1)
+                ProjectStatusCounts(sessions: model.sessions[project.id] ?? [])
                 Spacer()
                 Menu {
                     NavigationLink(value: Route.newSession(projectId: project.id)) { Label("New session", systemImage: "plus") }
@@ -229,6 +230,9 @@ struct HomeView: View {
         }
         .buttonStyle(SessionRowStyle())
         .contextMenu {
+            if session.done {
+                Button("Mark checked", systemImage: "checkmark.circle") { Task { await model.markChecked(session) } }
+            }
             Button(session.pinned == true ? "Unpin" : "Pin", systemImage: "pin") { Task { await model.update(session, ["pinned": session.pinned != true]) } }
             Button("Rename", systemImage: "pencil") { renaming = session }
             Button(session.archived == true ? "Unarchive" : "Archive", systemImage: "archivebox") {
@@ -275,6 +279,8 @@ struct SessionRow: View {
                 Spacer(minLength: 0)
                 if session.needsInput == true {
                     Pill(text: "Needs you")
+                } else if session.done {
+                    Pill(text: "Done", color: Theme.addFg)
                 } else if session.interrupted {
                     Pill(text: "Interrupted", color: Theme.delFg)
                 }
@@ -291,6 +297,36 @@ struct SessionRow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
         .contentShape(.rect)
+    }
+}
+
+/// A project's working and done sessions, beside its name.
+struct ProjectStatusCounts: View {
+    let sessions: [HostSessionSummary]
+
+    var body: some View {
+        let live = sessions.filter { $0.archived != true && $0.draft != true }
+        let working = live.filter { $0.running }.count
+        let done = live.filter(\.done).count
+        HStack(spacing: 8) {
+            if working > 0 {
+                HStack(spacing: 3) {
+                    Circle().fill(Theme.link).frame(width: 5, height: 5)
+                    Text("\(working)")
+                }
+                .foregroundStyle(Theme.link)
+                .accessibilityLabel("\(working) working")
+            }
+            if done > 0 {
+                HStack(spacing: 2) {
+                    Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                    Text("\(done)")
+                }
+                .foregroundStyle(Theme.addFg)
+                .accessibilityLabel("\(done) done, waiting to be checked")
+            }
+        }
+        .font(.system(size: 11, weight: .semibold).monospacedDigit())
     }
 }
 

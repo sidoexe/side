@@ -27,10 +27,7 @@ import {
   type WorkspaceTab,
 } from "../../features/workspace/model/layout";
 import { useIdleSessionDetach } from "./useIdleSessionDetach";
-import {
-  createMono,
-  saveMonoSessionId,
-} from "../../features/monos/model/mono";
+import { createMono, saveMonoSessionId } from "../../features/monos/model/mono";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -47,6 +44,7 @@ let container: HTMLDivElement;
 let stored: Map<string, SessionRecord>;
 
 beforeEach(() => {
+  localStorage.clear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   mocks.forgetHarnessSession.mockReset().mockResolvedValue(undefined);
@@ -160,7 +158,6 @@ function mountWorkspace(initial: Partial<WorkspaceState> = {}) {
     const unseenFinishedIds = useUnseenFinishedSessions(
       sessions,
       state.busySessionIds,
-      state.activeSessionId,
     );
     useIdleSessionDetach({
       ...state,
