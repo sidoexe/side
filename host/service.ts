@@ -181,8 +181,10 @@ export async function installService(
       "/bin",
     ]),
   ].join(":");
+  // `launchctl print gui/<uid>` lists every service in the session and easily
+  // passes 128 KiB on a busy Mac; overflowing the buffer reads as "not signed in".
   const run = async (command: string, args: string[], env = process.env) =>
-    exec(command, args, { env, timeout: 15_000, maxBuffer: 128 * 1024 });
+    exec(command, args, { env, timeout: 15_000, maxBuffer: 16 * 1024 * 1024 });
   if (process.platform === "darwin") {
     const domain = `gui/${process.getuid!()}`;
     try {
