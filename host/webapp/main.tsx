@@ -538,7 +538,7 @@ function App() {
             onError={onError}
           />
         ) : route.kind === "colleagues" ? (
-          <ColleaguesPage onError={onError} />
+          <ColleaguesPage canWrite={host.capabilities.includes("employees.inbox")} onError={onError} />
         ) : route.kind === "automations" ? (
           <AutomationsPage onError={onError} />
         ) : route.kind === "new" && project ? (

@@ -6,6 +6,7 @@ import type { Mono } from "../../src/features/monos/model/mono";
 import type { Block } from "../../src/features/sessions/model/session";
 import { HarnessIcon } from "../../src/features/sessions/ui/HarnessIcon";
 import { command, rpc } from "./api";
+import { ProjectBackground } from "./rail";
 import { Transcript } from "./Transcript";
 import { ago, go, tilde } from "./ui";
 
@@ -102,53 +103,133 @@ export function FilesPanel({ projectId, cwd, onClose, onError }: { projectId: st
 
 const monoName = (mono: Mono) => mono.name || mono.mascot.charAt(0).toUpperCase() + mono.mascot.slice(1);
 
+type InboxMessage = { id: string; text: string; at: number; takenBy?: string };
+
+/** How often an open colleague's chat is read again while it may change. */
+const CHAT_POLL_MS = 2_500;
+/** After this, a message no desktop took says so. */
+const UNTAKEN_MS = 10_000;
+
 /** Colleagues kept on the host: who they are, what they remember, and their
- * conversation. Their chats run from a desktop, so this is read-only. */
-export function ColleaguesPage({ onError }: { onError: (error: unknown) => void }) {
+ * conversation. Their chats run on a desktop: a message written here waits on
+ * the host until an open desktop takes it and sends it, and the reply shows
+ * here as that desktop saves the chat. */
+export function ColleaguesPage({
+  canWrite,
+  onError,
+}: {
+  /** The host keeps messages for desktops to send. */
+  canWrite: boolean;
+  onError: (error: unknown) => void;
+}) {
   const [roster, setRoster] = useState<Mono[]>();
-  const [open, setOpen] = useState<Mono>();
+  const [openId, setOpenId] = useState<string>();
   const [files, setFiles] = useState<{ soul: string | null; memory: string }>();
   const [chat, setChat] = useState<Block[]>();
+  const [inbox, setInbox] = useState<InboxMessage[]>([]);
   const [tab, setTab] = useState<"chat" | "memory" | "soul">("chat");
+  const [backgrounds, setBackgrounds] = useState<Record<string, { updatedAt: number; mimeType?: string }>>({});
+  const [now, setNow] = useState(Date.now());
+  const open = roster?.find((mono) => mono.id === openId);
   useEffect(() => {
     rpc<{ roster: Mono[] }>("employees.roster").then((value) => setRoster(value.roster), onError);
+    // Older hosts keep no backgrounds: the page shows without them.
+    rpc<typeof backgrounds>("employees.backgrounds").then(setBackgrounds, () => undefined);
   }, [onError]);
   useEffect(() => {
     setFiles(undefined);
     setChat(undefined);
+    setInbox([]);
+    if (!openId) return;
+    rpc<{ soul: string | null; memory: string }>("employees.load", { mono: openId }).then(setFiles, onError);
+  }, [openId, onError]);
+  const sessionId = open?.sessionId;
+  useEffect(() => {
+    if (!openId) return;
+    let stopped = false;
+    const read = async () => {
+      // A first message here gives the colleague its chat on the desktop
+      // that takes it; the roster then names it.
+      const id = sessionId ?? (await rpc<{ roster: Mono[] }>("employees.roster").then((value) => {
+        if (!stopped) setRoster(value.roster);
+        return value.roster.find((mono) => mono.id === openId)?.sessionId;
+      }, () => undefined));
+      const [blocks, waiting] = await Promise.all([
+        id
+          ? rpc<{ blocks: Block[] } | null>("employees.sessionGet", { sessionId: id }).then((value) => value?.blocks ?? [], () => undefined)
+          : Promise.resolve([] as Block[]),
+        canWrite ? rpc<InboxMessage[]>("employees.inbox", { mono: openId }).catch(() => undefined) : Promise.resolve([]),
+      ]);
+      if (stopped) return;
+      if (blocks) setChat(blocks);
+      if (waiting) setInbox(waiting);
+      setNow(Date.now());
+    };
+    void read();
+    const timer = setInterval(() => void read(), CHAT_POLL_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [openId, sessionId, canWrite]);
+  const send = async (text: string) => {
     if (!open) return;
-    rpc<{ soul: string | null; memory: string }>("employees.load", { mono: open.id }).then(setFiles, onError);
-    if (open.sessionId)
-      rpc<{ blocks: Block[] } | null>("employees.sessionGet", { sessionId: open.sessionId }).then((value) => setChat(value?.blocks ?? []), () => setChat([]));
-    else setChat([]);
-  }, [open, onError]);
+    const message = await rpc<InboxMessage>("employees.post", { mono: open.id, text });
+    setInbox((current) => [...current, message]);
+  };
+  const background = (mono: Mono) => {
+    const stamp = backgrounds[mono.id];
+    return stamp?.mimeType
+      ? `/web/colleague-background?id=${encodeURIComponent(mono.id)}&v=${stamp.updatedAt}`
+      : undefined;
+  };
   if (open)
     return (
-      <div className="page">
-        <div className="page-head">
-          <button className="link" onClick={() => setOpen(undefined)}>← Colleagues</button>
-          <span className="page-title">{monoName(open)}</span>
+      <div className="colleague-view">
+        <ProjectBackground url={background(open)} />
+        <div className="page">
+          <div className="page-head">
+            <button className="link" onClick={() => setOpenId(undefined)}>← Colleagues</button>
+            <span className="page-title">{monoName(open)}</span>
+          </div>
+          <div className="tabs">
+            {(["chat", "memory", "soul"] as const).map((name) => (
+              <button key={name} className={tab === name ? "on" : ""} onClick={() => setTab(name)}>
+                {name === "chat" ? "Conversation" : name === "memory" ? "Memory" : "Soul"}
+              </button>
+            ))}
+          </div>
+          <div className="transcript-inner page-body">
+            {tab === "chat" ? (
+              chat === undefined ? <p className="muted">Loading…</p> : chat.length || inbox.length ? (
+                <>
+                  <Transcript blocks={chat} cwd="" running={false} canDecide={false} onDecide={() => undefined} />
+                  {inbox.map((message) => (
+                    <div key={message.id} className="colleague-waiting">
+                      <div className="colleague-waiting-text">{message.text}</div>
+                      <span className="muted">
+                        {message.takenBy
+                          ? "Sending from a desktop…"
+                          : now - message.at > UNTAKEN_MS
+                            ? "Waiting for a desktop: open sIDE on one of your computers to send it."
+                            : "Waiting for a desktop…"}
+                      </span>
+                    </div>
+                  ))}
+                </>
+              ) : <p className="muted">No conversation yet.</p>
+            ) : (
+              <div className="prose">
+                <Streamdown className="md" controls={false} linkSafety={{ enabled: false }}>
+                  {(tab === "memory" ? files?.memory : files?.soul) || "_Empty._"}
+                </Streamdown>
+              </div>
+            )}
+          </div>
         </div>
-        <div className="tabs">
-          {(["chat", "memory", "soul"] as const).map((name) => (
-            <button key={name} className={tab === name ? "on" : ""} onClick={() => setTab(name)}>
-              {name === "chat" ? "Conversation" : name === "memory" ? "Memory" : "Soul"}
-            </button>
-          ))}
-        </div>
-        <div className="transcript-inner page-body">
-          {tab === "chat" ? (
-            chat === undefined ? <p className="muted">Loading…</p> : chat.length ? (
-              <Transcript blocks={chat} cwd="" running={false} canDecide={false} onDecide={() => undefined} />
-            ) : <p className="muted">No conversation yet.</p>
-          ) : (
-            <div className="prose">
-              <Streamdown className="md" controls={false} linkSafety={{ enabled: false }}>
-                {(tab === "memory" ? files?.memory : files?.soul) || "_Empty._"}
-              </Streamdown>
-            </div>
-          )}
-        </div>
+        {tab === "chat" && canWrite ? (
+          <ColleagueComposer name={monoName(open)} onSend={send} />
+        ) : null}
       </div>
     );
   return (
@@ -158,11 +239,57 @@ export function ColleaguesPage({ onError }: { onError: (error: unknown) => void 
         {roster === undefined ? <p className="muted empty-line">Loading…</p> : null}
         {roster && !roster.length ? <p className="muted empty-line">No colleagues on this host. They live here when it is your home machine.</p> : null}
         {roster?.map((mono) => (
-          <button key={mono.id} className="session" onClick={() => setOpen(mono)}>
+          <button key={mono.id} className="session" onClick={() => setOpenId(mono.id)}>
             <span className="session-line"><span className="mono-dot" style={{ background: mono.color }} /><span className="session-title">{monoName(mono)}</span></span>
             <span className="session-line meta"><span className="ellipsis">{mono.projects.map((path) => path.split("/").pop()).join(", ") || "No projects"}</span></span>
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** Writing to a colleague: Enter sends, Shift+Enter starts a new line. */
+function ColleagueComposer({ name, onSend }: { name: string; onSend: (text: string) => Promise<void> }) {
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async () => {
+    const value = text.trim();
+    if (!value || sending) return;
+    setSending(true);
+    setError("");
+    try {
+      await onSend(value);
+      setText("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSending(false);
+    }
+  };
+  return (
+    <div className="composer">
+      <div className="composer-box">
+        <textarea
+          rows={1}
+          value={text}
+          placeholder={`Message ${name}`}
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              void submit();
+            }
+          }}
+        />
+        {error ? <div className="composer-error">{error}</div> : null}
+        <div className="composer-bar">
+          <span className="composer-hint">Sent through a desktop that has sIDE open</span>
+          <button className="square send" disabled={!text.trim() || sending} onClick={() => void submit()} aria-label="Send">
+            <svg className="glyph" viewBox="0 0 16 16" aria-hidden><path d="M8 13V3M4 7l4-4 4 4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+        </div>
       </div>
     </div>
   );

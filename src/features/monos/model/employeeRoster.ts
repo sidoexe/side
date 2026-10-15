@@ -2,6 +2,8 @@ import { remoteRequest } from "../../connections/model/connections";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import { listMonos, replaceRoster, subscribeMonos, type Mono } from "./mono";
 import { employeeHome } from "./employeeStorage";
+import { homeWith } from "../../connections/model/homeCapability";
+import { syncEmployeeBackgrounds, watchEmployeeBackgrounds } from "./employeeBackgrounds";
 
 /**
  * Keeps this desktop's roster and the home machine's in step, so every
@@ -143,18 +145,42 @@ export class EmployeeRosterSync {
 }
 
 /** Runs the sync while the app is open: on start, on every local change,
- * when the window comes back, and every few seconds for other desktops'. */
+ * when the window comes back, and every few seconds for other desktops'.
+ * Backgrounds follow each pass, once the roster lists the same employees. */
 export function startEmployeeRosterSync(): () => void {
-  const sync = new EmployeeRosterSync(
-    (machine, method, params) => remoteRequest(machine.id, method, params),
-    employeeHome,
-  );
-  const run = () => void sync.sync().catch(() => undefined);
+  const request = <T,>(machine: RemoteMachine, method: string, params?: unknown) =>
+    remoteRequest<T>(machine.id, method, params);
+  const sync = new EmployeeRosterSync(request, employeeHome);
+  let backgrounds: Promise<void> | undefined;
+  let again = false;
+  const syncBackgrounds = async () => {
+    const home = await homeWith("employees.backgrounds");
+    if (home) await syncEmployeeBackgrounds(request, home);
+  };
+  const runBackgrounds = () => {
+    if (backgrounds) {
+      again = true;
+      return;
+    }
+    backgrounds = (async () => {
+      do {
+        again = false;
+        await syncBackgrounds().catch(() => undefined);
+      } while (again);
+    })().finally(() => (backgrounds = undefined));
+  };
+  const run = () =>
+    void sync
+      .sync()
+      .catch(() => undefined)
+      .then(runBackgrounds);
   run();
+  const unwatch = watchEmployeeBackgrounds(runBackgrounds);
   const unsubscribe = subscribeMonos(run);
   const timer = setInterval(run, POLL_MS);
   window.addEventListener("focus", run);
   return () => {
+    unwatch();
     unsubscribe();
     clearInterval(timer);
     window.removeEventListener("focus", run);

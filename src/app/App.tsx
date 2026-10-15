@@ -573,6 +573,7 @@ import {
   type MonoState,
 } from "../features/monos/model/mono";
 import { startEmployeeRosterSync } from "../features/monos/model/employeeRoster";
+import { startColleagueInbox } from "../features/monos/model/colleagueInbox";
 import {
   loadMonoFiles,
   MONO_PROMPT_VERSION,
@@ -8715,6 +8716,25 @@ function Workspace({
   saveDraftRef.current = onSaveDraft;
   const ensureOpenSessionRef = useRef(ensureOpenSession);
   ensureOpenSessionRef.current = ensureOpenSession;
+
+  // Messages written to a colleague in the browser app reach its chat here,
+  // as if typed in this window.
+  useEffect(() => {
+    if (!monosEnabled || windowTransfer) return;
+    return startColleagueInbox(async (monoId, text) => {
+      const session = await ensureMonoSession(monoId, {
+        home: homeDir,
+        load: (id) => ensureOpenSessionRef.current(id),
+        create: newDefaultSession,
+        add: (created) => {
+          sessionsRef.current = [...sessionsRef.current, created];
+          setSessions(sessionsRef.current);
+        },
+      });
+      if (!session) return false;
+      return await submitSessionRef.current(session.id, text);
+    });
+  }, [monosEnabled, windowTransfer]);
 
   const appReceipts = useRef(
     new Map<string, { signature: string; promise: Promise<unknown> }>(),

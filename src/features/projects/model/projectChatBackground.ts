@@ -136,7 +136,7 @@ export function saveProjectChatBackgroundSettings(
       : NEW_THREAD_BACKGROUND_EFFECT_DEFAULT,
   };
   write(next);
-  notifyProjectChatBackgroundChanged(imageChanged);
+  notifyProjectChatBackgroundChanged(imageChanged, project);
 }
 
 export function loadProjectChatBackground(
@@ -174,7 +174,7 @@ export function clearProjectChatBackgroundSetting(project: string) {
   if (!(project in next)) return;
   delete next[project];
   write(next);
-  notifyProjectChatBackgroundChanged();
+  notifyProjectChatBackgroundChanged(true, project);
 }
 
 export function rebaseProjectChatBackgroundSetting(from: string, to: string) {
@@ -187,10 +187,20 @@ export function rebaseProjectChatBackgroundSetting(from: string, to: string) {
   notifyProjectChatBackgroundChanged();
 }
 
-export function notifyProjectChatBackgroundChanged(imageChanged = true) {
+/** What changed, when it is one project's background. */
+export type ProjectChatBackgroundChange = { project?: string; imageChanged: boolean };
+
+export function notifyProjectChatBackgroundChanged(
+  imageChanged = true,
+  project?: string,
+) {
   revision += 1;
   if (imageChanged) imageRevision += 1;
-  window.dispatchEvent(new CustomEvent(PROJECT_CHAT_BACKGROUND_CHANGED));
+  window.dispatchEvent(
+    new CustomEvent<ProjectChatBackgroundChange>(PROJECT_CHAT_BACKGROUND_CHANGED, {
+      detail: { project, imageChanged },
+    }),
+  );
 }
 
 export function projectChatBackgroundRevision(): number {

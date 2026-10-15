@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use base64::Engine as _;
 use tauri::{AppHandle, Manager};
 
 use crate::fs::expand_home;
@@ -132,6 +133,52 @@ fn save_project_chat_background_sync(
     remove_project_background(&dir, project)?;
     std::fs::rename(&temp, &dest).map_err(|e| format!("{}: {e}", dest.display()))?;
     Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Writes an image received from elsewhere (a colleague's background from
+/// the home machine) where a picked one for `project` would go.
+fn save_project_chat_background_data_sync(
+    app: &AppHandle,
+    project: &str,
+    extension: &str,
+    data: &str,
+) -> Result<String, String> {
+    if project.trim().is_empty() {
+        return Err("Project is required".into());
+    }
+    let ext = extension.to_ascii_lowercase();
+    if !ALLOWED_EXT.contains(&ext.as_str()) {
+        return Err("Background must be a PNG, JPG, GIF, or WebP image.".into());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .map_err(|e| e.to_string())?;
+    if bytes.is_empty() || bytes.len() as u64 > MAX_BACKGROUND_BYTES {
+        return Err("Background is empty or too large.".into());
+    }
+    let dir = backgrounds_dir(app)?;
+    let stem = project_background_stem(project);
+    let dest = dir.join(format!("{stem}.{ext}"));
+    let temp = dir.join(format!(".{stem}-upload"));
+
+    std::fs::write(&temp, bytes).map_err(|e| format!("{}: {e}", temp.display()))?;
+    remove_project_background(&dir, project)?;
+    std::fs::rename(&temp, &dest).map_err(|e| format!("{}: {e}", dest.display()))?;
+    Ok(dest.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub async fn save_project_chat_background_data(
+    app: AppHandle,
+    project: String,
+    extension: String,
+    data: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        save_project_chat_background_data_sync(&app, &project, &extension, &data)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

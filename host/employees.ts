@@ -1,10 +1,11 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -22,11 +23,14 @@ import { HostEmployeeTranscripts } from "./employee-transcripts";
  * ```text
  * <data dir>/employees/
  * ├── roster.json       every employee's look and projects, with a revision
+ * ├── backgrounds.json  when each one's background image last changed
+ * ├── inbox.json        messages sent from the browser, until a desktop runs them
  * ├── transcripts.db    their conversations (see employee-transcripts.ts)
  * └── <employee id>/
  *     ├── SOUL.md
  *     ├── MEMORY.md
  *     ├── habits.json
+ *     ├── background.*  its chat's background image, if it has one
  *     └── memory/       topic notes, and archive.md
  * ```
  */
@@ -36,6 +40,21 @@ const MEMORY_FILE = "MEMORY.md";
 const HABITS_FILE = "habits.json";
 const MEMORY_DIR = "memory";
 const ROSTER_FILE = "roster.json";
+const BACKGROUNDS_FILE = "backgrounds.json";
+const INBOX_FILE = "inbox.json";
+const INBOX_TEXT_MAX = 64 * 1024;
+const INBOX_MAX = 100;
+/** How long a desktop that took a message has to hand it over before
+ * another one may. */
+const INBOX_LEASE_MS = 60_000;
+const BACKGROUND_STEM = "background";
+const BACKGROUND_MAX = 8 * 1024 * 1024;
+const BACKGROUND_TYPES: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
 const FILE_MAX = 256 * 1024;
 const ROSTER_MAX = 512 * 1024;
 const ID = /^[A-Za-z0-9-]{1,80}$/;
@@ -55,6 +74,23 @@ export type EmployeeFiles = {
 };
 
 export type EmployeeRoster = { revision: number; roster: unknown[] };
+
+/** When an employee's background last changed, and its image's type; no
+ * type once it was removed, so the removal reaches every desktop too. */
+export type EmployeeBackgroundStamp = { updatedAt: number; mimeType?: string };
+
+/** A message the browser app sent an employee. Chats run on a desktop, so
+ * it waits here until one takes it and sends it as if typed there. */
+export type EmployeeInboxMessage = {
+  id: string;
+  mono: string;
+  text: string;
+  at: number;
+  takenBy?: string;
+  takenAt?: number;
+};
+
+export type EmployeeBackground = { updatedAt: number; mimeType: string; data: string };
 
 export function contentHash(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
@@ -92,7 +128,10 @@ function resolveFile(dir: string, relative: unknown): string {
 export class HostEmployees {
   private chats?: HostEmployeeTranscripts;
 
-  constructor(private readonly root: string) {}
+  constructor(
+    private readonly root: string,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   get transcripts(): HostEmployeeTranscripts {
     this.chats ??= new HostEmployeeTranscripts(join(this.root, "transcripts.db"));
@@ -204,6 +243,162 @@ export class HostEmployees {
     const next = { revision: current.revision + 1, roster };
     mkdirSync(this.root, { recursive: true, mode: 0o700 });
     writeAtomic(join(this.root, ROSTER_FILE), JSON.stringify(next));
+    // An employee taken off the roster takes its background along.
+    const kept = new Set(roster.map((entry) => (entry as { id: string }).id));
+    const stamps = this.backgrounds();
+    const gone = current.roster
+      .map((entry) => (entry as { id?: unknown } | null)?.id)
+      .filter((id): id is string => typeof id === "string" && ID.test(id) && !kept.has(id) && !!stamps[id]);
+    if (gone.length) {
+      for (const id of gone) {
+        this.removeBackgroundFiles(join(this.root, id));
+        delete stamps[id];
+      }
+      this.saveBackgrounds(stamps);
+    }
     return next;
+  }
+
+  /** Every employee's background stamp, by id. */
+  backgrounds(): Record<string, EmployeeBackgroundStamp> {
+    const text = readOptional(join(this.root, BACKGROUNDS_FILE));
+    if (!text) return {};
+    try {
+      const value = JSON.parse(text) as Record<string, EmployeeBackgroundStamp>;
+      return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private saveBackgrounds(stamps: Record<string, EmployeeBackgroundStamp>): void {
+    mkdirSync(this.root, { recursive: true, mode: 0o700 });
+    writeAtomic(join(this.root, BACKGROUNDS_FILE), JSON.stringify(stamps));
+  }
+
+  private removeBackgroundFiles(dir: string): void {
+    for (const extension of Object.values(BACKGROUND_TYPES))
+      rmSync(join(dir, `${BACKGROUND_STEM}.${extension}`), { force: true });
+  }
+
+  /** The image's file and type, for the browser app. */
+  backgroundFile(id: unknown): { path: string; type: string } | undefined {
+    if (typeof id !== "string" || !ID.test(id)) return undefined;
+    const type = this.backgrounds()[id]?.mimeType;
+    const extension = type ? BACKGROUND_TYPES[type] : undefined;
+    if (!type || !extension) return undefined;
+    const path = join(this.root, id, `${BACKGROUND_STEM}.${extension}`);
+    return existsSync(path) ? { path, type } : undefined;
+  }
+
+  /** The image itself, as the desktops store it. */
+  background(id: unknown): EmployeeBackground | null {
+    const stamp = this.backgrounds()[id as string];
+    const dir = this.dir(id);
+    const extension = stamp?.mimeType ? BACKGROUND_TYPES[stamp.mimeType] : undefined;
+    if (!stamp || !extension) return null;
+    const path = join(dir, `${BACKGROUND_STEM}.${extension}`);
+    if (!existsSync(path)) return null;
+    return {
+      updatedAt: stamp.updatedAt,
+      mimeType: stamp.mimeType!,
+      data: readFileSync(path).toString("base64"),
+    };
+  }
+
+  /**
+   * Sets an employee's background, or removes it when there is no `data`,
+   * unless the host already has a newer change: the newest one wins, and
+   * the stamp kept is returned either way.
+   */
+  setBackground(id: unknown, input: Record<string, unknown>): EmployeeBackgroundStamp {
+    const dir = this.dir(id);
+    const updatedAt = Number(input.updatedAt);
+    if (!Number.isFinite(updatedAt) || updatedAt <= 0) throw new Error("Invalid background time");
+    const stamps = this.backgrounds();
+    const current = stamps[id as string];
+    if (current && current.updatedAt > updatedAt) return current;
+    let next: EmployeeBackgroundStamp = { updatedAt };
+    let bytes: Buffer | undefined;
+    if (input.data !== undefined && input.data !== null) {
+      const extension = BACKGROUND_TYPES[String(input.mimeType)];
+      if (!extension || typeof input.data !== "string")
+        throw new Error("Choose a PNG, JPEG, WebP or GIF image");
+      bytes = Buffer.from(input.data, "base64");
+      if (!bytes.length || bytes.length > BACKGROUND_MAX)
+        throw new Error("Background images are limited to 8 MB");
+      next = { updatedAt, mimeType: String(input.mimeType) };
+    }
+    this.removeBackgroundFiles(dir);
+    if (bytes) {
+      const path = join(dir, `${BACKGROUND_STEM}.${BACKGROUND_TYPES[next.mimeType!]}`);
+      const temp = `${path}.tmp`;
+      writeFileSync(temp, bytes, { mode: 0o600 });
+      renameSync(temp, path);
+    }
+    stamps[id as string] = next;
+    this.saveBackgrounds(stamps);
+    return next;
+  }
+  private readInbox(): EmployeeInboxMessage[] {
+    try {
+      const value: unknown = JSON.parse(readOptional(join(this.root, INBOX_FILE)) ?? "[]");
+      return Array.isArray(value) ? (value as EmployeeInboxMessage[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private saveInbox(messages: EmployeeInboxMessage[]): void {
+    mkdirSync(this.root, { recursive: true, mode: 0o700 });
+    writeAtomic(join(this.root, INBOX_FILE), JSON.stringify(messages));
+  }
+
+  private free(message: EmployeeInboxMessage): boolean {
+    return !message.takenAt || this.now() - message.takenAt >= INBOX_LEASE_MS;
+  }
+
+  /** Queues a message from the browser app for an employee on the roster. */
+  post(id: unknown, text: unknown): EmployeeInboxMessage {
+    if (typeof id !== "string" || !ID.test(id)) throw new Error("Invalid employee ID");
+    if (typeof text !== "string" || !text.trim()) throw new Error("Write a message first");
+    if (Buffer.byteLength(text) > INBOX_TEXT_MAX) throw new Error("The message is too long");
+    if (!this.roster().roster.some((entry) => (entry as { id?: unknown } | null)?.id === id))
+      throw new Error("Unknown colleague");
+    const messages = this.readInbox();
+    if (messages.length >= INBOX_MAX) throw new Error("Too many messages are waiting for a desktop");
+    const message: EmployeeInboxMessage = { id: randomUUID(), mono: id, text, at: this.now() };
+    this.saveInbox([...messages, message]);
+    return message;
+  }
+
+  /** Messages still waiting, for one employee or all of them. */
+  inbox(id?: unknown): EmployeeInboxMessage[] {
+    const messages = this.readInbox();
+    return typeof id === "string" ? messages.filter((message) => message.mono === id) : messages;
+  }
+
+  /** Messages no desktop is holding, oldest first. */
+  waiting(): EmployeeInboxMessage[] {
+    return this.readInbox().filter((message) => this.free(message));
+  }
+
+  /** Gives the message to `by` unless another desktop holds it. */
+  take(messageId: unknown, by: unknown): boolean {
+    if (typeof by !== "string" || !by) throw new Error("Invalid desktop");
+    const messages = this.readInbox();
+    const message = messages.find((entry) => entry.id === messageId);
+    if (!message || (!this.free(message) && message.takenBy !== by)) return false;
+    message.takenBy = by;
+    message.takenAt = this.now();
+    this.saveInbox(messages);
+    return true;
+  }
+
+  /** The desktop sent it: it leaves the inbox. */
+  delivered(messageId: unknown): void {
+    const messages = this.readInbox();
+    const kept = messages.filter((entry) => entry.id !== messageId);
+    if (kept.length !== messages.length) this.saveInbox(kept);
   }
 }

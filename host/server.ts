@@ -259,12 +259,21 @@ export function createHostServer(
       // The browser app reaches the same methods at /web/rpc, from its own
       // page only, with the device credential in an HttpOnly cookie.
       const web = request.url === "/web/rpc";
-      // A project's background image, for the signed-in browser app.
-      if (request.method === "GET" && request.url?.startsWith("/web/background?")) {
+      // A project's or a colleague's background image, for the signed-in
+      // browser app.
+      if (
+        request.method === "GET" &&
+        (request.url?.startsWith("/web/background?") || request.url?.startsWith("/web/colleague-background?"))
+      ) {
         webSecurityHeaders(response);
         const token = webToken(request);
-        const cwd = new URL(request.url, "http://host").searchParams.get("cwd") ?? "";
-        const image = token && engine.store.authenticated(token) ? engine.rail?.background(cwd) : undefined;
+        const params = new URL(request.url, "http://host").searchParams;
+        const signedIn = !!token && engine.store.authenticated(token);
+        const image = !signedIn
+          ? undefined
+          : request.url.startsWith("/web/background?")
+            ? engine.rail?.background(params.get("cwd") ?? "")
+            : engine.employees?.backgroundFile(params.get("id") ?? "");
         if (!image) {
           response.writeHead(token && engine.store.authenticated(token) ? 404 : 401).end();
           return;
@@ -382,7 +391,7 @@ export function createHostServer(
                 "sessions.queue",
                 "sessions.editLast",
                 ...(engine.checkpoints ? ["sessions.review"] : []),
-                ...(engine.employees ? ["employees"] : []),
+                ...(engine.employees ? ["employees", "employees.backgrounds", "employees.inbox"] : []),
                 ...(engine.automations ? ["automations"] : []),
                 ...(engine.app ? ["app"] : []),
                 ...(engine.push ? ["push"] : []),
@@ -768,6 +777,31 @@ export function createHostServer(
             break;
           case "employees.saveRoster":
             result = employees().saveRoster(params.roster, params.expectedRevision);
+            break;
+          case "employees.backgrounds":
+            result = employees().backgrounds();
+            break;
+          case "employees.background":
+            result = employees().background(params.mono);
+            break;
+          case "employees.setBackground":
+            result = employees().setBackground(params.mono, params);
+            break;
+          case "employees.post":
+            result = employees().post(params.mono, params.text);
+            break;
+          case "employees.inbox":
+            result = employees().inbox(params.mono);
+            break;
+          case "employees.waiting":
+            result = employees().waiting();
+            break;
+          case "employees.take":
+            result = employees().take(params.id, params.by);
+            break;
+          case "employees.delivered":
+            employees().delivered(params.id);
+            result = null;
             break;
           case "employees.sessionUpsert":
             result = employees().transcripts.upsert(params);

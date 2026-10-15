@@ -567,6 +567,7 @@ pub fn run() {
             chat_background::save_chat_background,
             chat_background::remove_chat_background,
             chat_background::save_project_chat_background,
+            chat_background::save_project_chat_background_data,
             chat_background::remove_project_chat_background,
             project_logo::save_project_logo,
             project_logo::remove_project_logo,

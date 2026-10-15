@@ -96,3 +96,57 @@ it("replaces the roster only over the revision the writer read", () => {
   writeFileSync(join(root, "employees", "roster.json"), "{broken");
   expect(store.roster()).toEqual({ revision: 0, roster: [] });
 });
+
+it("keeps the newest background change, removals included", () => {
+  const { store } = employees();
+  const png = Buffer.from("png").toString("base64");
+  expect(store.setBackground("m", { updatedAt: 2, mimeType: "image/png", data: png })).toEqual({
+    updatedAt: 2,
+    mimeType: "image/png",
+  });
+  expect(store.background("m")).toEqual({ updatedAt: 2, mimeType: "image/png", data: png });
+  // An older change from a desktop that was offline loses.
+  expect(store.setBackground("m", { updatedAt: 1 })).toEqual({ updatedAt: 2, mimeType: "image/png" });
+  expect(store.setBackground("m", { updatedAt: 3 })).toEqual({ updatedAt: 3 });
+  expect(store.background("m")).toBeNull();
+  expect(store.backgrounds()).toEqual({ m: { updatedAt: 3 } });
+  expect(() => store.setBackground("m", { updatedAt: 4, mimeType: "text/plain", data: png })).toThrow();
+});
+
+it("drops a background with its employee", () => {
+  const { store } = employees();
+  store.saveRoster([{ id: "a" }, { id: "b" }], 0);
+  store.setBackground("a", { updatedAt: 1, mimeType: "image/png", data: "cG5n" });
+  store.saveRoster([{ id: "b" }], 1);
+  expect(store.backgrounds()).toEqual({});
+  expect(existsSync(join(store.load("a").dir, "background.png"))).toBe(false);
+});
+
+it("finds a background's file for the browser app", () => {
+  const { store } = employees();
+  expect(store.backgroundFile("m")).toBeUndefined();
+  store.setBackground("m", { updatedAt: 1, mimeType: "image/webp", data: "cG5n" });
+  expect(store.backgroundFile("m")).toMatchObject({ type: "image/webp" });
+  expect(store.backgroundFile("../m")).toBeUndefined();
+});
+
+it("keeps a browser message until one desktop takes and sends it", () => {
+  const root = mkdtempSync(join(tmpdir(), "side-employees-"));
+  roots.push(root);
+  let now = 1_000;
+  const store = new HostEmployees(join(root, "employees"), () => now);
+  expect(() => store.post("m", "hi")).toThrow("Unknown colleague");
+  store.saveRoster([{ id: "m" }], 0);
+  expect(() => store.post("m", "  ")).toThrow();
+  const message = store.post("m", "hi");
+  expect(store.waiting().map((entry) => entry.text)).toEqual(["hi"]);
+  expect(store.take(message.id, "a")).toBe(true);
+  expect(store.take(message.id, "b")).toBe(false);
+  expect(store.waiting()).toEqual([]);
+  expect(store.inbox("m")).toHaveLength(1);
+  // A desktop that took it and went away lets it go after a minute.
+  now += 60_000;
+  expect(store.take(message.id, "b")).toBe(true);
+  store.delivered(message.id);
+  expect(store.inbox("m")).toEqual([]);
+});
