@@ -23,6 +23,7 @@ mod jira;
 mod jsonc;
 mod linear;
 mod link_preview;
+mod local_host;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
@@ -190,6 +191,8 @@ pub fn run() {
     }
     #[cfg(target_os = "macos")]
     macos::register_spellcheck_default();
+    #[cfg(target_os = "macos")]
+    macos::disable_window_tabbing();
     let builder = tauri::Builder::default();
     // Closing to the tray leaves the process running without a taskbar entry,
     // so a second launch must reopen it instead of starting another instance.
@@ -216,6 +219,7 @@ pub fn run() {
             session_store::init(app.handle())?;
             control::init(app.handle())?;
             reminders::init(app.handle());
+            local_host::init();
             checkpoint::init(app.handle())?;
             menu::install(app.handle())?;
             #[cfg(target_os = "macos")]
