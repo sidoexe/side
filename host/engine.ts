@@ -46,6 +46,7 @@ import {
 } from "./accounts";
 import type { HostPush } from "./push";
 import type { HostRail } from "./rail";
+import type { HostWebApps } from "./webApps";
 import type { HostAccountLogins } from "./account-login";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments";
 import {
@@ -343,6 +344,8 @@ export class HostEngine {
   push?: HostPush;
   /** The projects shown, as the desktop's rail holds them. */
   rail?: HostRail;
+  /** The rail's web apps, and the logins the desktops share. */
+  webApps?: HostWebApps;
 
   /** Whether a turn of this session is running now. */
   isRunning(sessionId: string): boolean {

@@ -425,6 +425,11 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: r
 .nav-link { flex: 1; text-align: center; padding: 5px 0; border-radius: 6px; color: var(--muted); font-size: 12.5px; }
 .nav-link:hover { background: var(--fill-subtle); color: var(--text); }
 .nav-link.active { background: var(--fill); color: var(--text); }
+.web-apps { display: flex; flex-direction: column; gap: 1px; padding: 8px 8px 0; }
+.web-apps-title { padding: 0 6px 4px; color: var(--muted); font-size: 12px; }
+.web-app { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; color: var(--text); font-size: 13px; }
+.web-app:hover { background: var(--fill-subtle); }
+.web-app-badge { display: grid; place-items: center; flex: none; width: 18px; height: 18px; border-radius: 5px; background: var(--fill); color: var(--muted); font-size: 10.5px; font-weight: 600; text-transform: uppercase; }
 .page { flex: 1; min-height: 0; overflow-y: auto; }
 .page-head { display: flex; align-items: center; gap: 12px; max-width: 760px; margin: 0 auto; padding: 16px 18px 4px; }
 .page-title { font-size: 16px; font-weight: 600; }

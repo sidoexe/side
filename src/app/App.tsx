@@ -692,6 +692,7 @@ import { AddRemoteProjectDialog } from "../features/connections/ui/AddRemoteProj
 import { useHomeMachine } from "./hooks/useHomeMachine";
 import { useHostAutoUpdate } from "./hooks/useHostAutoUpdate";
 import { useRemoteRailSync } from "./hooks/useRemoteRailSync";
+import { useWebAppsSync } from "./hooks/useWebAppsSync";
 import { useRemoteAppBridge, type ControlRequest } from "./hooks/useRemoteAppBridge";
 import type { ConnectableInboxSource } from "../features/inbox/model/inboxFilters";
 import type { InboxSessionPortal } from "../features/inbox/ui/InboxDiscussionPanel";
@@ -1376,6 +1377,7 @@ function Workspace({
   const homeMachine = useHomeMachine();
   useHostAutoUpdate();
   useRemoteRailSync();
+  useWebAppsSync();
   useEffect(() => startEmployeeRosterSync(), []);
   const linkedSessionUpdatesRef = useRef<
     ReadonlyMap<string, LinkedSessionUpdate>

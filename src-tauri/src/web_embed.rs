@@ -7,9 +7,11 @@
 //! overwrite each other's cookies. Webviews stay alive while hidden; the
 //! stores keep logins across launches.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 
-use tauri::webview::{NewWindowFeatures, NewWindowResponse, WebviewBuilder};
+use tauri::webview::{Cookie, NewWindowFeatures, NewWindowResponse, WebviewBuilder};
 use tauri::{
     AppHandle, LogicalPosition, LogicalSize, Manager, Rect, Url, WebviewUrl, WebviewWindowBuilder,
     Window,
@@ -159,8 +161,21 @@ pub async fn web_embed_show(
         webview.show().map_err(|e| e.to_string())?;
         return Ok(());
     }
+    let home = app_url(&url)?;
+    // A login from another desktop goes into the store before the page loads,
+    // so the page opens signed in.
+    let pending = take_pending(store);
+    let first = if pending.is_some() {
+        WebviewUrl::External(
+            "about:blank"
+                .parse()
+                .map_err(|e: url::ParseError| e.to_string())?,
+        )
+    } else {
+        WebviewUrl::External(home.clone())
+    };
     let handle = window.app_handle().clone();
-    let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(app_url(&url)?))
+    let mut builder = WebviewBuilder::new(&label, first)
         .on_navigation(allows_navigation)
         .on_new_window(move |url, features| open_new_window(&handle, url, features));
     if let Some(agent) = USER_AGENT {
@@ -172,10 +187,84 @@ pub async fn web_embed_show(
         builder.data_directory(store_directory(&window, store)?)
     };
     let r = rect(bounds);
-    window
+    let webview = window
         .add_child(builder, r.position, r.size)
         .map_err(|e| e.to_string())?;
+    if let Some(cookies) = pending {
+        set_cookies(&webview, &cookies);
+        webview.navigate(home).map_err(|e| e.to_string())?;
+    }
     Ok(())
+}
+
+/// Logins received for apps whose webview isn't open yet, by store.
+fn pending() -> &'static Mutex<HashMap<uuid::Uuid, Vec<String>>> {
+    static PENDING: OnceLock<Mutex<HashMap<uuid::Uuid, Vec<String>>>> = OnceLock::new();
+    PENDING.get_or_init(Default::default)
+}
+
+fn take_pending(store: uuid::Uuid) -> Option<Vec<String>> {
+    pending().lock().ok()?.remove(&store)
+}
+
+/// Any open webview over `store`; they all share its cookies.
+fn store_webview(window: &Window, store: uuid::Uuid) -> Option<tauri::Webview> {
+    let suffix = format!("-{}", store.simple());
+    window
+        .app_handle()
+        .webviews()
+        .into_iter()
+        .find(|(label, _)| label.starts_with("web-embed-") && label.ends_with(&suffix))
+        .map(|(_, webview)| webview)
+}
+
+/// Unparseable entries are skipped: a login is best-effort, never an error
+/// that keeps the app from opening.
+fn set_cookies(webview: &tauri::Webview, cookies: &[String]) {
+    for cookie in cookies {
+        if let Ok(cookie) = Cookie::parse(cookie.clone()) {
+            let _ = webview.set_cookie(cookie);
+        }
+    }
+}
+
+/// `app`'s cookies as `Set-Cookie` strings, so another desktop can sign in
+/// with them; None while its webview isn't open.
+#[tauri::command]
+pub async fn web_embed_cookies(window: Window, app: String) -> Result<Option<Vec<String>>, String> {
+    let Some(webview) = store_webview(&window, app_store(&app)?) else {
+        return Ok(None);
+    };
+    let cookies = webview.cookies().map_err(|e| e.to_string())?;
+    Ok(Some(cookies.iter().map(ToString::to_string).collect()))
+}
+
+/// Sign `app` in with cookies from another desktop: straight into its store
+/// when its webview is open, reloading it on a sign-in (`reload`) but not for
+/// a refreshed token, else when it next opens.
+#[tauri::command]
+pub async fn web_embed_set_cookies(
+    window: Window,
+    app: String,
+    cookies: Vec<String>,
+    reload: bool,
+) -> Result<(), String> {
+    let store = app_store(&app)?;
+    match store_webview(&window, store) {
+        Some(webview) => {
+            set_cookies(&webview, &cookies);
+            if reload {
+                webview.reload().map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        }
+        None => {
+            if let Ok(mut pending) = pending().lock() {
+                pending.insert(store, cookies);
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Keep the webviews, and so the pages and their logins, but take them off
@@ -207,6 +296,7 @@ pub async fn web_embed_reload(
 #[tauri::command]
 pub async fn web_embed_forget(window: Window, app: String) -> Result<(), String> {
     let store = app_store(&app)?;
+    take_pending(store);
     if let Some(webview) = window
         .app_handle()
         .get_webview(&embed_label(&window, store))
@@ -253,6 +343,17 @@ mod tests {
         assert!(app_url("file:///etc/passwd").is_err());
         assert!(app_url("javascript:alert(1)").is_err());
         assert!(app_url("linear.app").is_err());
+    }
+
+    #[test]
+    fn cookies_round_trip_as_set_cookie_strings() {
+        let text = "session=abc; HttpOnly; Secure; Path=/; Domain=linear.app";
+        let cookie = Cookie::parse(text.to_string()).unwrap();
+        let again = Cookie::parse(cookie.to_string()).unwrap();
+        assert_eq!(again.name_value(), ("session", "abc"));
+        assert_eq!(again.domain(), Some("linear.app"));
+        assert_eq!(again.http_only(), Some(true));
+        assert_eq!(again.secure(), Some(true));
     }
 
     #[test]

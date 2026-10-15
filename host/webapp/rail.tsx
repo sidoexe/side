@@ -4,7 +4,9 @@ import { ProjectMascot } from "../../src/features/projects/ui/ProjectMascot";
 import { tabGroupColor } from "../../src/features/workspace/model/tabGroups";
 import { projectName } from "../../src/shared/lib/paths";
 import type { HostRailState } from "../rail";
+import type { HostWebAppsState } from "../webApps";
 import { rpc } from "./api";
+import { usePoll } from "./ui";
 
 export type { HostRailState };
 
@@ -116,5 +118,33 @@ export function ProjectMenu({
         </>
       ) : null}
     </span>
+  );
+}
+
+/** The desktop's web apps. A browser can't show them inside the page (they
+ * refuse to be framed), so each opens in a tab of its own; the logins the
+ * desktops share stay on the host. */
+export function WebAppLinks({ enabled }: { enabled: boolean }) {
+  const [apps, setApps] = useState<HostWebAppsState["apps"]>([]);
+  usePoll(
+    async () => {
+      if (enabled) setApps((await rpc<HostWebAppsState>("webApps.get")).apps);
+    },
+    30_000,
+    [enabled],
+  );
+  if (!enabled || !apps.length) return null;
+  return (
+    <div className="web-apps">
+      <div className="web-apps-title">Web</div>
+      {apps.map((app) => (
+        <a key={app.id} className="web-app" href={app.url} target="_blank" rel="noreferrer noopener" title={app.url}>
+          <span className="web-app-badge" aria-hidden>
+            {app.name.charAt(0)}
+          </span>
+          <span className="ellipsis">{app.name}</span>
+        </a>
+      ))}
+    </div>
   );
 }

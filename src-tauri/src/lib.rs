@@ -356,6 +356,8 @@ pub fn run() {
             web_embed::web_embed_hide,
             web_embed::web_embed_reload,
             web_embed::web_embed_forget,
+            web_embed::web_embed_cookies,
+            web_embed::web_embed_set_cookies,
             jira::jira_status,
             jira::jira_set_config,
             jira::jira_list_projects,

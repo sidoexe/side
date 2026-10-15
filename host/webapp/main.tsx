@@ -14,7 +14,7 @@ import { command, describe, login, logout, rpc, Unauthorized } from "./api";
 import { SessionView } from "./SessionView";
 import { ChangesPanel, FolderBrowser } from "./workspace";
 import { AutomationsPage, ColleaguesPage, FilesPanel } from "./extras";
-import { backgroundUrl, ProjectBackground, ProjectBadge, ProjectMenu, visibleProjects, type HostRailState } from "./rail";
+import { backgroundUrl, ProjectBackground, ProjectBadge, ProjectMenu, visibleProjects, WebAppLinks, type HostRailState } from "./rail";
 import { ago, BranchIcon, Chip, Composer, go, MODES, tilde, useNotifications, usePoll, useRoute, type Route } from "./ui";
 import { HarnessIcon } from "../../src/features/sessions/ui/HarnessIcon";
 import { findModel, setHarnessModels } from "../../src/features/sessions/model/models";
@@ -168,6 +168,7 @@ function Sidebar({
           </a>
         ))}
       </div>
+      <WebAppLinks enabled={host.capabilities.includes("webApps")} />
       <input className="search" placeholder="Filter sessions" value={filter} onChange={(e) => setFilter(e.target.value)} />
       <div className="projects">
         {projects.map((project) => {

@@ -179,6 +179,10 @@ export function createHostServer(
     if (!engine.rail) throw new Error("The project rail is unavailable on this host");
     return engine.rail;
   };
+  const webApps = () => {
+    if (!engine.webApps) throw new Error("Web apps are unavailable on this host");
+    return engine.webApps;
+  };
   const push = () => {
     if (!engine.push) throw new Error("Notifications are unavailable on this host");
     return engine.push;
@@ -383,6 +387,7 @@ export function createHostServer(
                 ...(engine.app ? ["app"] : []),
                 ...(engine.push ? ["push"] : []),
                 ...(engine.rail ? ["projects.rail"] : []),
+                ...(engine.webApps ? ["webApps"] : []),
                 "accounts",
                 "accounts.refresh",
                 "accounts.balance",
@@ -822,6 +827,18 @@ export function createHostServer(
             break;
           case "projects.clearBackground":
             result = rail().clearBackground(params);
+            break;
+          case "webApps.get":
+            result = webApps().get();
+            break;
+          case "webApps.set":
+            result = webApps().set(params);
+            break;
+          case "webApps.session":
+            result = webApps().session(params);
+            break;
+          case "webApps.setSession":
+            result = webApps().setSession(params);
             break;
           case "push.key":
             result = { publicKey: push().publicKey() };

@@ -11,6 +11,8 @@ export const DEFAULT_WEB_APP: WebApp = {
 
 const APPS_KEY = "monocode.webApps";
 const ACTIVE_KEY = "monocode.webApp";
+/** When the list last changed, here or on the desktop it came from. */
+const UPDATED_KEY = "monocode.webApps.updatedAt";
 /** Before any site could be added, the view only held Linear accounts. */
 const LEGACY_LINEAR_KEY = "monocode.linearSpaces";
 const LEGACY_ACTIVE_KEY = "monocode.linearSpace";
@@ -79,6 +81,24 @@ export function webAppsSnapshot(): string {
 
 export function saveWebApps(apps: WebApp[]) {
   write(APPS_KEY, JSON.stringify(apps));
+  write(UPDATED_KEY, String(Date.now()));
+  changed();
+}
+
+/** 0 for a list never edited: any host's list is newer. */
+export function webAppsUpdatedAt(): number {
+  return Number(read(UPDATED_KEY)) || 0;
+}
+
+/** Take a newer list from elsewhere, keeping its time so it isn't sent back
+ * as a change of ours. */
+export function adoptWebApps(apps: WebApp[], updatedAt: number) {
+  const valid = apps.filter((app) =>
+    isApp(app as unknown as Record<string, unknown>),
+  );
+  if (valid.length === 0) return;
+  write(APPS_KEY, JSON.stringify(valid));
+  write(UPDATED_KEY, String(updatedAt));
   changed();
 }
 
