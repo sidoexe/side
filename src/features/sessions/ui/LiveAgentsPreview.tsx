@@ -129,7 +129,7 @@ export function LiveAgentsPreview({
   );
 }
 
-function LiveAgentCard({
+export function LiveAgentCard({
   agent,
   now,
   selected,

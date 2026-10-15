@@ -65,6 +65,7 @@ import {
 } from "../../features/projects/model/projectGroups";
 import type { LiveAgent } from "../../features/sessions/model/liveAgents";
 import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview";
+import { ReviewAgentsSection } from "../../features/sessions/ui/ReviewAgentsSection";
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
 import { RailAction, RailSearch } from "./RailAction";
@@ -350,6 +351,14 @@ export function ProjectRail({
     onReorderProjects,
     "y",
   );
+  // Finished agents and those waiting on the user sit under the projects;
+  // the bottom card keeps only the ones still working.
+  const reviewAgents = liveAgents.filter(
+    (agent) => agent.needsApproval || agent.done,
+  );
+  const workingAgents = liveAgents.filter(
+    (agent) => !agent.needsApproval && !agent.done,
+  );
   return (
     <nav
       ref={resize.setPaneRef}
@@ -528,9 +537,18 @@ export function ProjectRail({
               groupLogos={groupLogos}
               groupMascots={groupMascots}
             />
+            <ReviewAgentsSection
+              agents={reviewAgents}
+              activeSessionId={activeSessionId}
+              onSelect={onSelectAgent}
+              groupLabels={groupLabels}
+              groupColors={groupColors}
+              groupCustomColors={groupCustomColors}
+              groupMascots={groupMascots}
+            />
           </div>
           <LiveAgentsPreview
-            agents={liveAgents}
+            agents={workingAgents}
             activeSessionId={activeSessionId}
             onSelect={onSelectAgent}
             groupLabels={groupLabels}
