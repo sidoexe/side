@@ -355,10 +355,12 @@ private extension HostSessionSummary {
     var nowId: String { "now-\(id)" }
 }
 
-/// A newer build of this app is published next to the host.
+/// A newer build of this app is published next to the host. LiveContainer
+/// refuses to install while one of its apps runs ("Restart LiveContainer to
+/// install"), so the link is copied for Safari once LiveContainer is closed.
 struct UpdateBanner: View {
-    @Environment(\.openURL) private var openURL
     let update: AppUpdate
+    @State private var copied = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -368,11 +370,9 @@ struct UpdateBanner: View {
                 Text("\(update.version) · build \(String(update.build))").font(Theme.monoSmall).foregroundStyle(Theme.muted)
             }
             Spacer()
-            Button("Install") {
-                // Outside LiveContainer, Safari downloads the IPA instead.
-                openURL(update.install) { accepted in
-                    if !accepted { openURL(update.ipa) }
-                }
+            Button("Copy link") {
+                UIPasteboard.general.string = update.install.absoluteString
+                copied = true
             }
             .buttonStyle(ThemeButtonStyle(primary: true))
         }
@@ -381,5 +381,10 @@ struct UpdateBanner: View {
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.accent.opacity(0.35)))
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
+        .alert("Link copied", isPresented: $copied) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("1. Close LiveContainer: swipe it away in the app switcher.\n2. Paste the link in Safari's address bar and open it.\n3. Choose Replace: the app keeps its data and stays paired.")
+        }
     }
 }
