@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Plus, X } from "../../shared/ui/icons";
+import { Pencil, Plus, X } from "../../shared/ui/icons";
 import { useAnimatedReorder } from "../../shared/hooks/useAnimatedReorder";
 import { useWebApps } from "../../features/web-apps/hooks/useWebApps";
 import {
@@ -110,10 +110,10 @@ export function WebAppsRailSection({
             >
               <button
                 type="button"
-                title={`${app.name}\n${app.url}\nDouble-click to rename`}
+                title={`${app.name}\n${app.url}`}
                 aria-label={app.name}
                 aria-current={selected ? "true" : undefined}
-                className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left transition-[padding] duration-150 motion-reduce:transition-none group-hover:pr-6 group-has-[:focus-visible]:pr-6"
+                className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left transition-[padding] duration-150 motion-reduce:transition-none group-hover:pr-12 group-has-[:focus-visible]:pr-12"
               >
                 <span
                   aria-hidden
@@ -125,22 +125,38 @@ export function WebAppsRailSection({
                   {app.name}
                 </span>
               </button>
-              {apps.length > 1 ? (
+              <div
+                data-no-drag
+                onPointerDown={(event) => event.stopPropagation()}
+                className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center group-hover:flex group-has-[:focus-visible]:flex"
+              >
                 <button
                   type="button"
-                  data-no-drag
-                  title="Remove and sign out"
-                  aria-label={`Remove ${app.name}`}
-                  onPointerDown={(event) => event.stopPropagation()}
+                  title="Rename"
+                  aria-label={`Rename ${app.name}`}
                   onClick={(event) => {
                     event.stopPropagation();
-                    remove(app);
+                    setRenaming(app.id);
                   }}
-                  className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-content/55 hover:bg-content/8 hover:text-content group-hover:grid group-has-[:focus-visible]:grid"
+                  className="grid size-6 place-items-center rounded-md text-content/55 hover:bg-content/8 hover:text-content"
                 >
-                  <X className="size-3.5" strokeWidth={1.75} />
+                  <Pencil className="size-3.5" strokeWidth={1.75} />
                 </button>
-              ) : null}
+                {apps.length > 1 ? (
+                  <button
+                    type="button"
+                    title="Remove and sign out"
+                    aria-label={`Remove ${app.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      remove(app);
+                    }}
+                    className="grid size-6 place-items-center rounded-md text-content/55 hover:bg-content/8 hover:text-content"
+                  >
+                    <X className="size-3.5" strokeWidth={1.75} />
+                  </button>
+                ) : null}
+              </div>
             </div>
           );
         })}

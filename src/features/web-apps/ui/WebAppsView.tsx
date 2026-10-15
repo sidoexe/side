@@ -1,15 +1,21 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
-import { ExternalLink, Globe, RefreshCw } from "../../../shared/ui/icons";
+import {
+  ExternalLink,
+  Globe,
+  Pencil,
+  RefreshCw,
+} from "../../../shared/ui/icons";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import {
   loadUiScale,
   UI_SCALE_CHANGE_EVENT,
 } from "../../settings/model/uiScale";
 import { useWebApps } from "../hooks/useWebApps";
+import { renameWebApp } from "../model/webApps";
 
 type Props = {
   besideRail?: boolean;
@@ -35,6 +41,9 @@ export function WebAppsView({
 }: Props) {
   const slotRef = useRef<HTMLDivElement>(null);
   const { active } = useWebApps();
+  const [renaming, setRenaming] = useState(false);
+  // Picking another app in the rail drops an unfinished rename.
+  useEffect(() => setRenaming(false), [active.id]);
 
   useEffect(() => {
     const slot = slotRef.current;
@@ -89,17 +98,49 @@ export function WebAppsView({
         {besideRail ? null : (
           <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
         )}
-        <button
-          type="button"
-          title={`${active.url}\nBack to the home page`}
-          onClick={() => reload(active.id, active.url)}
-          className="flex min-w-0 flex-1 items-center gap-2 px-3 text-left text-[13px]"
-        >
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
           <Globe
             className="size-3.5 shrink-0 text-content/45"
             strokeWidth={1.75}
           />
-          <span className="min-w-0 truncate text-content">{active.name}</span>
+          {renaming ? (
+            <input
+              autoFocus
+              defaultValue={active.name}
+              maxLength={40}
+              aria-label="App name"
+              spellCheck={false}
+              onFocus={(event) => event.currentTarget.select()}
+              onBlur={(event) => {
+                renameWebApp(active.id, event.target.value);
+                setRenaming(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+                if (event.key === "Escape") setRenaming(false);
+              }}
+              className="h-6 w-56 min-w-0 rounded-md bg-content/10 px-2 text-[13px] text-content outline-none ring-accent/40 focus:ring-1"
+            />
+          ) : (
+            <button
+              type="button"
+              title={`${active.url}\nClick for the home page · double-click to rename`}
+              onClick={() => reload(active.id, active.url)}
+              onDoubleClick={() => setRenaming(true)}
+              className="min-w-0 truncate text-left text-content"
+            >
+              {active.name}
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          title="Rename"
+          aria-label={`Rename ${active.name}`}
+          onClick={() => setRenaming(true)}
+          className="grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
+        >
+          <Pencil className="size-3.5" strokeWidth={1.75} />
         </button>
         <button
           type="button"
