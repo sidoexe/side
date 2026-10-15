@@ -1,5 +1,11 @@
 /** A web app signed in to one account, inside its own isolated webview. */
-export type WebApp = { id: string; name: string; url: string };
+export type WebApp = {
+  id: string;
+  name: string;
+  url: string;
+  /** The rail folder it is filed under; a folder exists while it holds one. */
+  folder?: string;
+};
 
 /** The app the view starts with. Its id predates UUIDs; the native side
  * maps it to a store of its own, like every other app. */
@@ -16,6 +22,8 @@ const UPDATED_KEY = "monocode.webApps.updatedAt";
 /** Before any site could be added, the view only held Linear accounts. */
 const LEGACY_LINEAR_KEY = "monocode.linearSpaces";
 const LEGACY_ACTIVE_KEY = "monocode.linearSpace";
+/** Folders folded in this rail; not shared, like a project group's. */
+const COLLAPSED_KEY = "monocode.webAppFolders.collapsed";
 
 function read(key: string): string | null {
   try {
@@ -50,7 +58,8 @@ function isApp(value: Record<string, unknown>): value is WebApp {
     value.id !== "" &&
     typeof value.name === "string" &&
     typeof value.url === "string" &&
-    normalizeWebAppUrl(value.url) !== null
+    normalizeWebAppUrl(value.url) !== null &&
+    (value.folder === undefined || typeof value.folder === "string")
   );
 }
 
@@ -76,7 +85,7 @@ export function subscribeWebApps(onChange: () => void): () => void {
 
 /** Snapshot for `useSyncExternalStore`; stable while storage is unchanged. */
 export function webAppsSnapshot(): string {
-  return `${read(APPS_KEY) ?? ""}|${read(ACTIVE_KEY) ?? ""}`;
+  return `${read(APPS_KEY) ?? ""}|${read(ACTIVE_KEY) ?? ""}|${read(COLLAPSED_KEY) ?? ""}`;
 }
 
 export function saveWebApps(apps: WebApp[]) {
@@ -140,15 +149,102 @@ export function deleteWebApp(id: string) {
   if (loadActiveWebApp(apps) === id) saveActiveWebApp(next[0].id);
 }
 
+/** Put `ids` in this order within the slots they already hold, so one
+ * folder's apps reorder without moving anyone else. */
 export function reorderWebApps(ids: readonly string[]) {
-  const order = new Map(ids.map((id, index) => [id, index]));
+  saveWebApps(reorderWithin(loadWebApps(), ids));
+}
+
+export function reorderWithin(apps: WebApp[], ids: readonly string[]): WebApp[] {
+  const byId = new Map(apps.map((app) => [app.id, app]));
+  const moved = ids.flatMap((id) => byId.get(id) ?? []);
+  const members = new Set(moved.map((app) => app.id));
+  let next = 0;
+  return apps.map((app) => (members.has(app.id) ? moved[next++] : app));
+}
+
+/** Folder names in rail order: where each one's first app stands. */
+export function webAppFolders(apps: readonly WebApp[]): string[] {
+  return [...new Set(apps.flatMap((app) => (app.folder ? [app.folder] : [])))];
+}
+
+/** A clean folder name, or null when nothing is left of it. */
+export function normalizeWebAppFolder(name: string): string | null {
+  const trimmed = name.trim().slice(0, 40);
+  return trimmed || null;
+}
+
+/** File `id` under `folder`, or take it out of any with undefined. It goes
+ * to the end of that folder so it shows where the user looks next. */
+export function moveWebAppToFolder(id: string, folder: string | undefined) {
+  const name = folder === undefined ? undefined : normalizeWebAppFolder(folder);
+  if (name === null) return;
+  const apps = loadWebApps();
+  const app = apps.find((entry) => entry.id === id);
+  if (!app || app.folder === name) return;
+  const { folder: _previous, ...rest } = app;
+  const moved: WebApp = name ? { ...rest, folder: name } : rest;
+  const others = apps.filter((entry) => entry.id !== id);
+  let last = -1;
+  if (name)
+    others.forEach((entry, index) => {
+      if (entry.folder === name) last = index;
+    });
+  others.splice(last === -1 ? others.length : last + 1, 0, moved);
+  saveWebApps(others);
+  if (name) setWebAppFolderCollapsed(name, false);
+}
+
+export function renameWebAppFolder(from: string, to: string) {
+  const name = normalizeWebAppFolder(to);
+  if (!name || name === from) return;
   saveWebApps(
-    [...loadWebApps()].sort(
-      (a, b) =>
-        (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
-        (order.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+    loadWebApps().map((app) =>
+      app.folder === from ? { ...app, folder: name } : app,
     ),
   );
+  if (loadCollapsedWebAppFolders().has(from)) {
+    setWebAppFolderCollapsed(from, false);
+    setWebAppFolderCollapsed(name, true);
+  }
+}
+
+/** Take every app out of `folder`, which then no longer exists. */
+export function ungroupWebAppFolder(folder: string) {
+  saveWebApps(
+    loadWebApps().map((app) => {
+      if (app.folder !== folder) return app;
+      const { folder: _folder, ...rest } = app;
+      return rest;
+    }),
+  );
+  setWebAppFolderCollapsed(folder, false);
+}
+
+export function loadCollapsedWebAppFolders(): Set<string> {
+  return new Set(
+    parseJson(read(COLLAPSED_KEY)).filter(
+      (name): name is string => typeof name === "string",
+    ),
+  );
+}
+
+export function setWebAppFolderCollapsed(folder: string, collapsed: boolean) {
+  const names = loadCollapsedWebAppFolders();
+  if (names.has(folder) === collapsed) return;
+  if (collapsed) names.add(folder);
+  else names.delete(folder);
+  write(COLLAPSED_KEY, JSON.stringify([...names]));
+  changed();
+}
+
+function parseJson(raw: string | null): unknown[] {
+  try {
+    const parsed: unknown = JSON.parse(raw ?? "");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 /** What the user typed as a page to open: `linear.app` means https. Only

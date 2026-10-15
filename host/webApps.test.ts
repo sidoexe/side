@@ -28,6 +28,13 @@ describe("web apps", () => {
     expect(store.set({ apps: [NOTION], updatedAt: 30 }).apps).toEqual([NOTION]);
   });
 
+  it("keeps each app's folder", () => {
+    const store = new HostWebApps(directory());
+    expect(store.set({ apps: [{ ...NOTION, folder: " Work " }, LINEAR], updatedAt: 1 }).apps)
+      .toEqual([{ ...NOTION, folder: "Work" }, LINEAR]);
+    expect(() => store.set({ apps: [{ ...LINEAR, folder: 3 }], updatedAt: 2 })).toThrow();
+  });
+
   it("refuses what isn't a web app", () => {
     const store = new HostWebApps(directory());
     expect(() => store.set({ apps: [{ ...LINEAR, url: "file:///etc/passwd" }], updatedAt: 1 })).toThrow();

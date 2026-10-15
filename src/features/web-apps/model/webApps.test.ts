@@ -4,7 +4,10 @@ import {
   newWebApp,
   normalizeWebAppUrl,
   removeWebApp,
+  reorderWithin,
+  webAppFolders,
   webAppName,
+  type WebApp,
 } from "./webApps";
 
 describe("web apps", () => {
@@ -42,5 +45,25 @@ describe("web apps", () => {
       notion,
     ]);
     expect(removeWebApp([notion], "n")).toEqual([DEFAULT_WEB_APP]);
+  });
+
+  it("reorders one folder's apps within their own slots", () => {
+    const app = (id: string, folder?: string): WebApp => ({
+      id,
+      name: id,
+      url: `https://${id}.com/`,
+      ...(folder ? { folder } : {}),
+    });
+    const apps = [app("a"), app("b", "Work"), app("c"), app("d", "Work")];
+    expect(reorderWithin(apps, ["d", "b"]).map((entry) => entry.id)).toEqual([
+      "a",
+      "d",
+      "c",
+      "b",
+    ]);
+    expect(webAppFolders([...apps, app("e", "Home")])).toEqual([
+      "Work",
+      "Home",
+    ]);
   });
 });

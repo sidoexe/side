@@ -12,7 +12,7 @@ import { join } from "node:path";
  * from the list, readable by this user only, and dropped with their app.
  */
 
-export type HostWebApp = { id: string; name: string; url: string };
+export type HostWebApp = { id: string; name: string; url: string; folder?: string };
 
 export type HostWebAppsState = {
   apps: HostWebApp[];
@@ -55,9 +55,12 @@ function apps(value: unknown): HostWebApp[] {
   const out: HostWebApp[] = [];
   for (const entry of value) {
     if (!entry || typeof entry !== "object") throw new Error("Invalid web apps");
-    const { id, name, url } = entry as Record<string, unknown>;
+    const { id, name, url, folder } = entry as Record<string, unknown>;
     if (typeof name !== "string" || !name.trim() || name.length > 40) throw new Error("Invalid web app name");
-    const app = { id: appId(id), name: name.trim(), url: webUrl(url) };
+    if (folder !== undefined && (typeof folder !== "string" || folder.length > 40))
+      throw new Error("Invalid web app folder");
+    const app: HostWebApp = { id: appId(id), name: name.trim(), url: webUrl(url) };
+    if (typeof folder === "string" && folder.trim()) app.folder = folder.trim();
     if (!out.some((other) => other.id === app.id)) out.push(app);
   }
   return out;
