@@ -24,7 +24,8 @@
         "transparent": true,
         "backgroundColor": "#171717",
         "backgroundThrottling": "throttle",
-        "shadow": true
+        "shadow": true,
+        "zoomHotkeysEnabled": true
       }
     ],
     "security": {

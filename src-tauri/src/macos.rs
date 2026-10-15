@@ -91,6 +91,15 @@ pub fn register_spellcheck_default() {
     unsafe { NSUserDefaults::standardUserDefaults().registerDefaults(&defaults) };
 }
 
+/// sIDE has its own tabs. Native window tabbing merged hidden workspace windows
+/// into a tab bar when the Dock brought them back, and those tabs could not be
+/// closed: a busy window's close hides it instead.
+pub fn disable_window_tabbing() {
+    if let Some(mtm) = MainThreadMarker::new() {
+        NSWindow::setAllowsAutomaticWindowTabbing(false, mtm);
+    }
+}
+
 pub fn install(window: &WebviewWindow) {
     // Opaque for the dock bounce so the first frames are a solid field,
     // not a frosted desktop. Glass turns on after the first UI paint.
