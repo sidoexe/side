@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { pathKey } from "../../../shared/lib/paths";
 import {
   applySessionSync,
   type HostCommand,
@@ -39,12 +40,16 @@ export function remotePendingWorktree(shellId: string): string | undefined {
 }
 
 /** The host checkout currently used by a remote tab. */
-export function remoteTabCwd(project: string, shellId?: string): string | undefined {
+export function remoteTabCwd(
+  project: string,
+  shellId?: string,
+): string | undefined {
   if (!shellId) return undefined;
   const sessionId = remoteSessionFor(shellId);
   return (
-    (sessionId ? cachedRemoteSessionSummary(project, sessionId)?.cwd : undefined) ??
-    remotePendingWorktree(shellId)
+    (sessionId
+      ? cachedRemoteSessionSummary(project, sessionId)?.cwd
+      : undefined) ?? remotePendingWorktree(shellId)
   );
 }
 
@@ -83,14 +88,24 @@ export function rememberRemoteSession(shellId: string, sessionId?: string) {
 const pendingPrefix = (project: string, environment: string) =>
   `monocode.remote-command.v1:${JSON.stringify([project, environment])}:`;
 
-type PendingEntry = { command: HostCommand; shellId?: string; followup?: HostCommand };
+type PendingEntry = {
+  command: HostCommand;
+  shellId?: string;
+  followup?: HostCommand;
+};
 const readPendingEntry = (value: string): PendingEntry => {
   const parsed = JSON.parse(value) as PendingEntry | HostCommand;
   return "command" in parsed ? parsed : { command: parsed };
 };
 
-export const pendingRemoteFollowup = (project: string, environment: string, id: string) => {
-  const value = localStorage.getItem(`${pendingPrefix(project, environment)}${id}`);
+export const pendingRemoteFollowup = (
+  project: string,
+  environment: string,
+  id: string,
+) => {
+  const value = localStorage.getItem(
+    `${pendingPrefix(project, environment)}${id}`,
+  );
   return value ? readPendingEntry(value).followup : undefined;
 };
 
@@ -111,7 +126,8 @@ export const pendingRemoteCommand = (
         if (
           sessionId === undefined ||
           (sessionId === null
-            ? command.type === "create" && (!entry.shellId || entry.shellId === shellId)
+            ? command.type === "create" &&
+              (!entry.shellId || entry.shellId === shellId)
             : command.type !== "create" && command.sessionId === sessionId)
         )
           return command;
@@ -133,8 +149,12 @@ export const savePendingRemoteCommand = (
   try {
     localStorage.setItem(
       `${pendingPrefix(project, environment)}${command.commandId}`,
-      JSON.stringify({ command, shellId,
-        followup: followup ?? pendingRemoteFollowup(project, environment, command.commandId),
+      JSON.stringify({
+        command,
+        shellId,
+        followup:
+          followup ??
+          pendingRemoteFollowup(project, environment, command.commandId),
       } satisfies PendingEntry),
     );
   } catch {
@@ -202,8 +222,9 @@ export async function loadRemoteSession(
   } catch {
     snapshot = applySessionSync(undefined, await sync());
   }
-  return withRemoteAttachmentPreviews(machineId, snapshot, known,
-    (params) => remoteRequest(machineId, "attachments.read", params));
+  return withRemoteAttachmentPreviews(machineId, snapshot, known, (params) =>
+    remoteRequest(machineId, "attachments.read", params),
+  );
 }
 
 /** The connected machine for an environment, from the last machine list read. */
@@ -316,8 +337,9 @@ function watchMachineStatus(machineId: string): () => void {
   if (existing) {
     existing.count++;
   } else {
-    const watcher: { count: number; timer?: ReturnType<typeof setTimeout> } =
-      { count: 1 };
+    const watcher: { count: number; timer?: ReturnType<typeof setTimeout> } = {
+      count: 1,
+    };
     statusWatchers.set(machineId, watcher);
     let failures = 0;
     const poll = async () => {
@@ -346,7 +368,9 @@ function watchMachineStatus(machineId: string): () => void {
 }
 
 /** Whether a machine is reachable; undefined until the first check returns. */
-export function useRemoteMachineOnline(machineId?: string): boolean | undefined {
+export function useRemoteMachineOnline(
+  machineId?: string,
+): boolean | undefined {
   const [online, setOnline] = useState(() =>
     machineId ? machineOnline.get(machineId) : undefined,
   );
@@ -379,6 +403,104 @@ function cachedSessions(project: string): HostSessionSummary[] {
     return [];
   }
 }
+/** Caches a project's host list, announcing it only when it changed. */
+function storeRemoteSessions(project: string, next: HostSessionSummary[]) {
+  const text = JSON.stringify(next);
+  try {
+    if (localStorage.getItem(historyKey(project)) === text) return;
+    localStorage.setItem(historyKey(project), text);
+    window.dispatchEvent(new Event(REMOTE_HISTORY_UPDATED));
+  } catch {
+    /* the list is refetched next time */
+  }
+}
+
+export type RemoteProjectStatus = { working: number; done: number };
+
+/** How many of a host list's sessions work and wait to be checked. */
+export function remoteProjectStatus(
+  sessions: readonly HostSessionSummary[],
+): RemoteProjectStatus {
+  let working = 0;
+  let done = 0;
+  for (const session of sessions) {
+    if (session.archived) continue;
+    if (session.status === "running") working += 1;
+    else if (session.toReview) done += 1;
+  }
+  return { working, done };
+}
+
+const STATUS_POLL_MS = 15_000;
+
+/**
+ * Each remote project's working and done sessions, keyed by `pathKey`, as its
+ * host reports them. Polls every rail project, slower than an open project's
+ * list, which refreshes the same cache.
+ */
+export function useRemoteProjectsStatus(
+  paths: readonly string[],
+): ReadonlyMap<string, RemoteProjectStatus> {
+  const remotePaths = paths.filter((path) => !!remoteProjectFor(path));
+  const remoteKey = remotePaths.join("\0");
+  const { machines } = useRemoteMachines(remotePaths.length > 0);
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    const updated = () => setVersion((value) => value + 1);
+    window.addEventListener(REMOTE_HISTORY_UPDATED, updated);
+    return () => window.removeEventListener(REMOTE_HISTORY_UPDATED, updated);
+  }, []);
+  const machineKey = machines
+    .map((machine) => `${machine.id}:${machine.environmentId}`)
+    .join(",");
+  useEffect(() => {
+    if (!remoteKey) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let failures = 0;
+    const poll = async () => {
+      let failed = false;
+      await Promise.all(
+        remoteKey.split("\0").map(async (project) => {
+          const remote = remoteProjectFor(project);
+          const machine = remote
+            ? machines.find(
+                (entry) => entry.environmentId === remote.environmentId,
+              )
+            : undefined;
+          if (!remote || !machine) return;
+          try {
+            const next = await remoteRequest<HostSessionSummary[]>(
+              machine.id,
+              "sessions.list",
+              { projectId: remote.projectId },
+            );
+            if (!disposed) storeRemoteSessions(project, next);
+          } catch {
+            failed = true;
+          }
+        }),
+      );
+      // Back off while a machine is unreachable.
+      failures = failed ? Math.min(4, failures + 1) : 0;
+      if (!disposed)
+        timer = setTimeout(() => void poll(), STATUS_POLL_MS * 2 ** failures);
+    };
+    void poll();
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
+    // `machines` is read through its key.
+  }, [remoteKey, machineKey]);
+  return useMemo(() => {
+    const counts = new Map<string, RemoteProjectStatus>();
+    for (const path of remoteKey ? remoteKey.split("\0") : [])
+      counts.set(pathKey(path), remoteProjectStatus(cachedSessions(path)));
+    return counts;
+  }, [remoteKey, version]);
+}
+
 export function cachedRemoteSessionSummary(project: string, sessionId: string) {
   return cachedSessions(project).find((session) => session.id === sessionId);
 }
@@ -430,12 +552,7 @@ export function useRemoteProjectSessions(
         failures = 0;
         setSessions(next);
         setLoaded(true);
-        try {
-          localStorage.setItem(historyKey(project), JSON.stringify(next));
-          window.dispatchEvent(new Event(REMOTE_HISTORY_UPDATED));
-        } catch {
-          /* the list is refetched next time */
-        }
+        storeRemoteSessions(project, next);
       } catch {
         // Keep the cached list and back off while SSH is unavailable.
         failures = Math.min(4, failures + 1);

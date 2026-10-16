@@ -99,6 +99,7 @@ import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/conn
 import {
   useRemoteMachineOnline,
   useRemoteMachines,
+  useRemoteProjectsStatus,
 } from "../../features/connections/model/connections";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { useProjectMenu } from "./useProjectMenu";
@@ -287,6 +288,9 @@ export function ProjectRail({
     subscribeSessionsToReview,
     sessionsToReview,
   );
+  const remoteStatus = useRemoteProjectsStatus(
+    useMemo(() => recents.map((item) => item.path), [recents]),
+  );
   const projectStatus = useMemo(() => {
     const counts = new Map<string, ProjectStatusCounts>();
     const entry = (path: string) => {
@@ -297,8 +301,10 @@ export function ProjectRail({
     };
     for (const path of busyPaths ?? []) entry(path).working += 1;
     for (const path of toReview.values()) if (path) entry(path).done += 1;
+    // A host keeps its own sessions' state; this desktop does not run them.
+    for (const [key, status] of remoteStatus) counts.set(key, status);
     return { counts, onShowDone: onShowProjectDone };
-  }, [busyPaths, toReview, onShowProjectDone]);
+  }, [busyPaths, toReview, remoteStatus, onShowProjectDone]);
 
   useEffect(() => {
     setRailOrder((prev) => {
@@ -476,20 +482,94 @@ export function ProjectRail({
           >
             <ProjectStatusContext.Provider value={projectStatus}>
               {monos ? <MonoRailSection {...monos} /> : null}
-            {onOpenWeb ? (
-              <WebAppsRailSection webActive={webActive} onOpenWeb={onOpenWeb} />
-            ) : null}
+              {onOpenWeb ? (
+                <WebAppsRailSection
+                  webActive={webActive}
+                  onOpenWeb={onOpenWeb}
+                />
+              ) : null}
 
-            {sections.pinned.length > 0 ? (
+              {sections.pinned.length > 0 ? (
+                <ProjectSection
+                  label="Pinned"
+                  items={sections.pinned}
+                  muteStatuses={muteStatuses}
+                  cwd={cwd}
+                  busy={busy}
+                  statsEnabled={visible}
+                  sortable={pinnedSortable}
+                  pinned
+                  searchActive={otherViewActive}
+                  onSelect={onSelectProject}
+                  onTogglePin={toggleProjectPin}
+                  onContextMenu={onProjectContextMenu}
+                  onOpenMenu={projectMenu.open}
+                  groupLabels={groupLabels}
+                  groupColors={groupColors}
+                  groupCustomColors={groupCustomColors}
+                  groupLogos={groupLogos}
+                  groupMascots={groupMascots}
+                />
+              ) : null}
+
+              {projectGroups.length > 0 ? (
+                <div className="mb-2 shrink-0">
+                  <ProjectSectionHeader
+                    label="Groups"
+                    onAddGroup={(x, y) => projectMenu.createGroup(x, y)}
+                  />
+                  <div className="flex flex-col gap-px px-2">
+                    {groupedProjectSections.grouped.map(({ group, items }) => (
+                      <ProjectGroupSection
+                        key={group.id}
+                        group={group}
+                        groupSortable={groupSortable}
+                        items={items}
+                        muteStatuses={muteStatuses}
+                        cwd={cwd}
+                        busy={busy}
+                        statsEnabled={visible}
+                        searchActive={otherViewActive}
+                        onSelect={onSelectProject}
+                        onTogglePin={toggleProjectPin}
+                        onContextMenu={onProjectContextMenu}
+                        onOpenMenu={projectMenu.open}
+                        onReorder={onReorderProjects}
+                        onToggleCollapsed={() =>
+                          updateProjectGroup(group.id, (current) => ({
+                            ...current,
+                            collapsed: !current.collapsed,
+                          }))
+                        }
+                        onOpenGroupMenu={(x, y) =>
+                          projectMenu.openGroupMenu(group.id, x, y)
+                        }
+                        groupLabels={groupLabels}
+                        groupColors={groupColors}
+                        groupCustomColors={groupCustomColors}
+                        groupLogos={groupLogos}
+                        groupMascots={groupMascots}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <ProjectSection
-                label="Pinned"
-                items={sections.pinned}
+                label="Projects"
+                items={groupedProjectSections.ungrouped}
                 muteStatuses={muteStatuses}
+                emptyLabel={
+                  sections.projects.length === 0 && projectGroups.length === 0
+                    ? "No projects yet"
+                    : undefined
+                }
+                onAdd={onOpenProject}
                 cwd={cwd}
                 busy={busy}
                 statsEnabled={visible}
-                sortable={pinnedSortable}
-                pinned
+                sortable={projectSortable}
+                pinned={false}
                 searchActive={otherViewActive}
                 onSelect={onSelectProject}
                 onTogglePin={toggleProjectPin}
@@ -501,86 +581,15 @@ export function ProjectRail({
                 groupLogos={groupLogos}
                 groupMascots={groupMascots}
               />
-            ) : null}
-
-            {projectGroups.length > 0 ? (
-              <div className="mb-2 shrink-0">
-                <ProjectSectionHeader
-                  label="Groups"
-                  onAddGroup={(x, y) => projectMenu.createGroup(x, y)}
-                />
-                <div className="flex flex-col gap-px px-2">
-                  {groupedProjectSections.grouped.map(({ group, items }) => (
-                    <ProjectGroupSection
-                      key={group.id}
-                      group={group}
-                      groupSortable={groupSortable}
-                      items={items}
-                      muteStatuses={muteStatuses}
-                      cwd={cwd}
-                      busy={busy}
-                      statsEnabled={visible}
-                      searchActive={otherViewActive}
-                      onSelect={onSelectProject}
-                      onTogglePin={toggleProjectPin}
-                      onContextMenu={onProjectContextMenu}
-                      onOpenMenu={projectMenu.open}
-                      onReorder={onReorderProjects}
-                      onToggleCollapsed={() =>
-                        updateProjectGroup(group.id, (current) => ({
-                          ...current,
-                          collapsed: !current.collapsed,
-                        }))
-                      }
-                      onOpenGroupMenu={(x, y) =>
-                        projectMenu.openGroupMenu(group.id, x, y)
-                      }
-                      groupLabels={groupLabels}
-                      groupColors={groupColors}
-                      groupCustomColors={groupCustomColors}
-                      groupLogos={groupLogos}
-                      groupMascots={groupMascots}
-                    />
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <ProjectSection
-              label="Projects"
-              items={groupedProjectSections.ungrouped}
-              muteStatuses={muteStatuses}
-              emptyLabel={
-                sections.projects.length === 0 && projectGroups.length === 0
-                  ? "No projects yet"
-                  : undefined
-              }
-              onAdd={onOpenProject}
-              cwd={cwd}
-              busy={busy}
-              statsEnabled={visible}
-              sortable={projectSortable}
-              pinned={false}
-              searchActive={otherViewActive}
-              onSelect={onSelectProject}
-              onTogglePin={toggleProjectPin}
-              onContextMenu={onProjectContextMenu}
-              onOpenMenu={projectMenu.open}
-              groupLabels={groupLabels}
-              groupColors={groupColors}
-              groupCustomColors={groupCustomColors}
-              groupLogos={groupLogos}
-              groupMascots={groupMascots}
-            />
-            <ReviewAgentsSection
-              agents={reviewAgents}
-              activeSessionId={activeSessionId}
-              onSelect={onSelectAgent}
-              groupLabels={groupLabels}
-              groupColors={groupColors}
-              groupCustomColors={groupCustomColors}
-              groupMascots={groupMascots}
-            />
+              <ReviewAgentsSection
+                agents={reviewAgents}
+                activeSessionId={activeSessionId}
+                onSelect={onSelectAgent}
+                groupLabels={groupLabels}
+                groupColors={groupColors}
+                groupCustomColors={groupCustomColors}
+                groupMascots={groupMascots}
+              />
             </ProjectStatusContext.Provider>
           </div>
           <LiveAgentsPreview
