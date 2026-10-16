@@ -15,6 +15,7 @@ import {
   type SshSetup,
 } from "../model/protocol";
 import { HomeMachineSetting } from "./HomeMachineSetting";
+import { LinkedText } from "./LinkedText";
 import { hostIsOlder } from "../model/hostVersion";
 import { readAppVersion } from "../../../app/model/updater";
 
@@ -487,7 +488,9 @@ export function ConnectionsSettings() {
         >
           <div className="flex items-center gap-2 text-[13px]">
             <Loader className="size-4 animate-spin" />
-            {job?.message ?? "Starting connection…"}
+            <span className="min-w-0 whitespace-pre-wrap break-words">
+              <LinkedText text={job?.message ?? "Starting connection…"} />
+            </span>
           </div>
           {job?.prompt && (
             <form
@@ -498,7 +501,7 @@ export function ConnectionsSettings() {
               }}
             >
               <p className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-content/70">
-                {job.prompt.message}
+                <LinkedText text={job.prompt.message} />
               </p>
               {!job.prompt.confirm && (
                 <input
@@ -549,7 +552,7 @@ export function ConnectionsSettings() {
           role="alert"
           className="whitespace-pre-wrap break-words rounded-lg bg-red-500/5 p-3 text-[12px] leading-relaxed text-red-400"
         >
-          {error}
+          <LinkedText text={error} />
         </p>
       )}
       {notice && (
