@@ -17,18 +17,26 @@ export function resumeMonoUsageLimit(session: Session): Session {
       });
 }
 
-/** Account-owned threads need a fresh connection with a transcript handoff. */
-export function switchMonoUsageLimitAccount(
+/**
+ * Move a Mono to another account. Provider threads are account-owned, so the
+ * next turn opens a fresh one and hands the transcript over.
+ */
+export function switchMonoAccount(
   session: Session,
   accountId: string,
 ): Session {
   if (
-    !session.usageLimit ||
     session.busy ||
     sameProviderAccountId(session.providerAccountId, accountId)
   )
     return session;
-  return resumeMonoUsageLimit({
+  if (!session.blocks.some((block) => block.role === "user"))
+    return {
+      ...session,
+      providerAccountId: accountId,
+      providerSessionId: undefined,
+    };
+  return {
     ...session,
     providerAccountId: accountId,
     providerSessionId: undefined,
@@ -42,5 +50,19 @@ export function switchMonoUsageLimitAccount(
       }),
       skipOutgoingRecap: true,
     },
-  });
+  };
+}
+
+/** Account-owned threads need a fresh connection with a transcript handoff. */
+export function switchMonoUsageLimitAccount(
+  session: Session,
+  accountId: string,
+): Session {
+  if (
+    !session.usageLimit ||
+    session.busy ||
+    sameProviderAccountId(session.providerAccountId, accountId)
+  )
+    return session;
+  return resumeMonoUsageLimit(switchMonoAccount(session, accountId));
 }

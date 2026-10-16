@@ -10,6 +10,7 @@ import {
 import { newSession, type Session } from "../../sessions/model/session";
 import {
   resumeMonoUsageLimit,
+  switchMonoAccount,
   switchMonoUsageLimitAccount,
 } from "./monoUsageLimit";
 
@@ -132,5 +133,37 @@ describe("Employee usage recovery", () => {
     expect(stopped.usageLimit).toEqual({});
     expect(stopped.queueStatus).toBe("paused");
     expect(canDispatchQueuedHead(stopped)).toBe(false);
+  });
+});
+
+describe("Employee account choice", () => {
+  it("hands the conversation to the chosen account without resuming anything", () => {
+    const original = limited({ usageLimit: undefined });
+    const moved = switchMonoAccount(original, "account-work");
+    expect(moved.providerAccountId).toBe("account-work");
+    expect(moved.providerSessionId).toBeUndefined();
+    expect(moved.blocks).toEqual(original.blocks);
+    expect(moved.queuedMessages).toBeUndefined();
+    expect(pendingComposerSwitch(moved)).toMatchObject({
+      from: "claude",
+      fromProviderSessionId: "old-thread",
+      fromProviderAccountId: "default",
+      skipOutgoingRecap: true,
+    });
+    expect(shouldAskOutgoingAgent(moved)).toBe(false);
+  });
+
+  it("just sets the account before the first message", () => {
+    const fresh = { ...newSession("claude", "/tmp/project"), busy: false };
+    const moved = switchMonoAccount(fresh, "account-work");
+    expect(moved.providerAccountId).toBe("account-work");
+    expect(moved.pendingSwitch).toBeUndefined();
+  });
+
+  it("leaves a busy or unchanged Mono alone", () => {
+    const busy = limited({ usageLimit: undefined, busy: true });
+    expect(switchMonoAccount(busy, "account-work")).toBe(busy);
+    const same = limited({ usageLimit: undefined });
+    expect(switchMonoAccount(same, "default")).toBe(same);
   });
 });

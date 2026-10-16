@@ -2,6 +2,7 @@ import { sessionConversationPage } from "../features/agent-app/model/sessionConv
 import { readMonoConversation } from "../features/monos/model/monoConversation";
 import {
   resumeMonoUsageLimit,
+  switchMonoAccount,
   switchMonoUsageLimitAccount,
 } from "../features/monos/model/monoUsageLimit";
 import {
@@ -695,7 +696,10 @@ import { useHomeMachine } from "./hooks/useHomeMachine";
 import { useHostAutoUpdate } from "./hooks/useHostAutoUpdate";
 import { useRemoteRailSync } from "./hooks/useRemoteRailSync";
 import { useWebAppsSync } from "./hooks/useWebAppsSync";
-import { useRemoteAppBridge, type ControlRequest } from "./hooks/useRemoteAppBridge";
+import {
+  useRemoteAppBridge,
+  type ControlRequest,
+} from "./hooks/useRemoteAppBridge";
 import type { ConnectableInboxSource } from "../features/inbox/model/inboxFilters";
 import type { InboxSessionPortal } from "../features/inbox/ui/InboxDiscussionPanel";
 import { inboxAskKey, inboxAskPrompt } from "../features/inbox/model/inboxAsk";
@@ -1183,15 +1187,14 @@ function Workspace({
   const onShowMonoActivity = useCallback(
     (sessionId: string, turnId: string, blocks: Block[]) => {
       const shown =
-        monoOverviewOpenRef.current && monoOverviewTabRef.current === "activity";
+        monoOverviewOpenRef.current &&
+        monoOverviewTabRef.current === "activity";
       setMonoShownSession(null);
       setMonoOverviewDocument(null);
       setMonoOverviewTab("activity");
       setMonoOverviewOpen(true);
       setMonoActivity((previous) =>
-        shown &&
-        previous?.sessionId === sessionId &&
-        previous.turnId === turnId
+        shown && previous?.sessionId === sessionId && previous.turnId === turnId
           ? null
           : { sessionId, turnId, blocks },
       );
@@ -1811,7 +1814,10 @@ function Workspace({
           }
         } catch (error) {
           // Keep the original context intact; the next native operation retries.
-          console.warn("Could not migrate saved Colleague Codex context", error);
+          console.warn(
+            "Could not migrate saved Colleague Codex context",
+            error,
+          );
         }
       }
     })();
@@ -2154,10 +2160,7 @@ function Workspace({
   useEffect(() => {
     if (loadNotificationsEnabled()) void probeNotificationPermission();
   }, []);
-  const unseenFinishedIds = useUnseenFinishedSessions(
-    sessions,
-    busySessionIds,
-  );
+  const unseenFinishedIds = useUnseenFinishedSessions(sessions, busySessionIds);
   const monoSessionIds = useMemo(
     () =>
       new Set(
@@ -3014,7 +3017,10 @@ function Workspace({
   const onOpenTerminal = useCallback(
     (cwd: string, asWorkspaceTab = false, occupySessionId?: string) => {
       const workdir = cwd || terminalCwd;
-      if (!looksLikeProject(projectCwdRef.current) || !looksLikeProject(workdir))
+      if (
+        !looksLikeProject(projectCwdRef.current) ||
+        !looksLikeProject(workdir)
+      )
         return;
       if (openProjectTerminal(workdir)) return;
 
@@ -4800,7 +4806,9 @@ function Workspace({
         (session) => session.id === sessionId,
       );
       if (!current || !isMonoSession(sessionId))
-        throw new Error("This Colleague's conversation is no longer available.");
+        throw new Error(
+          "This Colleague's conversation is no longer available.",
+        );
       if (removingSessionIds.current.has(sessionId))
         throw new Error("This conversation is already being reset.");
 
@@ -9242,6 +9250,31 @@ function Workspace({
     [],
   );
 
+  const onMonoAccountChange = useCallback(
+    (sessionId: string, accountId: string) => {
+      const session = sessionsRef.current.find(
+        (entry) => entry.id === sessionId,
+      );
+      if (
+        !session ||
+        !isMonoSession(sessionId) ||
+        !supportsProviderAccounts(session.harness) ||
+        !providerAccountExists(session.harness, accountId)
+      )
+        return;
+      setSessions((prev) =>
+        prev.map((entry) =>
+          entry.id === sessionId
+            ? entry.usageLimit
+              ? switchMonoUsageLimitAccount(entry, accountId)
+              : switchMonoAccount(entry, accountId)
+            : entry,
+        ),
+      );
+    },
+    [],
+  );
+
   const [usageLimitTick, setUsageLimitTick] = useState(0);
   useEffect(() => {
     const now = Date.now();
@@ -10721,480 +10754,475 @@ function Workspace({
 
   useEffect(() => {
     const handleControlRequest = async (payload: ControlRequest) => {
-        if (payload.namespace === "control") {
-          return orchestrator.handle(
-            payload.sessionId,
-            payload.requestId,
-            payload.action,
-            payload.input,
-          );
-        }
-        if (payload.namespace !== "app")
-          throw new Error("Unknown CLI namespace");
-        const source = sessionsRef.current.find(
-          (session) => session.id === payload.sessionId,
-        );
-        if (
-          !source ||
-          source.inboxAsk ||
-          source.orchestrationLeadId ||
-          orchestrator.run(source.id)
-        )
-          throw new Error("This session cannot use the sIDE app CLI");
-        const key = `${source.id}:${payload.requestId}`;
-        const signature = JSON.stringify([payload.action, payload.input]);
-        const previous = appReceipts.current.get(key);
-        if (previous) {
-          if (previous.signature !== signature)
-            throw new Error("Request ID was already used with different input");
-          return previous.promise;
-        }
-        const sourceMono =
-          monoForSession(source.id) ?? findMono(habitRunMono(source.id) ?? "");
-        const canAccessProject = (cwd: string) =>
-          canAccessAgentAppProject(source, cwd, sourceMono?.projects);
-        const sourceTurn = turnGen.current.get(source.id) ?? 0;
-        const sourceTurns = isMonoSession(source.id)
-          ? groupMonoTurns(source.blocks)
-          : [];
-        const sourceTurnId = sourceTurns[sourceTurns.length - 1]?.[0]?.id;
-        const rememberSession = (entry: MonoSpawnedSession) => {
-          // A habit run is thrown away when it ends; its launches go on the
-          // report it posts to the Mono's chat instead.
-          if (isHabitRun(source.id)) {
-            noteHabitRunLaunch(source.id, entry);
-            return;
-          }
-          if (!sourceTurnId) return;
-          const next = sessionsRef.current.map((session) =>
-            session.id === source.id
-              ? recordMonoSpawnedSession(session, sourceTurnId, entry)
-              : session,
-          );
-          if (
-            next.every(
-              (session, index) => session === sessionsRef.current[index],
-            )
-          )
-            return;
-          sessionsRef.current = next;
-          setSessions(next);
-        };
-        const monitorCompletion = (
-          monoId: string,
-          sessionId: string,
-          requestId: string,
-          project: string,
-          prompt: string,
-        ) => {
-          const settle = monoCompletionBatches.current!.watch(
-            { monoId, turn: sourceTurn },
-            requestId,
-            sessionId,
-            { awaitAcceptance: true },
-          );
-          return Object.assign(
-            (outcome: ControlOutcome) =>
-              settle(
-                monoSessionCompletionResult({
-                  requestId,
-                  sessionId,
-                  project,
-                  prompt,
-                  outcome,
-                  session: sessionsRef.current.find(
-                    (session) => session.id === sessionId,
-                  ),
-                }),
-              ),
-            { accept: settle.accept, discard: settle.discard },
-          );
-        };
-        const dismissCompletion = (sessionId: string) => {
-          if (!isMonoSession(source.id)) return;
-          monoCompletionBatches.current!.dismissSession(source.id, sessionId);
-          flushSync(() =>
-            setSessions((previous) =>
-              previous.map((session) =>
-                session.id === source.id
-                  ? dismissQueuedMonoSessionCompletion(session, sessionId)
-                  : session,
-              ),
-            ),
-          );
-        };
-        const promise = handleAgentApp(
-          source,
+      if (payload.namespace === "control") {
+        return orchestrator.handle(
+          payload.sessionId,
           payload.requestId,
           payload.action,
           payload.input,
-          {
-            start: async (launch, id, placement, notifyMonoId) => {
-              const rememberLaunch = () => {
-                const created =
-                  sessionsRef.current.find((session) => session.id === id) ??
-                  existing;
-                rememberSession({
-                  sessionId: id,
-                  cwd: created?.cwd ?? launch.cwd,
-                  title: created?.title ?? launch.prompt.trim().slice(0, 300),
-                  harness: created?.harness ?? launch.harness,
-                  model:
-                    created?.model ??
-                    resolveModel(launch.harness, launch.model).id,
-                });
-              };
-              const open = sessionsRef.current.find(
-                (session) => session.id === id,
-              );
-              const stored = open ? null : await getSession(id);
-              const existing = open ?? stored;
-              const previous = existing?.blocks.find(
-                (block) => block.appRequestId === id,
-              );
-              if (previous) {
-                if (
-                  previous.text !== launch.prompt ||
-                  (!launch.draft && !!previous.draft)
-                )
-                  throw new Error(
-                    "Request ID was already used for another session launch",
-                  );
-                rememberLaunch();
-                return;
-              }
-              if (
-                existing?.blocks.some(
-                  (block) => block.role === "user" && !block.draft,
-                )
-              ) {
-                rememberLaunch();
-                return;
-              }
-              if (existing && sessionDraftBlock(existing))
-                throw new Error("Session ID already has a different draft");
-              const onSettled = notifyMonoId
-                ? monitorCompletion(
-                    notifyMonoId,
-                    id,
-                    id,
-                    launch.cwd,
-                    launch.prompt,
-                  )
-                : undefined;
-              try {
-                // A Mono's sessions open from its chat, not as workspace
-                // tabs, unless it places one beside an open pane.
-                await launchQuickSessionRef.current(
-                  launch,
-                  id,
-                  placement,
-                  onSettled,
-                  !isMonoSession(source.id) || !!placement,
-                );
-                rememberLaunch();
-                onSettled?.accept();
-              } catch (error) {
-                onSettled?.discard();
-                throw error;
-              }
-            },
-            sessions: async (cwd): Promise<AppSessionListing[]> => {
-              const stored = await listSessionsByProject(cwd);
-              const byId = new Map<string, AppSessionListing>();
-              for (const session of stored) {
-                if (session.orchestrationLeadId) continue;
-                byId.set(session.id, {
-                  id: session.id,
-                  title: session.title,
-                  harness: session.harness,
-                  model: session.model,
-                  busy: false,
-                  hasDraft: !!session.draft,
-                  archived: !!session.archived,
-                });
-              }
-              for (const session of sessionsRef.current) {
-                if (
-                  session.orchestrationLeadId ||
-                  isHabitRun(session.id) ||
-                  !sameProjectPath(session.cwd, cwd)
-                )
-                  continue;
-                byId.set(session.id, {
-                  id: session.id,
-                  title: session.title,
-                  harness: session.harness,
-                  model: session.model,
-                  busy: !!session.busy,
-                  hasDraft: !!sessionDraftBlock(session),
-                  archived: byId.get(session.id)?.archived ?? false,
-                });
-              }
-              return [...byId.values()];
-            },
-            session: async (id) => {
-              const target =
-                sessionsRef.current.find((session) => session.id === id) ??
-                (await getSession(id));
-              return target &&
-                !target.orchestrationLeadId &&
-                canAccessProject(target.cwd)
-                ? target
-                : null;
-            },
-            readConversation: async (target, options) =>
-              isMonoSession(target.id)
-                ? readMonoConversation(target, options)
-                : sessionConversationPage(target, options),
-            send: async (id, prompt, requestId, notifyMonoId) => {
-              const target = await ensureOpenSessionRef.current(id);
-              if (
-                !target ||
-                target.orchestrationLeadId ||
-                !canAccessProject(target.cwd) ||
-                orchestrator.run(id)
-              )
-                throw new Error("Session is unavailable in this project");
-              const rememberFollowUp = () => {
-                const current =
-                  sessionsRef.current.find((session) => session.id === id) ??
-                  target;
-                rememberSession({
-                  sessionId: id,
-                  cwd: current.cwd,
-                  title: current.title,
-                  harness: current.harness,
-                  model: current.model,
-                });
-              };
-              const previous = target.blocks.find(
-                (block) => block.appRequestId === requestId,
-              );
-              if (previous) {
-                if (previous.text !== prompt)
-                  throw new Error(
-                    "Request ID was already used with another prompt",
-                  );
-                if (previous.draft)
-                  throw new Error("Request ID belongs to an unsent draft");
-                rememberFollowUp();
-                return { alreadySubmitted: true };
-              }
-              if (target.busy)
-                throw new Error("Session is busy; try again when it finishes");
-              if (sessionDraftBlock(target))
-                throw new Error(
-                  "Session already has a draft; send or remove it first",
-                );
-              const onSettled = notifyMonoId
-                ? monitorCompletion(
-                    notifyMonoId,
-                    id,
-                    requestId,
-                    target.cwd,
-                    prompt,
-                  )
-                : undefined;
-              const accepted = onSettled
-                ? await submitWithSettlement({
-                    submit: (onSettled) =>
-                      submitSessionRef.current(id, prompt, [], {
-                        appRequestId: requestId,
-                        onSettled,
-                      }),
-                    onSettled,
-                    rejectionMessage:
-                      "The monitored follow-up could not start.",
-                  })
-                : await submitSessionRef.current(id, prompt, [], {
-                    appRequestId: requestId,
-                  });
-              if (!accepted) {
-                onSettled?.discard();
-                throw new Error("Session could not accept the follow-up");
-              }
-              rememberFollowUp();
-              onSettled?.accept();
-              return { alreadySubmitted: false };
-            },
-            draft: async (id, prompt, requestId) => {
-              const target = await ensureOpenSessionRef.current(id);
-              if (
-                !target ||
-                target.orchestrationLeadId ||
-                !canAccessProject(target.cwd) ||
-                orchestrator.run(id)
-              )
-                throw new Error("Session is unavailable in this project");
-              const previous = target.blocks.find(
-                (block) => block.appRequestId === requestId,
-              );
-              if (previous) {
-                if (previous.text !== prompt)
-                  throw new Error(
-                    "Request ID was already used with another prompt",
-                  );
-                return { alreadySaved: true, draft: !!previous.draft };
-              }
-              if (target.busy)
-                throw new Error("Session is busy; try again when it finishes");
-              if (sessionDraftBlock(target))
-                throw new Error(
-                  "Session already has a draft; send or remove it first",
-                );
-              const saved = flushSync(() =>
-                saveDraftRef.current(id, prompt, [], requestId),
-              );
-              if (!saved) throw new Error("Session could not accept a draft");
-              return { alreadySaved: false, draft: true };
-            },
-            stop: async (id) => {
-              if (
-                removingSessionIds.current.has(id) ||
-                switchingWorktrees.current.has(id)
-              )
-                throw new Error(
-                  "Session is being removed or changing worktrees",
-                );
-              const target = sessionsRef.current.find(
-                (session) => session.id === id,
-              );
-              if (!target) {
-                dismissCompletion(id);
-                return;
-              }
-              if (
-                target.orchestrationLeadId ||
-                !canAccessProject(target.cwd) ||
-                isMonoSession(id) ||
-                isHabitRun(id)
-              )
-                throw new Error("Session is unavailable in this project");
-              await flushSync(() => stopSessionRef.current(id));
-              flushHarnessEvents();
-              dismissCompletion(id);
-            },
-            remove: async (id, mode) => {
-              const target = await ensureOpenSessionRef.current(id);
-              if (
-                !target ||
-                target.orchestrationLeadId ||
-                !canAccessProject(target.cwd) ||
-                isMonoSession(id) ||
-                isHabitRun(id)
-              )
-                throw new Error("Session is unavailable in this project");
-              const removed = await removeSessionRef.current(
-                id,
-                mode,
-                true,
-                "cli",
-              );
-              if (!removed)
-                throw new Error(
-                  `Session could not be ${mode === "archive" ? "archived" : "deleted"}; another session operation is in progress`,
-                );
-              dismissCompletion(id);
-            },
-            worktrees: (cwd) => listWorktrees(cwd),
-            createWorktree: (cwd, branch, base, existing) =>
-              createWorktree(cwd, branch, base, existing),
-            notes: () => invoke("notes_list"),
-            note: (id) => invoke("notes_get", { id }),
-            saveNote: async (note) => {
-              const saved = await upsertNote(note);
-              window.dispatchEvent(new Event(NOTES_CHANGED_EVENT));
-              return saved;
-            },
-            artifacts: () => invoke("artifacts_list"),
-            artifact: getArtifact,
-            saveArtifact,
-            postArtifact: async (sessionId, card) => {
-              const latest = sessionsRef.current.find(
-                (session) => session.id === sessionId,
-              );
-              const anchor =
-                sourceTurnId ??
-                latest?.blocks
-                  .slice()
-                  .reverse()
-                  .find((block) => block.role === "user")?.id;
-              if (
-                !latest ||
-                !anchor ||
-                !latest.blocks.some((block) => block.id === anchor)
-              )
-                throw new Error(
-                  "The artifact's conversation turn is no longer available",
-                );
-              const updated = recordArtifactCard(latest, anchor, card);
-              sessionsRef.current = sessionsRef.current.map((session) =>
-                session.id === sessionId ? updated : session,
-              );
-              setSessions(sessionsRef.current);
-              if (!isHabitRun(sessionId)) await upsertSession(updated);
-            },
-            isMono: (id) => isMonoSession(id),
-            isHabitRun: (id) => isHabitRun(id),
-            monoOf: (id) => {
-              const mono =
-                monoForSession(id) ?? findMono(habitRunMono(id) ?? "");
-              return (
-                mono && {
-                  id: mono.id,
-                  projects: mono.projects,
-                  showStartedSessionsInSidebar:
-                    mono.showStartedSessionsInSidebar,
-                  ...(mono.useSidebarFolders
-                    ? {
-                        folder: {
-                          name: monoLook(mono).name,
-                          color: mono.color,
-                        },
-                      }
-                    : {}),
-                }
-              );
-            },
-            habits: { load: loadHabits, update: updateHabits },
-            agentFiles: (monoId) => loadMonoFiles(monoId),
-            readAgentFile: (monoId, path) => readAgentFile(monoId, path),
-            writeAgentFile: (monoId, path, text, hash) =>
-              writeAgentFile(monoId, path, text, hash),
-          },
         );
-        appReceipts.current.set(key, { signature, promise });
-        void promise.catch(() => {
-          if (appReceipts.current.get(key)?.promise === promise)
-            appReceipts.current.delete(key);
-        });
-        if (appReceipts.current.size > 256) {
-          const first = appReceipts.current.keys().next().value;
-          if (first) appReceipts.current.delete(first);
+      }
+      if (payload.namespace !== "app") throw new Error("Unknown CLI namespace");
+      const source = sessionsRef.current.find(
+        (session) => session.id === payload.sessionId,
+      );
+      if (
+        !source ||
+        source.inboxAsk ||
+        source.orchestrationLeadId ||
+        orchestrator.run(source.id)
+      )
+        throw new Error("This session cannot use the sIDE app CLI");
+      const key = `${source.id}:${payload.requestId}`;
+      const signature = JSON.stringify([payload.action, payload.input]);
+      const previous = appReceipts.current.get(key);
+      if (previous) {
+        if (previous.signature !== signature)
+          throw new Error("Request ID was already used with different input");
+        return previous.promise;
+      }
+      const sourceMono =
+        monoForSession(source.id) ?? findMono(habitRunMono(source.id) ?? "");
+      const canAccessProject = (cwd: string) =>
+        canAccessAgentAppProject(source, cwd, sourceMono?.projects);
+      const sourceTurn = turnGen.current.get(source.id) ?? 0;
+      const sourceTurns = isMonoSession(source.id)
+        ? groupMonoTurns(source.blocks)
+        : [];
+      const sourceTurnId = sourceTurns[sourceTurns.length - 1]?.[0]?.id;
+      const rememberSession = (entry: MonoSpawnedSession) => {
+        // A habit run is thrown away when it ends; its launches go on the
+        // report it posts to the Mono's chat instead.
+        if (isHabitRun(source.id)) {
+          noteHabitRunLaunch(source.id, entry);
+          return;
         }
-        return promise;
-      };
-    controlRequestHandler.current = handleControlRequest;
-    const listening = listen<ControlRequest>("monocode-control-request", ({ payload }) => {
-      void handleControlRequest(payload)
-        .then(
-          (result) =>
-            invoke("control_reply", {
-              id: payload.id,
-              response: { ok: true, result },
-            }),
-          (error: unknown) =>
-            invoke("control_reply", {
-              id: payload.id,
-              response: {
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-              },
-            }),
+        if (!sourceTurnId) return;
+        const next = sessionsRef.current.map((session) =>
+          session.id === source.id
+            ? recordMonoSpawnedSession(session, sourceTurnId, entry)
+            : session,
+        );
+        if (
+          next.every((session, index) => session === sessionsRef.current[index])
         )
-        .catch(console.error);
-    });
+          return;
+        sessionsRef.current = next;
+        setSessions(next);
+      };
+      const monitorCompletion = (
+        monoId: string,
+        sessionId: string,
+        requestId: string,
+        project: string,
+        prompt: string,
+      ) => {
+        const settle = monoCompletionBatches.current!.watch(
+          { monoId, turn: sourceTurn },
+          requestId,
+          sessionId,
+          { awaitAcceptance: true },
+        );
+        return Object.assign(
+          (outcome: ControlOutcome) =>
+            settle(
+              monoSessionCompletionResult({
+                requestId,
+                sessionId,
+                project,
+                prompt,
+                outcome,
+                session: sessionsRef.current.find(
+                  (session) => session.id === sessionId,
+                ),
+              }),
+            ),
+          { accept: settle.accept, discard: settle.discard },
+        );
+      };
+      const dismissCompletion = (sessionId: string) => {
+        if (!isMonoSession(source.id)) return;
+        monoCompletionBatches.current!.dismissSession(source.id, sessionId);
+        flushSync(() =>
+          setSessions((previous) =>
+            previous.map((session) =>
+              session.id === source.id
+                ? dismissQueuedMonoSessionCompletion(session, sessionId)
+                : session,
+            ),
+          ),
+        );
+      };
+      const promise = handleAgentApp(
+        source,
+        payload.requestId,
+        payload.action,
+        payload.input,
+        {
+          start: async (launch, id, placement, notifyMonoId) => {
+            const rememberLaunch = () => {
+              const created =
+                sessionsRef.current.find((session) => session.id === id) ??
+                existing;
+              rememberSession({
+                sessionId: id,
+                cwd: created?.cwd ?? launch.cwd,
+                title: created?.title ?? launch.prompt.trim().slice(0, 300),
+                harness: created?.harness ?? launch.harness,
+                model:
+                  created?.model ??
+                  resolveModel(launch.harness, launch.model).id,
+              });
+            };
+            const open = sessionsRef.current.find(
+              (session) => session.id === id,
+            );
+            const stored = open ? null : await getSession(id);
+            const existing = open ?? stored;
+            const previous = existing?.blocks.find(
+              (block) => block.appRequestId === id,
+            );
+            if (previous) {
+              if (
+                previous.text !== launch.prompt ||
+                (!launch.draft && !!previous.draft)
+              )
+                throw new Error(
+                  "Request ID was already used for another session launch",
+                );
+              rememberLaunch();
+              return;
+            }
+            if (
+              existing?.blocks.some(
+                (block) => block.role === "user" && !block.draft,
+              )
+            ) {
+              rememberLaunch();
+              return;
+            }
+            if (existing && sessionDraftBlock(existing))
+              throw new Error("Session ID already has a different draft");
+            const onSettled = notifyMonoId
+              ? monitorCompletion(
+                  notifyMonoId,
+                  id,
+                  id,
+                  launch.cwd,
+                  launch.prompt,
+                )
+              : undefined;
+            try {
+              // A Mono's sessions open from its chat, not as workspace
+              // tabs, unless it places one beside an open pane.
+              await launchQuickSessionRef.current(
+                launch,
+                id,
+                placement,
+                onSettled,
+                !isMonoSession(source.id) || !!placement,
+              );
+              rememberLaunch();
+              onSettled?.accept();
+            } catch (error) {
+              onSettled?.discard();
+              throw error;
+            }
+          },
+          sessions: async (cwd): Promise<AppSessionListing[]> => {
+            const stored = await listSessionsByProject(cwd);
+            const byId = new Map<string, AppSessionListing>();
+            for (const session of stored) {
+              if (session.orchestrationLeadId) continue;
+              byId.set(session.id, {
+                id: session.id,
+                title: session.title,
+                harness: session.harness,
+                model: session.model,
+                busy: false,
+                hasDraft: !!session.draft,
+                archived: !!session.archived,
+              });
+            }
+            for (const session of sessionsRef.current) {
+              if (
+                session.orchestrationLeadId ||
+                isHabitRun(session.id) ||
+                !sameProjectPath(session.cwd, cwd)
+              )
+                continue;
+              byId.set(session.id, {
+                id: session.id,
+                title: session.title,
+                harness: session.harness,
+                model: session.model,
+                busy: !!session.busy,
+                hasDraft: !!sessionDraftBlock(session),
+                archived: byId.get(session.id)?.archived ?? false,
+              });
+            }
+            return [...byId.values()];
+          },
+          session: async (id) => {
+            const target =
+              sessionsRef.current.find((session) => session.id === id) ??
+              (await getSession(id));
+            return target &&
+              !target.orchestrationLeadId &&
+              canAccessProject(target.cwd)
+              ? target
+              : null;
+          },
+          readConversation: async (target, options) =>
+            isMonoSession(target.id)
+              ? readMonoConversation(target, options)
+              : sessionConversationPage(target, options),
+          send: async (id, prompt, requestId, notifyMonoId) => {
+            const target = await ensureOpenSessionRef.current(id);
+            if (
+              !target ||
+              target.orchestrationLeadId ||
+              !canAccessProject(target.cwd) ||
+              orchestrator.run(id)
+            )
+              throw new Error("Session is unavailable in this project");
+            const rememberFollowUp = () => {
+              const current =
+                sessionsRef.current.find((session) => session.id === id) ??
+                target;
+              rememberSession({
+                sessionId: id,
+                cwd: current.cwd,
+                title: current.title,
+                harness: current.harness,
+                model: current.model,
+              });
+            };
+            const previous = target.blocks.find(
+              (block) => block.appRequestId === requestId,
+            );
+            if (previous) {
+              if (previous.text !== prompt)
+                throw new Error(
+                  "Request ID was already used with another prompt",
+                );
+              if (previous.draft)
+                throw new Error("Request ID belongs to an unsent draft");
+              rememberFollowUp();
+              return { alreadySubmitted: true };
+            }
+            if (target.busy)
+              throw new Error("Session is busy; try again when it finishes");
+            if (sessionDraftBlock(target))
+              throw new Error(
+                "Session already has a draft; send or remove it first",
+              );
+            const onSettled = notifyMonoId
+              ? monitorCompletion(
+                  notifyMonoId,
+                  id,
+                  requestId,
+                  target.cwd,
+                  prompt,
+                )
+              : undefined;
+            const accepted = onSettled
+              ? await submitWithSettlement({
+                  submit: (onSettled) =>
+                    submitSessionRef.current(id, prompt, [], {
+                      appRequestId: requestId,
+                      onSettled,
+                    }),
+                  onSettled,
+                  rejectionMessage: "The monitored follow-up could not start.",
+                })
+              : await submitSessionRef.current(id, prompt, [], {
+                  appRequestId: requestId,
+                });
+            if (!accepted) {
+              onSettled?.discard();
+              throw new Error("Session could not accept the follow-up");
+            }
+            rememberFollowUp();
+            onSettled?.accept();
+            return { alreadySubmitted: false };
+          },
+          draft: async (id, prompt, requestId) => {
+            const target = await ensureOpenSessionRef.current(id);
+            if (
+              !target ||
+              target.orchestrationLeadId ||
+              !canAccessProject(target.cwd) ||
+              orchestrator.run(id)
+            )
+              throw new Error("Session is unavailable in this project");
+            const previous = target.blocks.find(
+              (block) => block.appRequestId === requestId,
+            );
+            if (previous) {
+              if (previous.text !== prompt)
+                throw new Error(
+                  "Request ID was already used with another prompt",
+                );
+              return { alreadySaved: true, draft: !!previous.draft };
+            }
+            if (target.busy)
+              throw new Error("Session is busy; try again when it finishes");
+            if (sessionDraftBlock(target))
+              throw new Error(
+                "Session already has a draft; send or remove it first",
+              );
+            const saved = flushSync(() =>
+              saveDraftRef.current(id, prompt, [], requestId),
+            );
+            if (!saved) throw new Error("Session could not accept a draft");
+            return { alreadySaved: false, draft: true };
+          },
+          stop: async (id) => {
+            if (
+              removingSessionIds.current.has(id) ||
+              switchingWorktrees.current.has(id)
+            )
+              throw new Error("Session is being removed or changing worktrees");
+            const target = sessionsRef.current.find(
+              (session) => session.id === id,
+            );
+            if (!target) {
+              dismissCompletion(id);
+              return;
+            }
+            if (
+              target.orchestrationLeadId ||
+              !canAccessProject(target.cwd) ||
+              isMonoSession(id) ||
+              isHabitRun(id)
+            )
+              throw new Error("Session is unavailable in this project");
+            await flushSync(() => stopSessionRef.current(id));
+            flushHarnessEvents();
+            dismissCompletion(id);
+          },
+          remove: async (id, mode) => {
+            const target = await ensureOpenSessionRef.current(id);
+            if (
+              !target ||
+              target.orchestrationLeadId ||
+              !canAccessProject(target.cwd) ||
+              isMonoSession(id) ||
+              isHabitRun(id)
+            )
+              throw new Error("Session is unavailable in this project");
+            const removed = await removeSessionRef.current(
+              id,
+              mode,
+              true,
+              "cli",
+            );
+            if (!removed)
+              throw new Error(
+                `Session could not be ${mode === "archive" ? "archived" : "deleted"}; another session operation is in progress`,
+              );
+            dismissCompletion(id);
+          },
+          worktrees: (cwd) => listWorktrees(cwd),
+          createWorktree: (cwd, branch, base, existing) =>
+            createWorktree(cwd, branch, base, existing),
+          notes: () => invoke("notes_list"),
+          note: (id) => invoke("notes_get", { id }),
+          saveNote: async (note) => {
+            const saved = await upsertNote(note);
+            window.dispatchEvent(new Event(NOTES_CHANGED_EVENT));
+            return saved;
+          },
+          artifacts: () => invoke("artifacts_list"),
+          artifact: getArtifact,
+          saveArtifact,
+          postArtifact: async (sessionId, card) => {
+            const latest = sessionsRef.current.find(
+              (session) => session.id === sessionId,
+            );
+            const anchor =
+              sourceTurnId ??
+              latest?.blocks
+                .slice()
+                .reverse()
+                .find((block) => block.role === "user")?.id;
+            if (
+              !latest ||
+              !anchor ||
+              !latest.blocks.some((block) => block.id === anchor)
+            )
+              throw new Error(
+                "The artifact's conversation turn is no longer available",
+              );
+            const updated = recordArtifactCard(latest, anchor, card);
+            sessionsRef.current = sessionsRef.current.map((session) =>
+              session.id === sessionId ? updated : session,
+            );
+            setSessions(sessionsRef.current);
+            if (!isHabitRun(sessionId)) await upsertSession(updated);
+          },
+          isMono: (id) => isMonoSession(id),
+          isHabitRun: (id) => isHabitRun(id),
+          monoOf: (id) => {
+            const mono = monoForSession(id) ?? findMono(habitRunMono(id) ?? "");
+            return (
+              mono && {
+                id: mono.id,
+                projects: mono.projects,
+                showStartedSessionsInSidebar: mono.showStartedSessionsInSidebar,
+                ...(mono.useSidebarFolders
+                  ? {
+                      folder: {
+                        name: monoLook(mono).name,
+                        color: mono.color,
+                      },
+                    }
+                  : {}),
+              }
+            );
+          },
+          habits: { load: loadHabits, update: updateHabits },
+          agentFiles: (monoId) => loadMonoFiles(monoId),
+          readAgentFile: (monoId, path) => readAgentFile(monoId, path),
+          writeAgentFile: (monoId, path, text, hash) =>
+            writeAgentFile(monoId, path, text, hash),
+        },
+      );
+      appReceipts.current.set(key, { signature, promise });
+      void promise.catch(() => {
+        if (appReceipts.current.get(key)?.promise === promise)
+          appReceipts.current.delete(key);
+      });
+      if (appReceipts.current.size > 256) {
+        const first = appReceipts.current.keys().next().value;
+        if (first) appReceipts.current.delete(first);
+      }
+      return promise;
+    };
+    controlRequestHandler.current = handleControlRequest;
+    const listening = listen<ControlRequest>(
+      "monocode-control-request",
+      ({ payload }) => {
+        void handleControlRequest(payload)
+          .then(
+            (result) =>
+              invoke("control_reply", {
+                id: payload.id,
+                response: { ok: true, result },
+              }),
+            (error: unknown) =>
+              invoke("control_reply", {
+                id: payload.id,
+                response: {
+                  ok: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+              }),
+          )
+          .catch(console.error);
+      },
+    );
     return () => {
       void listening.then((unlisten) => unlisten());
     };
@@ -12814,6 +12842,7 @@ function Workspace({
         harness={monoViewSession.harness}
         model={monoViewSession.model}
         modelSettings={monoViewSession.modelSettings}
+        providerAccountId={monoViewSession.providerAccountId}
         runtimeMode={monoViewSession.runtimeMode}
         busy={!!monoViewSession.busy}
         onModelChange={(harness, model) =>
@@ -12821,6 +12850,9 @@ function Workspace({
         }
         onModelSettingsChange={(settings) =>
           onModelSettingsChange(monoViewSession.id, settings)
+        }
+        onAccountChange={(accountId) =>
+          onMonoAccountChange(monoViewSession.id, accountId)
         }
         onRuntimeModeChange={(mode) =>
           onRuntimeModeChange(monoViewSession.id, mode)
@@ -12905,9 +12937,7 @@ function Workspace({
           : undefined
       }
       onToggleMonoOverview={
-        monoCovers
-          ? () => setMonoOverviewOpen(!monoOverviewOpen)
-          : undefined
+        monoCovers ? () => setMonoOverviewOpen(!monoOverviewOpen) : undefined
       }
       monoOverviewOpen={monoOverviewOpen}
       onOpenMonoSettings={

@@ -4,15 +4,29 @@ import {
   useState,
   useSyncExternalStore,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { Modal } from "../../../shared/ui/Modal";
 import { Popover } from "../../../shared/ui/Popover";
-import { Settings, Sparkles, StickyNote } from "../../../shared/ui/icons";
+import {
+  ChevronDown,
+  Settings,
+  Sparkles,
+  StickyNote,
+} from "../../../shared/ui/icons";
+import {
+  providerAccounts,
+  sameProviderAccountId,
+  subscribeProviderAccounts,
+  supportsProviderAccounts,
+  type ProviderAccount,
+} from "../../providers/model/providerAccounts";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
 import { AccessPicker } from "../../sessions/ui/AccessPicker";
+import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { ModelPicker, ModelSettingRows } from "../../sessions/ui/ModelPicker";
 import {
   defaultMonoName,
@@ -54,11 +68,14 @@ type Props = {
   harness: HarnessId;
   model: string;
   modelSettings: Record<string, string>;
+  /** Unset means the provider CLI's own login. */
+  providerAccountId?: string;
   runtimeMode: RuntimeMode;
   busy?: boolean;
   initialSection?: MonoSettingsSection;
   onModelChange: (harness: HarnessId, model: string) => void;
   onModelSettingsChange: (settings: Record<string, string>) => void;
+  onAccountChange?: (accountId: string) => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   onReset?: () => Promise<void>;
   onClose: () => void;
@@ -139,10 +156,12 @@ function GeneralSection({
   harness,
   model,
   modelSettings,
+  providerAccountId,
   runtimeMode,
   busy = false,
   onModelChange,
   onModelSettingsChange,
+  onAccountChange,
   onRuntimeModeChange,
   onReset,
 }: Omit<Props, "status" | "initialSection" | "onClose">) {
@@ -195,6 +214,14 @@ function GeneralSection({
             <SettingRow label={label}>{control}</SettingRow>
           )}
         />
+        {onAccountChange ? (
+          <AccountRow
+            harness={harness}
+            accountId={providerAccountId}
+            busy={busy}
+            onChange={onAccountChange}
+          />
+        ) : null}
         <SettingRow
           label="Permissions"
           description="What it may do without asking."
@@ -309,7 +336,9 @@ function LocalOnlyGroup({ monoId }: { monoId: string }) {
     setError(undefined);
     setEmployeeLocalOnly(monoId, on)
       .catch(() =>
-        setError(`Could not reach ${home}. Nothing was moved; try again once it is back.`),
+        setError(
+          `Could not reach ${home}. Nothing was moved; try again once it is back.`,
+        ),
       )
       .finally(() => setMoving(false));
   };
@@ -328,7 +357,9 @@ function LocalOnlyGroup({ monoId }: { monoId: string }) {
           onChange={change}
         />
       </SettingGroup>
-      {error ? <p className="px-1 pt-2 text-[12px] text-red-400">{error}</p> : null}
+      {error ? (
+        <p className="px-1 pt-2 text-[12px] text-red-400">{error}</p>
+      ) : null}
     </>
   );
 }
@@ -387,6 +418,165 @@ function SettingRow({
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * Which login of its provider it runs on, shown once there is more than one
+ * to choose from. Its conversation carries over to the new account.
+ */
+function AccountRow({
+  harness,
+  accountId,
+  busy,
+  onChange,
+}: {
+  harness: HarnessId;
+  accountId?: string;
+  busy: boolean;
+  onChange: (accountId: string) => void;
+}) {
+  const snapshot = useSyncExternalStore(
+    subscribeProviderAccounts,
+    () =>
+      supportsProviderAccounts(harness)
+        ? JSON.stringify(providerAccounts(harness))
+        : "[]",
+    () => "[]",
+  );
+  const accounts = JSON.parse(snapshot) as ProviderAccount[];
+  if (accounts.length < 2) return null;
+  const current =
+    accounts.find((account) => sameProviderAccountId(account.id, accountId)) ??
+    accounts[0];
+  return (
+    <SettingRow
+      label="Account"
+      description={
+        busy
+          ? "Change it once the current reply ends."
+          : "Whose plan its replies count against."
+      }
+    >
+      <AccountPicker
+        harness={harness}
+        accounts={accounts}
+        current={current}
+        disabled={busy}
+        onChange={onChange}
+      />
+    </SettingRow>
+  );
+}
+
+function AccountPicker({
+  harness,
+  accounts,
+  current,
+  disabled,
+  onChange,
+}: {
+  harness: HarnessId;
+  accounts: ProviderAccount[];
+  current: ProviderAccount;
+  disabled: boolean;
+  onChange: (accountId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const button = useRef<HTMLButtonElement>(null);
+  const dismiss = (restoreFocus = false) => {
+    setOpen(false);
+    if (restoreFocus) button.current?.focus();
+  };
+  const pick = (account: ProviderAccount) => {
+    dismiss(true);
+    if (account.id !== current.id) onChange(account.id);
+  };
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      setActive(
+        (index) => (index + direction + accounts.length) % accounts.length,
+      );
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      const account = accounts[active];
+      if (account) pick(account);
+    }
+  };
+
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        disabled={disabled}
+        aria-label={`Account: ${current.label}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        data-mono-settings-account
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => {
+          if (open) dismiss(true);
+          else {
+            setActive(Math.max(0, accounts.indexOf(current)));
+            setOpen(true);
+          }
+        }}
+        className={`-mx-1.5 flex h-7 max-w-52 items-center gap-2 rounded-md px-1.5 text-[12px] text-content/85 disabled:opacity-50 ${
+          open ? "bg-content/8" : "enabled:hover:bg-content/6"
+        }`}
+      >
+        <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
+        <span className="min-w-0 truncate">{current.label}</span>
+        <ChevronDown
+          className={`size-3 shrink-0 text-content/50 ${open ? "rotate-180" : ""}`}
+          strokeWidth={1.75}
+        />
+      </button>
+      {open ? (
+        <Popover
+          anchor={button}
+          side="bottom"
+          width={250}
+          maxHeight={260}
+          autoFocus
+          onDismiss={(reason) => dismiss(reason === "escape")}
+          ignore="[data-mono-settings-account]"
+          role="listbox"
+          aria-label="Account"
+          tabIndex={-1}
+          onKeyDown={onKeyDown}
+          className="overflow-y-auto p-1 font-sans text-content"
+        >
+          {accounts.map((account, index) => (
+            <button
+              key={account.id}
+              type="button"
+              role="option"
+              aria-selected={account.id === current.id}
+              tabIndex={-1}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setActive(index)}
+              onClick={() => pick(account)}
+              className={`flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] ${
+                index === active || account.id === current.id
+                  ? "bg-selection"
+                  : "hover:bg-content/5"
+              }`}
+            >
+              <HarnessIcon
+                harness={harness}
+                className="size-3.5 shrink-0 text-content/55"
+              />
+              <span className="min-w-0 flex-1 truncate">{account.label}</span>
+            </button>
+          ))}
+        </Popover>
+      ) : null}
+    </>
   );
 }
 
