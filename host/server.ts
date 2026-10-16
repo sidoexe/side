@@ -391,7 +391,7 @@ export function createHostServer(
                 "sessions.queue",
                 "sessions.editLast",
                 ...(engine.checkpoints ? ["sessions.review"] : []),
-                ...(engine.employees ? ["employees", "employees.backgrounds", "employees.inbox"] : []),
+                ...(engine.employees ? ["employees", "employees.backgrounds", "employees.inbox", "employees.accounts"] : []),
                 ...(engine.automations ? ["automations"] : []),
                 ...(engine.app ? ["app"] : []),
                 ...(engine.push ? ["push"] : []),
@@ -794,7 +794,14 @@ export function createHostServer(
             result = employees().setBackground(params.mono, params);
             break;
           case "employees.post":
-            result = employees().post(params.mono, params.text);
+            result = employees().post(params.mono, params.text, params.account);
+            break;
+          case "employees.accounts":
+            result = employees().accounts();
+            break;
+          case "employees.setAccounts":
+            employees().setAccounts(params);
+            result = null;
             break;
           case "employees.inbox":
             result = employees().inbox(params.mono);

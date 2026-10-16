@@ -103,7 +103,7 @@ export function FilesPanel({ projectId, cwd, onClose, onError }: { projectId: st
 
 const monoName = (mono: Mono) => mono.name || mono.mascot.charAt(0).toUpperCase() + mono.mascot.slice(1);
 
-type InboxMessage = { id: string; text: string; at: number; takenBy?: string };
+type InboxMessage = { id: string; text: string; account?: string; at: number; takenBy?: string };
 
 /** How often an open colleague's chat is read again while it may change. */
 const CHAT_POLL_MS = 2_500;
@@ -206,7 +206,7 @@ export function ColleaguesPage({
                   <Transcript blocks={chat} cwd="" running={false} canDecide={false} onDecide={() => undefined} />
                   {inbox.map((message) => (
                     <div key={message.id} className="colleague-waiting">
-                      <div className="colleague-waiting-text">{message.text}</div>
+                      <div className="colleague-waiting-text">{message.account ? "Switch account" : message.text}</div>
                       <span className="muted">
                         {message.takenBy
                           ? "Sending from a desktop…"

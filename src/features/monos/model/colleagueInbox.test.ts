@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type { RemoteMachine } from "../../connections/model/protocol";
-import { deliverInbox, type InboxMessage } from "./colleagueInbox";
+import { deliverInbox, publishAccounts, type InboxMessage } from "./colleagueInbox";
 
 const home = { id: "home" } as RemoteMachine;
 
@@ -47,4 +47,27 @@ it("leaves messages another desktop took, or for colleagues it lacks", async () 
   await deliverInbox(request, home, "me", deliver, (mono) => mono !== "b");
   expect(deliver).not.toHaveBeenCalled();
   expect(delivered).toEqual([]);
+});
+
+it("hands an account move to the desktop instead of a message", async () => {
+  const { request, delivered } = host([{ id: "1", mono: "a", text: "", account: "account-work", at: 0 }]);
+  const calls: unknown[][] = [];
+  await deliverInbox(request, home, "me", async (...args) => {
+    calls.push(args);
+    return true;
+  }, () => true);
+  expect(calls).toEqual([["a", "", "account-work"]]);
+  expect(delivered).toEqual(["1"]);
+});
+
+it("publishes the accounts only when they changed", async () => {
+  const { request } = host([]);
+  const accounts = {
+    accounts: [{ provider: "claude", id: "default", label: "Personal" }],
+    current: { a: { provider: "claude", account: "default" } },
+  };
+  const first = await publishAccounts(request, home, accounts, undefined);
+  await publishAccounts(request, home, accounts, first);
+  const calls = (request as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+  expect(calls.filter(([, method]) => method === "employees.setAccounts")).toHaveLength(1);
 });

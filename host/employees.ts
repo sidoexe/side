@@ -25,6 +25,7 @@ import { HostEmployeeTranscripts } from "./employee-transcripts";
  * ├── roster.json       every employee's look and projects, with a revision
  * ├── backgrounds.json  when each one's background image last changed
  * ├── inbox.json        messages sent from the browser, until a desktop runs them
+ * ├── accounts.json     the accounts a desktop can move employees to
  * ├── transcripts.db    their conversations (see employee-transcripts.ts)
  * └── <employee id>/
  *     ├── SOUL.md
@@ -42,6 +43,8 @@ const MEMORY_DIR = "memory";
 const ROSTER_FILE = "roster.json";
 const BACKGROUNDS_FILE = "backgrounds.json";
 const INBOX_FILE = "inbox.json";
+const ACCOUNTS_FILE = "accounts.json";
+const ACCOUNTS_MAX = 64 * 1024;
 const INBOX_TEXT_MAX = 64 * 1024;
 const INBOX_MAX = 100;
 /** How long a desktop that took a message has to hand it over before
@@ -58,6 +61,7 @@ const BACKGROUND_TYPES: Record<string, string> = {
 const FILE_MAX = 256 * 1024;
 const ROSTER_MAX = 512 * 1024;
 const ID = /^[A-Za-z0-9-]{1,80}$/;
+const ACCOUNT_ID = /^[A-Za-z0-9_-]{1,80}$/;
 const TOPIC = /^[A-Za-z0-9 ._-]{1,80}$/;
 
 export const EMPLOYEE_CONFLICT = "conflict";
@@ -85,9 +89,19 @@ export type EmployeeInboxMessage = {
   id: string;
   mono: string;
   text: string;
+  /** Asks the desktop to move the employee to this account instead. */
+  account?: string;
   at: number;
   takenBy?: string;
   takenAt?: number;
+};
+
+/** The provider accounts the desktop running the employees offers, and the
+ * one each employee is on, so the browser app can ask for a move. */
+export type EmployeeAccounts = {
+  accounts: { provider: string; id: string; label: string }[];
+  current: Record<string, { provider: string; account: string }>;
+  at: number;
 };
 
 export type EmployeeBackground = { updatedAt: number; mimeType: string; data: string };
@@ -358,16 +372,26 @@ export class HostEmployees {
     return !message.takenAt || this.now() - message.takenAt >= INBOX_LEASE_MS;
   }
 
-  /** Queues a message from the browser app for an employee on the roster. */
-  post(id: unknown, text: unknown): EmployeeInboxMessage {
+  /** Queues a message from the browser app for an employee on the roster,
+   * or with `account`, a request to move it to that account. */
+  post(id: unknown, text: unknown, account?: unknown): EmployeeInboxMessage {
     if (typeof id !== "string" || !ID.test(id)) throw new Error("Invalid employee ID");
-    if (typeof text !== "string" || !text.trim()) throw new Error("Write a message first");
-    if (Buffer.byteLength(text) > INBOX_TEXT_MAX) throw new Error("The message is too long");
+    if (account !== undefined && (typeof account !== "string" || !ACCOUNT_ID.test(account)))
+      throw new Error("Invalid account");
+    const body = typeof text === "string" ? text : "";
+    if (account === undefined && !body.trim()) throw new Error("Write a message first");
+    if (Buffer.byteLength(body) > INBOX_TEXT_MAX) throw new Error("The message is too long");
     if (!this.roster().roster.some((entry) => (entry as { id?: unknown } | null)?.id === id))
       throw new Error("Unknown colleague");
     const messages = this.readInbox();
     if (messages.length >= INBOX_MAX) throw new Error("Too many messages are waiting for a desktop");
-    const message: EmployeeInboxMessage = { id: randomUUID(), mono: id, text, at: this.now() };
+    const message: EmployeeInboxMessage = {
+      id: randomUUID(),
+      mono: id,
+      text: body,
+      ...(account === undefined ? {} : { account: account as string }),
+      at: this.now(),
+    };
     this.saveInbox([...messages, message]);
     return message;
   }
@@ -393,6 +417,37 @@ export class HostEmployees {
     message.takenAt = this.now();
     this.saveInbox(messages);
     return true;
+  }
+
+  /** What the desktop last published, or null before it has. */
+  accounts(): EmployeeAccounts | null {
+    try {
+      const value: unknown = JSON.parse(readOptional(join(this.root, ACCOUNTS_FILE)) ?? "null");
+      return value && typeof value === "object" ? (value as EmployeeAccounts) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The desktop running the employees says where they can move. */
+  setAccounts(value: unknown): void {
+    const record = value as Partial<EmployeeAccounts> | null;
+    const accounts = Array.isArray(record?.accounts)
+      ? record.accounts.filter(
+          (entry) =>
+            !!entry &&
+            typeof entry.provider === "string" &&
+            typeof entry.id === "string" &&
+            ACCOUNT_ID.test(entry.id) &&
+            typeof entry.label === "string",
+        )
+      : undefined;
+    const current = record?.current && typeof record.current === "object" ? record.current : undefined;
+    if (!accounts || !current) throw new Error("Invalid accounts");
+    const text = JSON.stringify({ accounts, current, at: this.now() });
+    if (Buffer.byteLength(text) > ACCOUNTS_MAX) throw new Error("Too many accounts");
+    mkdirSync(this.root, { recursive: true, mode: 0o700 });
+    writeAtomic(join(this.root, ACCOUNTS_FILE), text);
   }
 
   /** The desktop sent it: it leaves the inbox. */

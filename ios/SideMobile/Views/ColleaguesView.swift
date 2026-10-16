@@ -85,6 +85,7 @@ struct ColleagueView: View {
     @State private var chat: [Block]?
     @State private var items: [TranscriptItem] = []
     @State private var inbox: [InboxMessage] = []
+    @State private var accounts: ColleagueAccounts?
     @State private var now = Date()
     @State private var atEnd = true
 
@@ -133,7 +134,7 @@ struct ColleagueView: View {
                     ForEach(items) { TranscriptItemView(item: $0) }
                     ForEach(inbox) { message in
                         VStack(alignment: .trailing, spacing: 4) {
-                            Text(message.text)
+                            Text(message.account.map { "Switch to \(accountLabel($0))" } ?? message.text)
                                 .font(.system(size: 15))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
@@ -164,7 +165,7 @@ struct ColleagueView: View {
                             hint: "Sent through a desktop with sIDE open",
                             onSend: { outgoing in try await post(outgoing.text) },
                             context: { EmptyView() },
-                            tools: { EmptyView() }
+                            tools: { accountChip }
                         )
                     } else {
                         Text("Writing to a colleague from the phone needs sIDE Host 0.28 or later. Update the host from the desktop.")
@@ -179,6 +180,37 @@ struct ColleagueView: View {
                 .background(Theme.bg.opacity(0.92).ignoresSafeArea(edges: .bottom))
             }
         }
+    }
+
+    /// The colleague's account, switched on the desktop that runs it with
+    /// its conversation carried over.
+    @ViewBuilder private var accountChip: some View {
+        if let current = accounts?.current[id] {
+            let choices = accounts?.accounts.filter { $0.provider == current.provider } ?? []
+            let pending = inbox.last { $0.account != nil }?.account
+            if choices.count > 1 {
+                Chip(label: pending.map { "→ \(accountLabel($0))" } ?? accountLabel(current.account), disabled: pending != nil) {
+                    ForEach(choices) { account in
+                        ChoiceButton(label: account.label, selected: account.id == current.account) {
+                            guard account.id != current.account else { return }
+                            Task {
+                                do { try await move(to: account.id) } catch { model.report(error) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func accountLabel(_ id: String) -> String {
+        accounts?.accounts.first { $0.id == id }?.label ?? (id == "default" ? "Default" : id)
+    }
+
+    private func move(to account: String) async throws {
+        guard let client = model.client else { return }
+        let message = try await client.rpc("employees.post", ["mono": id, "account": account], as: InboxMessage.self)
+        inbox.append(message)
     }
 
     private func document(_ text: String?) -> some View {
@@ -223,6 +255,9 @@ struct ColleagueView: View {
                 }
                 if canWrite {
                     inbox = (try? await client.rpc("employees.inbox", ["mono": id], as: [InboxMessage].self)) ?? inbox
+                }
+                if model.can("employees.accounts") {
+                    accounts = (try? await client.rpc("employees.accounts", as: ColleagueAccounts?.self)) ?? accounts
                 }
                 now = Date()
             } catch {

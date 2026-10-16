@@ -345,8 +345,26 @@ struct MonoFiles: Decodable {
 struct InboxMessage: Decodable, Identifiable, Equatable {
     let id: String
     let text: String
+    /// A request to move the colleague to this account, not a message.
+    let account: String?
     let at: Double
     let takenBy: String?
+}
+
+/// The accounts the desktop running the colleagues can move them to, and
+/// the one each colleague is on.
+struct ColleagueAccounts: Decodable, Equatable {
+    struct Account: Decodable, Identifiable, Equatable {
+        let provider: String
+        let id: String
+        let label: String
+    }
+    struct Current: Decodable, Equatable {
+        let provider: String
+        let account: String
+    }
+    let accounts: [Account]
+    let current: [String: Current]
 }
 
 struct ColleagueTranscript: Decodable {

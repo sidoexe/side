@@ -11,12 +11,26 @@ import { findMono } from "./mono";
  * cannot send it lets it go back to the others after a minute.
  */
 
-export type InboxMessage = { id: string; mono: string; text: string; at: number };
+export type InboxMessage = {
+  id: string;
+  mono: string;
+  text: string;
+  /** A request to move the colleague to this account rather than a message. */
+  account?: string;
+  at: number;
+};
 
 type Request = <T>(machine: RemoteMachine, method: string, params?: unknown) => Promise<T>;
 
-/** Sends the text to the colleague's chat; false when it could not. */
-export type Deliver = (monoId: string, text: string) => Promise<boolean>;
+/** Sends the text to the colleague's chat, or with `account` moves it to
+ * that account; false when it could not yet. */
+export type Deliver = (monoId: string, text: string, account?: string) => Promise<boolean>;
+
+/** The accounts this desktop can move colleagues to, and each one's current. */
+export type ColleagueAccounts = {
+  accounts: { provider: string; id: string; label: string }[];
+  current: Record<string, { provider: string; account: string }>;
+};
 
 const POLL_MS = 3_000;
 
@@ -42,7 +56,7 @@ export async function deliverInbox(
       held.add(message.mono);
       continue;
     }
-    const ok = await deliver(message.mono, message.text).catch(() => false);
+    const ok = await deliver(message.mono, message.text, message.account).catch(() => false);
     if (!ok) {
       held.add(message.mono);
       continue;
@@ -53,19 +67,39 @@ export async function deliverInbox(
   return sent;
 }
 
+/** Tells the home machine where colleagues can move, when that changed
+ * since `last`. Returns what it last published. */
+export async function publishAccounts(
+  request: Request,
+  home: RemoteMachine,
+  accounts: ColleagueAccounts,
+  last: string | undefined,
+): Promise<string> {
+  const text = JSON.stringify(accounts);
+  if (text !== last) await request(home, "employees.setAccounts", accounts);
+  return text;
+}
+
 /** Runs while the app is open. */
-export function startColleagueInbox(deliver: Deliver): () => void {
+export function startColleagueInbox(
+  deliver: Deliver,
+  accounts?: () => ColleagueAccounts,
+): () => void {
   const request: Request = (machine, method, params) =>
     remoteRequest(machine.id, method, params);
   // Each window apart, so two windows of one desktop never both send it.
   const by = crypto.randomUUID();
   let running = false;
+  let published: string | undefined;
   const run = async () => {
     if (running) return;
     running = true;
     try {
       const home = await homeWith("employees.inbox");
       if (home) await deliverInbox(request, home, by, deliver);
+      const offers = accounts ? await homeWith("employees.accounts") : undefined;
+      if (offers && accounts)
+        published = await publishAccounts(request, offers, accounts(), published);
     } catch {
       // The host is out of reach: asked again on the next tick.
     } finally {

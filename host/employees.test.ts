@@ -150,3 +150,24 @@ it("keeps a browser message until one desktop takes and sends it", () => {
   store.delivered(message.id);
   expect(store.inbox("m")).toEqual([]);
 });
+
+it("queues an account move for a desktop and keeps the accounts it offers", () => {
+  const { store } = employees();
+  store.saveRoster([{ id: "m" }], 0);
+  expect(store.post("m", undefined, "account-work")).toMatchObject({ mono: "m", text: "", account: "account-work" });
+  expect(() => store.post("m", undefined, "../x")).toThrow("Invalid account");
+
+  expect(store.accounts()).toBeNull();
+  store.setAccounts({
+    accounts: [
+      { provider: "claude", id: "default", label: "Personal" },
+      { provider: "claude", id: "../bad", label: "Bad" },
+    ],
+    current: { m: { provider: "claude", account: "default" } },
+  });
+  expect(store.accounts()).toMatchObject({
+    accounts: [{ provider: "claude", id: "default", label: "Personal" }],
+    current: { m: { provider: "claude", account: "default" } },
+  });
+  expect(() => store.setAccounts({ accounts: "no" })).toThrow("Invalid accounts");
+});

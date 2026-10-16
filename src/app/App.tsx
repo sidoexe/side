@@ -441,6 +441,7 @@ import { shouldGenerateSessionTitle } from "../features/sessions/model/sessionTi
 import {
   DEFAULT_PROVIDER_ACCOUNT_ID,
   providerAccountExists,
+  providerAccounts,
   sameProviderAccountId,
   selectedProviderAccountId,
   supportsProviderAccounts,
@@ -8752,12 +8753,43 @@ function Workspace({
   saveDraftRef.current = onSaveDraft;
   const ensureOpenSessionRef = useRef(ensureOpenSession);
   ensureOpenSessionRef.current = ensureOpenSession;
+  const moveMonoAccountRef = useRef<
+    (sessionId: string, accountId: string) => Promise<boolean>
+  >(async () => false);
+  // Where the browser app may move each colleague, from this desktop's
+  // accounts and the ones its colleagues run on.
+  const colleagueAccounts = () => ({
+    accounts: (["claude", "codex"] as const).flatMap((provider) =>
+      providerAccounts(provider).map(({ id, label }) => ({
+        provider,
+        id,
+        label,
+      })),
+    ),
+    current: Object.fromEntries(
+      listMonos().flatMap((mono) => {
+        const session = mono.sessionId
+          ? sessionsRef.current.find((entry) => entry.id === mono.sessionId)
+          : undefined;
+        if (!session || !supportsProviderAccounts(session.harness)) return [];
+        return [
+          [
+            mono.id,
+            {
+              provider: session.harness,
+              account: session.providerAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID,
+            },
+          ],
+        ];
+      }),
+    ),
+  });
 
   // Messages written to a colleague in the browser app reach its chat here,
-  // as if typed in this window.
+  // as if typed in this window, and so do its requests to change account.
   useEffect(() => {
     if (!monosEnabled || windowTransfer) return;
-    return startColleagueInbox(async (monoId, text) => {
+    return startColleagueInbox(async (monoId, text, account) => {
       const session = await ensureMonoSession(monoId, {
         home: homeDir,
         load: (id) => ensureOpenSessionRef.current(id),
@@ -8768,8 +8800,9 @@ function Workspace({
         },
       });
       if (!session) return false;
+      if (account) return await moveMonoAccountRef.current(session.id, account);
       return await submitSessionRef.current(session.id, text);
-    });
+    }, colleagueAccounts);
   }, [monosEnabled, windowTransfer]);
 
   const appReceipts = useRef(
@@ -9262,7 +9295,7 @@ function Workspace({
       sessionId: string,
       accountId: string,
       fallback: (session: Session, accountId: string) => Session,
-    ) => {
+    ): Promise<boolean> => {
       const session = sessionsRef.current.find(
         (entry) => entry.id === sessionId,
       );
@@ -9270,10 +9303,11 @@ function Workspace({
         !session ||
         !isMonoSession(sessionId) ||
         !supportsProviderAccounts(session.harness) ||
-        !providerAccountExists(session.harness, accountId) ||
-        sameProviderAccountId(session.providerAccountId, accountId)
+        !providerAccountExists(session.harness, accountId)
       )
-        return;
+        return false;
+      if (sameProviderAccountId(session.providerAccountId, accountId))
+        return true;
       const providerSessionId = session.providerSessionId;
       let carried = false;
       if (
@@ -9293,7 +9327,7 @@ function Workspace({
       const current = sessionsRef.current.find(
         (entry) => entry.id === sessionId,
       );
-      if (!current) return;
+      if (!current) return false;
       // The chat may have moved on while the copy ran; only carry the very
       // conversation that was copied.
       const next =
@@ -9302,7 +9336,7 @@ function Workspace({
         canCarryMonoAccount(current)
           ? carryMonoAccount(current, accountId)
           : fallback(current, accountId);
-      if (next === current) return;
+      if (next === current) return false;
       if (
         next.providerSessionId &&
         next.providerSessionId === providerSessionId
@@ -9318,9 +9352,16 @@ function Workspace({
       updateSessionState(sessionsRef, setSessions, (prev) =>
         prev.map((entry) => (entry.id === sessionId ? next : entry)),
       );
+      return true;
     },
     [],
   );
+  moveMonoAccountRef.current = (sessionId, accountId) =>
+    moveMonoAccount(sessionId, accountId, (session, id) =>
+      session.usageLimit
+        ? switchMonoUsageLimitAccount(session, id)
+        : switchMonoAccount(session, id),
+    );
 
   const onUsageLimitAccountChange = useCallback(
     (sessionId: string, accountId: string) => {
@@ -9331,13 +9372,9 @@ function Workspace({
 
   const onMonoAccountChange = useCallback(
     (sessionId: string, accountId: string) => {
-      void moveMonoAccount(sessionId, accountId, (session, id) =>
-        session.usageLimit
-          ? switchMonoUsageLimitAccount(session, id)
-          : switchMonoAccount(session, id),
-      );
+      void moveMonoAccountRef.current(sessionId, accountId);
     },
-    [moveMonoAccount],
+    [],
   );
 
   const [usageLimitTick, setUsageLimitTick] = useState(0);
