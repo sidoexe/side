@@ -66,3 +66,27 @@ export function switchMonoUsageLimitAccount(
     return session;
   return resumeMonoUsageLimit(switchMonoAccount(session, accountId));
 }
+
+/**
+ * A Claude Mono whose transcript was copied into the new account resumes
+ * its own conversation there, with nothing lost to a recap.
+ */
+export function canCarryMonoAccount(session: Session): boolean {
+  return (
+    session.harness === "claude" &&
+    !!session.providerSessionId &&
+    !session.pendingSwitch &&
+    !session.busy
+  );
+}
+
+/** Move a Mono to an account that already holds a copy of its transcript. */
+export function carryMonoAccount(session: Session, accountId: string): Session {
+  if (
+    !canCarryMonoAccount(session) ||
+    sameProviderAccountId(session.providerAccountId, accountId)
+  )
+    return session;
+  const moved = { ...session, providerAccountId: accountId };
+  return moved.usageLimit ? resumeMonoUsageLimit(moved) : moved;
+}

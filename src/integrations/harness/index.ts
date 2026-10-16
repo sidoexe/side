@@ -1,4 +1,8 @@
-export { startHarnessBridge, killAllChildren } from "./core/child";
+export {
+  carryClaudeTranscript,
+  startHarnessBridge,
+  killAllChildren,
+} from "./core/child";
 export {
   harnessLoginArgs,
   isHarnessAuthError,

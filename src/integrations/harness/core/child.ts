@@ -55,6 +55,19 @@ export function copyMonoCodexThreads(
   });
 }
 
+/** Copy a Claude conversation into another account so it resumes there. */
+export function carryClaudeTranscript(
+  providerSessionId: string,
+  fromAccountId: string | undefined,
+  toAccountId: string,
+): Promise<boolean> {
+  return invoke("claude_transcript_carry", {
+    providerSessionId,
+    fromAccountId,
+    toAccountId,
+  });
+}
+
 export function restoreMonoCodexAgentState(
   providerAccountId: string | undefined,
   threadId: string,

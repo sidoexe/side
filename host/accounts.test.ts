@@ -124,8 +124,11 @@ describe("host accounts", () => {
     const to = join(root, "to");
     mkdirSync(join(from, "projects", "-Users-me-app"), { recursive: true });
     writeFileSync(join(from, "projects", "-Users-me-app", "conv.jsonl"), "{}\n");
+    mkdirSync(join(from, "projects", "-Users-me-app", "conv", "subagents"), { recursive: true });
+    writeFileSync(join(from, "projects", "-Users-me-app", "conv", "subagents", "a.jsonl"), "sub");
     expect(carryClaudeTranscript(from, to, "conv")).toBe(true);
     expect(readFileSync(join(to, "projects", "-Users-me-app", "conv.jsonl"), "utf8")).toBe("{}\n");
+    expect(readFileSync(join(to, "projects", "-Users-me-app", "conv", "subagents", "a.jsonl"), "utf8")).toBe("sub");
     expect(carryClaudeTranscript(from, to, "missing")).toBe(false);
 
     const shared = join(root, "shared");

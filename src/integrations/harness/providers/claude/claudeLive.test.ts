@@ -46,7 +46,10 @@ const {
   __claudeTestReset,
 } = await import("./claude");
 import type { HarnessEvent } from "../../core/types";
-import type { RuntimeMode, TurnIntent } from "../../../../features/sessions/model/session";
+import type {
+  RuntimeMode,
+  TurnIntent,
+} from "../../../../features/sessions/model/session";
 
 function parse() {
   return sent.map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -245,7 +248,8 @@ function emitBashFinished(taskId = "b1") {
     task_id: taskId,
     tool_use_id: "toolu_bash",
     status: "completed",
-    summary: 'Background command "sleep 30 && echo done" completed (exit code 0)',
+    summary:
+      'Background command "sleep 30 && echo done" completed (exit code 0)',
   });
 }
 
@@ -706,7 +710,9 @@ describe("claude task tools", () => {
       {
         key: "claude-tasks",
         providerSessionId: "sess_2",
-        items: [{ id: "1", text: "Other conversation", status: "pending" as const }],
+        items: [
+          { id: "1", text: "Other conversation", status: "pending" as const },
+        ],
       },
     ];
 
@@ -749,7 +755,9 @@ describe("claude task tools", () => {
     );
 
     const events: HarnessEvent[] = [];
-    const { turn } = await restartedTurn(events, { providerSessionId: "sess_2" });
+    const { turn } = await restartedTurn(events, {
+      providerSessionId: "sess_2",
+    });
     expect(spawned.at(-1)).toEqual(
       expect.arrayContaining(["--resume", "sess_2"]),
     );
@@ -808,7 +816,9 @@ describe("claude task tools", () => {
     await first.turn;
 
     const events: HarnessEvent[] = [];
-    const { turn: second } = await restartedTurn(events, { providerAccountId: "home" });
+    const { turn: second } = await restartedTurn(events, {
+      providerAccountId: "home",
+    });
     expect(spawned.at(-1)).not.toContain("--resume");
     emitTaskTool(
       "toolu_u1",
@@ -902,6 +912,38 @@ describe("claude model switching", () => {
       () =>
         parse().filter((message) => message.type === "user").length > userCount,
       "follow-up prompt",
+    );
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await second;
+  });
+});
+
+describe("claude account carry", () => {
+  it("resumes the same conversation on an account its transcript was copied to", async () => {
+    const first = await startTurn("s1", { providerAccountId: "account-work" });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await first.turn;
+
+    bindClaudeSession("s1", "sess_1", "/repo", "account-home");
+    const second = sendClaudeTurn({
+      sessionId: "s1",
+      cwd: "/repo",
+      model: "claude:sonnet",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      providerAccountId: "account-home",
+      text: "keep going",
+      attachments: [],
+      onEvent: () => undefined,
+    });
+
+    await waitFor(() => spawned.length === 2, "Claude on the new account");
+    expect(spawned[1]).toEqual(expect.arrayContaining(["--resume", "sess_1"]));
+    expect(spawned[1]).not.toContain("--session-id");
+    emit({ type: "system", subtype: "init", session_id: "sess_1" });
+    await waitFor(
+      () => parse().filter((message) => message.type === "user").length > 1,
+      "prompt on the new account",
     );
     emit({ type: "result", subtype: "success", session_id: "sess_1" });
     await second;
@@ -1849,9 +1891,9 @@ describe("claude background tasks", () => {
     });
     const items = groupTurnItems(session.blocks.slice(1));
     const group = items.at(-1);
-    expect(group?.type === "activity" && workSummaryLine(group.blocks, true)).toBe(
-      "Running in background",
-    );
+    expect(
+      group?.type === "activity" && workSummaryLine(group.blocks, true),
+    ).toBe("Running in background");
   });
 
   it("lets the turn go if a finished task never wakes Claude", async () => {

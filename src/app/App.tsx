@@ -1,6 +1,8 @@
 import { sessionConversationPage } from "../features/agent-app/model/sessionConversation";
 import { readMonoConversation } from "../features/monos/model/monoConversation";
 import {
+  canCarryMonoAccount,
+  carryMonoAccount,
   resumeMonoUsageLimit,
   switchMonoAccount,
   switchMonoUsageLimitAccount,
@@ -279,6 +281,7 @@ import {
   appendSteerUser,
   bindHarnessSession,
   cancelHarnessTurn,
+  carryClaudeTranscript,
   canCompactHarnessContext,
   canRewindHarnessLastTurn,
   canSteerHarness,
@@ -438,6 +441,7 @@ import { shouldGenerateSessionTitle } from "../features/sessions/model/sessionTi
 import {
   DEFAULT_PROVIDER_ACCOUNT_ID,
   providerAccountExists,
+  sameProviderAccountId,
   selectedProviderAccountId,
   supportsProviderAccounts,
   type ProviderAccountProvider,
@@ -9250,8 +9254,15 @@ function Workspace({
     [onSubmit, onUsageLimitDismiss],
   );
 
-  const onUsageLimitAccountChange = useCallback(
-    (sessionId: string, accountId: string) => {
+  // A Claude Mono takes its transcript to the new account and resumes there
+  // with its whole context. Anything that cannot be carried falls back to a
+  // fresh conversation that opens with a recap of this one.
+  const moveMonoAccount = useCallback(
+    async (
+      sessionId: string,
+      accountId: string,
+      fallback: (session: Session, accountId: string) => Session,
+    ) => {
       const session = sessionsRef.current.find(
         (entry) => entry.id === sessionId,
       );
@@ -9259,43 +9270,74 @@ function Workspace({
         !session ||
         !isMonoSession(sessionId) ||
         !supportsProviderAccounts(session.harness) ||
-        !providerAccountExists(session.harness, accountId)
+        !providerAccountExists(session.harness, accountId) ||
+        sameProviderAccountId(session.providerAccountId, accountId)
       )
         return;
-      setSessions((prev) =>
-        prev.map((entry) =>
-          entry.id === sessionId
-            ? switchMonoUsageLimitAccount(entry, accountId)
-            : entry,
-        ),
+      const providerSessionId = session.providerSessionId;
+      let carried = false;
+      if (
+        providerSessionId &&
+        canCarryMonoAccount(session) &&
+        !isRemoteProjectPath(session.cwd)
+      ) {
+        carried = await carryClaudeTranscript(
+          providerSessionId,
+          session.providerAccountId,
+          accountId,
+        ).catch((error) => {
+          console.warn("Could not carry the Claude transcript", error);
+          return false;
+        });
+      }
+      const current = sessionsRef.current.find(
+        (entry) => entry.id === sessionId,
+      );
+      if (!current) return;
+      // The chat may have moved on while the copy ran; only carry the very
+      // conversation that was copied.
+      const next =
+        carried &&
+        current.providerSessionId === providerSessionId &&
+        canCarryMonoAccount(current)
+          ? carryMonoAccount(current, accountId)
+          : fallback(current, accountId);
+      if (next === current) return;
+      if (
+        next.providerSessionId &&
+        next.providerSessionId === providerSessionId
+      )
+        bindHarnessSession(
+          next.harness,
+          next.id,
+          next.providerSessionId,
+          sessionWorkCwd(next),
+          next.providerAccountId,
+          next.blocks,
+        );
+      updateSessionState(sessionsRef, setSessions, (prev) =>
+        prev.map((entry) => (entry.id === sessionId ? next : entry)),
       );
     },
     [],
   );
 
+  const onUsageLimitAccountChange = useCallback(
+    (sessionId: string, accountId: string) => {
+      void moveMonoAccount(sessionId, accountId, switchMonoUsageLimitAccount);
+    },
+    [moveMonoAccount],
+  );
+
   const onMonoAccountChange = useCallback(
     (sessionId: string, accountId: string) => {
-      const session = sessionsRef.current.find(
-        (entry) => entry.id === sessionId,
-      );
-      if (
-        !session ||
-        !isMonoSession(sessionId) ||
-        !supportsProviderAccounts(session.harness) ||
-        !providerAccountExists(session.harness, accountId)
-      )
-        return;
-      setSessions((prev) =>
-        prev.map((entry) =>
-          entry.id === sessionId
-            ? entry.usageLimit
-              ? switchMonoUsageLimitAccount(entry, accountId)
-              : switchMonoAccount(entry, accountId)
-            : entry,
-        ),
+      void moveMonoAccount(sessionId, accountId, (session, id) =>
+        session.usageLimit
+          ? switchMonoUsageLimitAccount(session, id)
+          : switchMonoAccount(session, id),
       );
     },
-    [],
+    [moveMonoAccount],
   );
 
   const [usageLimitTick, setUsageLimitTick] = useState(0);

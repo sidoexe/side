@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `localhost` link in a session on another machine opens in the **Web view**, through that machine. Its host publishes the port on its tailnet with `tailscale serve` and proxies it as `localhost`, so dev servers such as Vite need no allowed-hosts setting, and hot reload keeps working. The page is a web app named after the machine and port. It needs Tailscale on the host; without it the link opens in the browser as before.
 - The workspace tab context menu has **Close All Tabs** after Close Tabs to the Left. It closes every tab in the tab bar and resets the active one to a blank session, with the same unsaved-file and terminal confirmations as File > Close All Tabs, and it is disabled when the only tab is already blank.
 
+### Changed
+
+- Moving a Claude **Colleague** to another account keeps its whole conversation. Its transcript, with subagent transcripts and large tool results, is copied into the new account's profile, and the Colleague resumes the same conversation there instead of starting a fresh one from a recap, from its settings and from the usage-limit notice alike. A Colleague on another machine, or one whose transcript cannot be copied, falls back to the recap as before. Remote sessions moved to another account on their host also take their subagent files along.
+
 ### Fixed
 
 - Git LFS repositories no longer fail with "git-lfs: command not found" when MonoCode is opened from Finder. Status, diffs, staging, discards, and worktree checks run Git with Homebrew and other common install directories on its PATH, plus the terminal's PATH once it has been read, so filters resolve without waiting on the login shell.

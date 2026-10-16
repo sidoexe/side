@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readClaudeUsage, type UsageReading } from "./account-usage";
@@ -352,6 +352,10 @@ export function carryClaudeTranscript(fromDir: string, toDir: string, providerSe
     if (!existsSync(source)) continue;
     mkdirSync(join(to, folder), { recursive: true });
     copyFileSync(source, join(to, folder, file));
+    // Subagent transcripts and large tool results sit beside it.
+    const sidecar = join(from, folder, providerSessionId);
+    if (existsSync(sidecar))
+      cpSync(sidecar, join(to, folder, providerSessionId), { recursive: true });
     return true;
   }
   return false;

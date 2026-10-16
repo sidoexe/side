@@ -176,26 +176,114 @@ pub fn claude_shell_commands(
     if tool_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let config_dir = match provider_account_id.as_deref() {
-        Some(id) if id != "default" => crate::harness::provider_account_path(&app, "claude", id)?,
+    let config_dir = claude_config_dir(&app, provider_account_id.as_deref())?;
+    let Some(path) = claude_transcript_path(&config_dir, &provider_session_id) else {
+        return Ok(HashMap::new());
+    };
+    claude_shell_commands_from_file(&path, &tool_ids)
+}
+
+fn claude_config_dir(
+    app: &AppHandle,
+    provider_account_id: Option<&str>,
+) -> Result<PathBuf, String> {
+    Ok(match provider_account_id {
+        Some(id) if id != "default" => crate::harness::provider_account_path(app, "claude", id)?,
         _ => match std::env::var_os("CLAUDE_CONFIG_DIR") {
             Some(path) => PathBuf::from(path),
             None => {
                 PathBuf::from(dirs_home().ok_or("Home directory is unavailable")?).join(".claude")
             }
         },
-    };
+    })
+}
+
+/// Claude keeps each conversation under a folder named after its cwd.
+fn claude_transcript_path(config_dir: &Path, provider_session_id: &str) -> Option<PathBuf> {
     let transcript_name = format!("{provider_session_id}.jsonl");
-    let root = config_dir.join("projects");
-    let Some(path) = std::fs::read_dir(root).ok().and_then(|projects| {
-        projects.flatten().find_map(|project| {
+    std::fs::read_dir(config_dir.join("projects"))
+        .ok()?
+        .flatten()
+        .find_map(|project| {
             let candidate = project.path().join(&transcript_name);
             candidate.is_file().then_some(candidate)
         })
-    }) else {
-        return Ok(HashMap::new());
+}
+
+/// Copy a Claude conversation into another account's profile so that account
+/// can `--resume` it with its whole context. Transcripts are local files, not
+/// bound to the account that wrote them. False when there is nothing to copy.
+#[tauri::command(async)]
+pub fn claude_transcript_carry(
+    app: AppHandle,
+    provider_session_id: String,
+    from_account_id: Option<String>,
+    to_account_id: Option<String>,
+) -> Result<bool, String> {
+    if provider_session_id.is_empty()
+        || !provider_session_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    {
+        return Err("Invalid Claude provider session id".into());
+    }
+    let from = claude_config_dir(&app, from_account_id.as_deref())?;
+    let to = claude_config_dir(&app, to_account_id.as_deref())?;
+    carry_claude_transcript(&from, &to, &provider_session_id)
+}
+
+fn carry_claude_transcript(
+    from: &Path,
+    to: &Path,
+    provider_session_id: &str,
+) -> Result<bool, String> {
+    if from == to {
+        return Ok(claude_transcript_path(from, provider_session_id).is_some());
+    }
+    let Some(source) = claude_transcript_path(from, provider_session_id) else {
+        return Ok(false);
     };
-    claude_shell_commands_from_file(&path, &tool_ids)
+    let (Some(project), Some(name)) = (
+        source.parent().and_then(Path::file_name),
+        source.file_name(),
+    ) else {
+        return Ok(false);
+    };
+    let target_dir = to.join("projects").join(project);
+    std::fs::create_dir_all(&target_dir)
+        .map_err(|error| format!("Could not create {}: {error}", target_dir.display()))?;
+    // The source account wrote last, so its copy replaces any older one the
+    // target kept from an earlier switch. A rename keeps a reader from ever
+    // seeing half a transcript.
+    let partial = target_dir.join(format!(".{provider_session_id}.jsonl.partial"));
+    std::fs::copy(&source, &partial)
+        .and_then(|_| std::fs::rename(&partial, target_dir.join(name)))
+        .map_err(|error| {
+            let _ = std::fs::remove_file(&partial);
+            format!("Could not copy the Claude transcript: {error}")
+        })?;
+    // Subagent transcripts and large tool results sit beside it.
+    let sidecar = source.with_extension("");
+    if sidecar.is_dir() {
+        copy_dir_all(&sidecar, &target_dir.join(provider_session_id))
+            .map_err(|error| format!("Could not copy the Claude session files: {error}"))?;
+    }
+    Ok(true)
+}
+
+fn copy_dir_all(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            copy_dir_all(&entry.path(), &target)?;
+        } else if kind.is_file() {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
 }
 
 fn claude_shell_commands_from_file(
@@ -4531,8 +4619,7 @@ fn git_cmd() -> Command {
 }
 
 fn git_cmd_on(path: String) -> Command {
-    let mut cmd = crate::harness::command_on_path("git", path);
-    cmd
+    crate::harness::command_on_path("git", path)
 }
 
 fn git_cmd_for_args_with_path(args: &[&str], gui_path: impl FnOnce() -> String) -> Command {
@@ -6254,6 +6341,32 @@ pub async fn open_path_with_default_app(path: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claude_transcript_carries_into_another_account_with_its_session_files() {
+        let root = std::env::temp_dir().join(format!("monocode-carry-{}", Uuid::new_v4()));
+        let (from, to) = (root.join("a"), root.join("b"));
+        let project = from.join("projects").join("-Users-me-app");
+        std::fs::create_dir_all(project.join("s1").join("subagents")).unwrap();
+        std::fs::write(project.join("s1.jsonl"), "new\n").unwrap();
+        std::fs::write(project.join("s1").join("subagents").join("x.jsonl"), "sub").unwrap();
+        let stale = to.join("projects").join("-Users-me-app");
+        std::fs::create_dir_all(&stale).unwrap();
+        std::fs::write(stale.join("s1.jsonl"), "old\n").unwrap();
+
+        assert!(carry_claude_transcript(&from, &to, "s1").unwrap());
+        assert_eq!(
+            std::fs::read_to_string(stale.join("s1.jsonl")).unwrap(),
+            "new\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(stale.join("s1").join("subagents").join("x.jsonl")).unwrap(),
+            "sub"
+        );
+        assert!(!stale.join(".s1.jsonl.partial").exists());
+        assert!(!carry_claude_transcript(&from, &to, "missing").unwrap());
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn only_video_containers_can_join_the_stream_scope() {

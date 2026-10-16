@@ -9,6 +9,7 @@ import {
 } from "../../sessions/model/handoff";
 import { newSession, type Session } from "../../sessions/model/session";
 import {
+  carryMonoAccount,
   resumeMonoUsageLimit,
   switchMonoAccount,
   switchMonoUsageLimitAccount,
@@ -165,5 +166,35 @@ describe("Employee account choice", () => {
     expect(switchMonoAccount(busy, "account-work")).toBe(busy);
     const same = limited({ usageLimit: undefined });
     expect(switchMonoAccount(same, "default")).toBe(same);
+  });
+});
+
+describe("carrying a Claude Mono to another account", () => {
+  it("keeps its conversation and continues the stopped work there", () => {
+    const moved = carryMonoAccount(limited(), "work");
+
+    expect(moved.providerAccountId).toBe("work");
+    expect(moved.providerSessionId).toBe("old-thread");
+    expect(moved.pendingSwitch).toBeUndefined();
+    expect(moved.usageLimit).toBeUndefined();
+    expect(moved.queuedMessages?.map((message) => message.text)).toEqual([
+      CONTINUE_PROMPT,
+    ]);
+  });
+
+  it("only moves the account of an idle chat", () => {
+    const moved = carryMonoAccount(limited({ usageLimit: undefined }), "work");
+
+    expect(moved.providerSessionId).toBe("old-thread");
+    expect(moved.queuedMessages ?? []).toEqual([]);
+  });
+
+  it("leaves a busy, unbound or other-harness Mono alone", () => {
+    for (const session of [
+      limited({ busy: true }),
+      limited({ providerSessionId: undefined }),
+      limited({ harness: "codex" }),
+    ])
+      expect(carryMonoAccount(session, "work")).toBe(session);
   });
 });
