@@ -7,6 +7,7 @@ import {
   reorderWithin,
   webAppFolders,
   webAppName,
+  withWebAppAt,
   type WebApp,
 } from "./webApps";
 
@@ -65,5 +66,15 @@ describe("web apps", () => {
       "Work",
       "Home",
     ]);
+  });
+
+  it("points the app already on a site at a new page, or adds one", () => {
+    const preview = { id: "p", name: "Mac:5173", url: "https://mac.ts.net:5173/?side-preview=a" };
+    const first = withWebAppAt([DEFAULT_WEB_APP, preview], "https://mac.ts.net:5173/b?side-preview=c", "Mac:5173");
+    expect(first.app).toEqual({ ...preview, url: "https://mac.ts.net:5173/b?side-preview=c" });
+    expect(first.apps).toEqual([DEFAULT_WEB_APP, first.app]);
+    const other = withWebAppAt(first.apps, "https://mac.ts.net:3000/", "Mac:3000");
+    expect(other.app.name).toBe("Mac:3000");
+    expect(other.apps).toHaveLength(3);
   });
 });

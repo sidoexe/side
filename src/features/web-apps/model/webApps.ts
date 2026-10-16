@@ -121,6 +121,34 @@ export function saveActiveWebApp(id: string) {
   changed();
 }
 
+/** Asks the app to show the Web view, as the rail's web apps do. */
+export const OPEN_WEB_EVENT = "monocode:open-web";
+
+/** Make the app on `url`'s site the active one, pointed at `url`, adding it
+ * as `name` when there is none. */
+export function openWebAppAt(url: string, name: string): WebApp {
+  const { apps, app } = withWebAppAt(loadWebApps(), url, name);
+  saveWebApps(apps);
+  saveActiveWebApp(app.id);
+  return app;
+}
+
+/** `apps` with the app on `url`'s site pointed at `url`, or a new one. */
+export function withWebAppAt(
+  apps: WebApp[],
+  url: string,
+  name: string,
+): { apps: WebApp[]; app: WebApp } {
+  const origin = new URL(url).origin;
+  const existing = apps.find((app) => new URL(app.url).origin === origin);
+  if (!existing) {
+    const app = { ...newWebApp(apps, url), name };
+    return { apps: [...apps, app], app };
+  }
+  const app = { ...existing, url };
+  return { apps: apps.map((entry) => (entry.id === app.id ? app : entry)), app };
+}
+
 /** Add the page the user typed and make it the active app; null when it
  * isn't a web address. */
 export function addWebApp(input: string): WebApp | null {

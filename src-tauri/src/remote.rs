@@ -386,6 +386,7 @@ fn supported_remote_method(method: &str) -> bool {
             | "webApps.set"
             | "webApps.session"
             | "webApps.setSession"
+            | "previews.open"
             | "models.list"
             | "sessions.list"
             | "sessions.update"

@@ -33,6 +33,7 @@ import { createHostServer } from "./server";
 import { HostPush } from "./push";
 import { HostRail } from "./rail";
 import { HostWebApps } from "./webApps";
+import { findTailscale, HostPreviews, tailscaleRunner } from "./previews";
 import {
   REMOTE_PROVIDERS,
   type RemoteProvider,
@@ -324,6 +325,7 @@ Connect another computer using an SSH forward to the loopback port.`);
       server.close();
       server.closeAllConnections();
       engine.push?.close();
+      engine.previews?.close();
       await engine.close();
       await backend.close();
       release();
@@ -333,6 +335,18 @@ Connect another computer using an SSH forward to the loopback port.`);
       server.once("error", reject);
       server.listen(port, "127.0.0.1", resolve);
     });
+    // Previews need Tailscale; without it, or with the proxy's port taken,
+    // the host runs without them.
+    const tailscale = findTailscale();
+    if (tailscale) {
+      const previews = new HostPreviews(join(directory, "previews"), port + 1, tailscaleRunner(tailscale));
+      try {
+        await previews.listen();
+        engine.previews = previews;
+      } catch (error) {
+        console.warn(`Previews are off: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     writeFileSync(
       statePath,
       JSON.stringify({ pid: process.pid, port, secret }),

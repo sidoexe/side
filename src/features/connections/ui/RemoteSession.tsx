@@ -32,6 +32,8 @@ import {
   useHostAccounts,
 } from "../model/hostAccounts";
 import { RemoteAccountPicker } from "./RemoteAccountPicker";
+import { WebLinkContext } from "../../sessions/ui/AgentMarkdown";
+import { openRemotePreview } from "../model/remotePreviews";
 import { CONTINUE_PROMPT } from "../../sessions/model/inFlight";
 import {
   clearPendingRemoteCommand,
@@ -1397,6 +1399,12 @@ function ConnectedRemoteSession({
     return remotePath(machine.environmentId, absolute);
   };
 
+  const previews = !!descriptor?.capabilities.includes("previews");
+  // The agent's `localhost` is the host's: its links open through the host.
+  const openWebLink = useMemo(
+    () => (previews ? (href: string) => openRemotePreview(machine, href) : undefined),
+    [previews, machine],
+  );
   const overrides: RemoteSessionOverrides = {
     session,
     remoteSession: true,
@@ -1525,7 +1533,9 @@ function ConnectedRemoteSession({
             ) : null}
           </div>
         ) : null}
-        <div className="min-h-0 flex-1">{render(overrides)}</div>
+        <WebLinkContext.Provider value={openWebLink}>
+          <div className="min-h-0 flex-1">{render(overrides)}</div>
+        </WebLinkContext.Provider>
         <RemoteAccountPicker
           sessionId={shell.id}
           machineId={machine.id}

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Remote hosts can run on **Linux without systemd**, such as containers and Firecracker microVMs. Setup starts the host as a detached background process there instead of a systemd user service, so it keeps running after SSH disconnects, and the next connect starts it again if it has stopped. Machines with systemd keep the user service and lingering.
+- A `localhost` link in a session on another machine opens in the **Web view**, through that machine. Its host publishes the port on its tailnet with `tailscale serve` and proxies it as `localhost`, so dev servers such as Vite need no allowed-hosts setting, and hot reload keeps working. The page is a web app named after the machine and port. It needs Tailscale on the host; without it the link opens in the browser as before.
 - The workspace tab context menu has **Close All Tabs** after Close Tabs to the Left. It closes every tab in the tab bar and resets the active one to a blank session, with the same unsaved-file and terminal confirmations as File > Close All Tabs, and it is disabled when the only tab is already blank.
 
 ### Fixed

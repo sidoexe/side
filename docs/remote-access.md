@@ -125,6 +125,16 @@ The token is kept in an `HttpOnly`, `SameSite=Strict` cookie scoped to `/web` fo
 
 On the host machine itself, `http://127.0.0.1:3775/web/` works without Tailscale.
 
+## Preview a machine's local web servers
+
+When an agent on a host starts a dev server and links to it (`http://localhost:5173`), clicking the link opens the page in the **Web view**, served by that machine. The host publishes the port on its tailnet with `tailscale serve --https=<port>`, so the page lives at `https://<machine>.<tailnet>.ts.net:<port>`, and a web app named after the machine and port keeps it in the rail, synced to your other devices. Opening the link again points that app at the new page.
+
+Every published port goes to one proxy on the host, at its port + 1 (`127.0.0.1:3776` by default), which forwards to `localhost:<port>` with `localhost` as the host name. Dev servers that only answer their own name, such as Vite, need no extra setting, and their hot reload WebSocket works through it.
+
+Access is limited to the tailnet, and the proxy also asks for a token: the link carries it once, and the proxy trades it for a cookie. The browser app's credential is never forwarded to the dev server. Ports from 1024 to 65535 can be previewed. A published port stays published, for the links it gave out; `tailscale serve --https=<port> off` on the host removes one.
+
+Previews need the `tailscale` CLI on the host, signed in; on Linux, `tailscale serve` also needs `sudo tailscale set --operator=$USER` once. Without Tailscale, `localhost` links open in the browser as before.
+
 ## Manage the host
 
 ```sh

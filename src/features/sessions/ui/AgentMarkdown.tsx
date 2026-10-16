@@ -165,6 +165,12 @@ const FileOpenContext = createContext<{
 }>({});
 
 const RemoteMediaContext = createContext(false);
+/**
+ * Opens a web link elsewhere than the browser, such as a session's
+ * `localhost` links on the machine that runs it; returns false for links it
+ * leaves to the browser.
+ */
+export const WebLinkContext = createContext<((href: string) => boolean) | undefined>(undefined);
 /** Show local images and videos a reply links to, rather than the links. */
 const LocalMediaContext = createContext(false);
 const MarkdownFadeContext = createContext(false);
@@ -278,6 +284,7 @@ function MarkdownLink({
   const file = href ? resolveWorkspaceFileReference(href, cwd) : undefined;
   const label = textContent(children);
   const localMedia = useContext(LocalMediaContext);
+  const openWebLink = useContext(WebLinkContext);
   if (allowRemoteMedia && href && isInboxMediaUrl(href)) {
     return <InboxMedia src={href} alt={label} />;
   }
@@ -298,6 +305,7 @@ function MarkdownLink({
         }
         event.preventDefault();
         if (href && /^https?:\/\//i.test(href)) {
+          if (openWebLink?.(href)) return;
           void openUrl(href).catch((error) => {
             console.error("Failed to open web link:", error);
           });

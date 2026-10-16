@@ -786,6 +786,7 @@ import {
   collectWorkspaceSnapshot,
   workspaceSnapshotKey,
 } from "../features/workspace/model/workspaceSnapshot";
+import { OPEN_WEB_EVENT } from "../features/web-apps/model/webApps";
 import type { InstalledUpdate } from "./model/updateNotice";
 import {
   bindResumedSessions,
@@ -11868,6 +11869,10 @@ function Workspace({
     [],
   );
 
+  useEffect(() => {
+    window.addEventListener(OPEN_WEB_EVENT, onOpenWeb);
+    return () => window.removeEventListener(OPEN_WEB_EVENT, onOpenWeb);
+  }, [onOpenWeb]);
   const onOpenSettings = useCallback(() => openSettings(), [openSettings]);
   useEffect(() => {
     const openConnections = () => openSettings("connections");

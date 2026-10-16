@@ -398,6 +398,7 @@ export function createHostServer(
                 ...(engine.push?.apnsEnabled() ? ["push.apns"] : []),
                 ...(engine.rail ? ["projects.rail"] : []),
                 ...(engine.webApps ? ["webApps"] : []),
+                ...(engine.previews ? ["previews"] : []),
                 "accounts",
                 "accounts.refresh",
                 "accounts.balance",
@@ -866,6 +867,10 @@ export function createHostServer(
             break;
           case "projects.clearBackground":
             result = rail().clearBackground(params);
+            break;
+          case "previews.open":
+            if (!engine.previews) throw new Error("Previews need Tailscale on this host");
+            result = await engine.previews.open(params);
             break;
           case "webApps.get":
             result = webApps().get();
