@@ -45,12 +45,12 @@ import {
   subscribeProjectFiles,
 } from "../../files/model/fileIndex";
 import {
-  buildMentionIndex,
   fileMentionParts,
   mentionLabel,
   mentionTokenAt,
   rankMentionFiles,
   replaceMentionToken,
+  sharedMentionIndex,
   type MentionIndex,
   type MentionToken,
 } from "../../files/model/fileMentions";
@@ -498,8 +498,11 @@ export function Composer({
   // A remote session's `remote://` path routes file and skill indexing to its
   // host. Native command catalogs probe a local CLI, so they stay local-only.
   const skillCwd = remote && hasNativeCommands(harness) ? "" : executionCwd;
+  // Inactive tabs stay mounted. Their composers let go of the project listing
+  // and pick it up again when shown.
+  const fileCwd = enabled ? executionCwd : "";
   const [files, setFiles] = useState<ProjectFile[]>(
-    () => peekProjectFiles(executionCwd) ?? [],
+    () => peekProjectFiles(fileCwd) ?? [],
   );
   const notesEnabled = useSyncExternalStore(
     subscribeNotesEnabled,
@@ -612,13 +615,10 @@ export function Composer({
     // The indent can rewrap the first line after the input already resized.
     if (ref.current) resizeComposer(ref.current);
   }, [modeIndent]);
-  const mentionFiles = useMemo(
-    () => (notesEnabled ? [...files, ...notesAsProjectFiles(notes)] : files),
-    [files, notes, notesEnabled],
-  );
   const mentionIndex = useMemo(
-    () => buildMentionIndex(mentionFiles),
-    [mentionFiles],
+    () =>
+      sharedMentionIndex(files, notesEnabled ? notesAsProjectFiles(notes) : []),
+    [files, notes, notesEnabled],
   );
   const mentionIndexRef = useRef<MentionIndex>(mentionIndex);
   mentionIndexRef.current = mentionIndex;
@@ -865,21 +865,21 @@ export function Composer({
     const apply = (next: ProjectFile[]) => {
       if (!cancelled) setFiles(next);
     };
-    const cached = peekProjectFiles(executionCwd);
+    const cached = peekProjectFiles(fileCwd);
     apply(cached ?? []);
-    if (!executionCwd) return;
-    void loadProjectFiles(executionCwd, mentionOpen)
+    if (!fileCwd) return;
+    void loadProjectFiles(fileCwd, mentionOpen)
       .then(apply)
       .catch(() => undefined);
     const unsub = subscribeProjectFiles(() => {
-      const next = peekProjectFiles(executionCwd);
+      const next = peekProjectFiles(fileCwd);
       if (next) apply(next);
     });
     return () => {
       cancelled = true;
       unsub();
     };
-  }, [executionCwd, mentionOpen]);
+  }, [fileCwd, mentionOpen]);
 
   useEffect(() => {
     if (!mentionOpen || !notesEnabled) return;
