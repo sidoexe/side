@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 import { pathKey } from "../../../shared/lib/paths";
+import type { LiveAgent } from "../../sessions/model/liveAgents";
 import {
   applySessionSync,
   type HostCommand,
@@ -429,6 +430,82 @@ export function remoteProjectStatus(
     else if (session.toReview) done += 1;
   }
   return { working, done };
+}
+
+/**
+ * A host list's sessions that wait on the user, as rail review rows: those
+ * asking for input first, then finished ones, newest first. `cwd` is the
+ * rail's project path so the row takes that project's label and color.
+ */
+export function remoteReviewAgents(
+  project: string,
+  sessions: readonly HostSessionSummary[],
+): LiveAgent[] {
+  return sessions
+    .filter(
+      (session) =>
+        !session.archived &&
+        session.status !== "running" &&
+        (session.needsInput || session.toReview),
+    )
+    .sort(
+      (a, b) =>
+        Number(!!b.needsInput) - Number(!!a.needsInput) ||
+        b.updatedAt - a.updatedAt,
+    )
+    .map((session) => ({
+      id: session.id,
+      cwd: project,
+      title: session.title,
+      harness: session.harness,
+      activity: session.needsInput ? "Needs input" : "Done",
+      needsApproval: !!session.needsInput,
+      done: !session.needsInput,
+    }));
+}
+
+/** Review rows for every remote project in `paths`, from the cached lists. */
+export function cachedRemoteReviewAgents(
+  paths: readonly string[],
+): { project: string; agent: LiveAgent }[] {
+  return paths
+    .filter((path) => !!remoteProjectFor(path))
+    .flatMap((project) =>
+      remoteReviewAgents(project, cachedSessions(project)).map((agent) => ({
+        project,
+        agent,
+      })),
+    );
+}
+
+/**
+ * Marks a finished host session checked, as opening a local one does. The
+ * cached list drops it at once so the rail does not wait for the next poll.
+ */
+export async function markRemoteSessionReviewed(
+  project: string,
+  sessionId: string,
+): Promise<void> {
+  const remote = remoteProjectFor(project);
+  const sessions = cachedSessions(project);
+  const session = sessions.find((entry) => entry.id === sessionId);
+  if (!remote || !session?.toReview || session.needsInput) return;
+  const machine = await remoteMachineFor(remote.environmentId);
+  if (!machine) return;
+  storeRemoteSessions(
+    project,
+    sessions.map((entry) =>
+      entry.id === sessionId ? { ...entry, toReview: undefined } : entry,
+    ),
+  );
+  await remoteRequest(machine.id, "sessions.update", {
+    projectId: remote.projectId,
+    sessionId,
+    reviewed: true,
+  }).catch((error) => {
+    console.warn("Could not mark the remote session checked", error);
+  });
+  refreshRemoteProjectSessions();
 }
 
 const STATUS_POLL_MS = 15_000;

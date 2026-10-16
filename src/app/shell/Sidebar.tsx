@@ -2403,6 +2403,7 @@ function SidebarComponent({
           liveAgents={liveAgents}
           activeSessionId={activeSessionId}
           onSelectAgent={onSelectAgent}
+          onSelectRemoteSession={onSelectRemoteSession}
           canGoBack={canGoBack}
           canGoForward={canGoForward}
           onGoBack={onGoBack}

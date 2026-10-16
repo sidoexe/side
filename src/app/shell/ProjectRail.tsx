@@ -97,10 +97,17 @@ import { GithubStarPrompt } from "./GithubStarPrompt";
 import { Popover } from "../../shared/ui/Popover";
 import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/connections";
 import {
+  cachedRemoteReviewAgents,
+  markRemoteSessionReviewed,
+  remoteSessionFor,
   useRemoteMachineOnline,
   useRemoteMachines,
   useRemoteProjectsStatus,
 } from "../../features/connections/model/connections";
+import {
+  loadLiveAgentsEnabled,
+  subscribeLiveAgentsEnabled,
+} from "../../features/settings/model/settings";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { useProjectMenu } from "./useProjectMenu";
 import { MonoRailSection, type MonoRailProps } from "./MonoRailSection";
@@ -137,6 +144,8 @@ type Props = {
   liveAgents?: LiveAgent[];
   activeSessionId?: string;
   onSelectAgent?: (sessionId: string) => void;
+  /** Opens a session that runs on a project's host. */
+  onSelectRemoteSession?: (project: string, sessionId: string) => void;
   settingsOpen?: boolean;
   settingsSection?: SettingsSectionId;
   onOpenSettings?: () => void;
@@ -179,6 +188,7 @@ export function ProjectRail({
   liveAgents = [],
   activeSessionId,
   onSelectAgent,
+  onSelectRemoteSession,
   settingsOpen = false,
   settingsSection = "general",
   onOpenSettings,
@@ -393,9 +403,41 @@ export function ProjectRail({
   );
   // Finished agents and those waiting on the user sit under the projects;
   // the bottom card keeps only the ones still working.
-  const reviewAgents = liveAgents.filter(
-    (agent) => agent.needsApproval || agent.done,
+  // A host runs its own sessions, so its finished and waiting ones come
+  // from the list it reports rather than from this desktop.
+  const liveAgentsEnabled = useSyncExternalStore(
+    subscribeLiveAgentsEnabled,
+    loadLiveAgentsEnabled,
   );
+  const remoteReview = useMemo(() => {
+    if (!liveAgentsEnabled || !onSelectRemoteSession) return [];
+    const open = new Set(
+      liveAgents.flatMap((agent) => remoteSessionFor(agent.id) ?? []),
+    );
+    return cachedRemoteReviewAgents(recents.map((item) => item.path)).filter(
+      ({ agent }) => !open.has(agent.id),
+    );
+    // `remoteStatus` changes whenever a host list does.
+  }, [
+    liveAgentsEnabled,
+    onSelectRemoteSession,
+    liveAgents,
+    recents,
+    remoteStatus,
+  ]);
+  const remoteReviewProjects = new Map(
+    remoteReview.map(({ project, agent }) => [agent.id, project]),
+  );
+  const reviewAgents = [
+    ...liveAgents.filter((agent) => agent.needsApproval || agent.done),
+    ...remoteReview.map(({ agent }) => agent),
+  ];
+  const onSelectReviewAgent = (sessionId: string) => {
+    const project = remoteReviewProjects.get(sessionId);
+    if (!project) return onSelectAgent?.(sessionId);
+    onSelectRemoteSession?.(project, sessionId);
+    void markRemoteSessionReviewed(project, sessionId);
+  };
   const workingAgents = liveAgents.filter(
     (agent) => !agent.needsApproval && !agent.done,
   );
@@ -584,7 +626,7 @@ export function ProjectRail({
               <ReviewAgentsSection
                 agents={reviewAgents}
                 activeSessionId={activeSessionId}
-                onSelect={onSelectAgent}
+                onSelect={onSelectReviewAgent}
                 groupLabels={groupLabels}
                 groupColors={groupColors}
                 groupCustomColors={groupCustomColors}
