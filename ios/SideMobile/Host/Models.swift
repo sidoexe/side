@@ -354,17 +354,36 @@ struct InboxMessage: Decodable, Identifiable, Equatable {
 /// The accounts the desktop running the colleagues can move them to, and
 /// the one each colleague is on.
 struct ColleagueAccounts: Decodable, Equatable {
+    struct Window: Decodable, Equatable {
+        /// Percent of the window used, 0 to 100.
+        let used: Double
+        /// When it starts over, in Unix milliseconds, if known.
+        let resetsAt: Double?
+    }
+    struct Usage: Decodable, Equatable {
+        let session: Window?
+        let weekly: Window?
+        let updatedAt: Double
+    }
     struct Account: Decodable, Identifiable, Equatable {
         let provider: String
         let id: String
         let label: String
+        let usage: Usage?
     }
     struct Current: Decodable, Equatable {
         let provider: String
         let account: String
     }
+    /// A colleague's state on its desktop.
+    struct State: Decodable, Equatable {
+        /// `working`, `needs-you` or `idle`.
+        let status: String
+        let activity: String?
+    }
     let accounts: [Account]
     let current: [String: Current]
+    let status: [String: State]?
 }
 
 struct ColleagueTranscript: Decodable {

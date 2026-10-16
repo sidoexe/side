@@ -101,6 +101,8 @@ export type EmployeeInboxMessage = {
 export type EmployeeAccounts = {
   accounts: { provider: string; id: string; label: string }[];
   current: Record<string, { provider: string; account: string }>;
+  /** Each employee's state on that desktop: working, waiting on the user, idle. */
+  status?: Record<string, { status: string; activity?: string }>;
   at: number;
 };
 
@@ -444,7 +446,8 @@ export class HostEmployees {
       : undefined;
     const current = record?.current && typeof record.current === "object" ? record.current : undefined;
     if (!accounts || !current) throw new Error("Invalid accounts");
-    const text = JSON.stringify({ accounts, current, at: this.now() });
+    const status = record?.status && typeof record.status === "object" ? record.status : {};
+    const text = JSON.stringify({ accounts, current, status, at: this.now() });
     if (Buffer.byteLength(text) > ACCOUNTS_MAX) throw new Error("Too many accounts");
     mkdirSync(this.root, { recursive: true, mode: 0o700 });
     writeAtomic(join(this.root, ACCOUNTS_FILE), text);

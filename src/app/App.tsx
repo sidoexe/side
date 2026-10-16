@@ -580,7 +580,14 @@ import {
   type MonoState,
 } from "../features/monos/model/mono";
 import { startEmployeeRosterSync } from "../features/monos/model/employeeRoster";
-import { startColleagueInbox } from "../features/monos/model/colleagueInbox";
+import {
+  colleagueUsage,
+  startColleagueInbox,
+} from "../features/monos/model/colleagueInbox";
+import {
+  getCachedRateLimits,
+  loadRateLimits,
+} from "../features/providers/model/rateLimitsCache";
 import {
   loadMonoFiles,
   MONO_PROMPT_VERSION,
@@ -8760,11 +8767,25 @@ function Workspace({
   // accounts and the ones its colleagues run on.
   const colleagueAccounts = () => ({
     accounts: (["claude", "codex"] as const).flatMap((provider) =>
-      providerAccounts(provider).map(({ id, label }) => ({
-        provider,
-        id,
-        label,
-      })),
+      providerAccounts(provider).map(({ id, label }) => {
+        const limits = getCachedRateLimits(provider, id);
+        // Read once, so the phone sees every account's usage, not only the
+        // ones this window has shown.
+        if (limits.status === "idle") void loadRateLimits(provider, id);
+        const usage = colleagueUsage(limits);
+        return { provider, id, label, ...(usage ? { usage } : {}) };
+      }),
+    ),
+    status: Object.fromEntries(
+      listMonos().map((mono) => {
+        const session = mono.sessionId
+          ? sessionsRef.current.find((entry) => entry.id === mono.sessionId)
+          : undefined;
+        return [
+          mono.id,
+          session ? monoState(session) : { status: "idle" as const },
+        ];
+      }),
     ),
     current: Object.fromEntries(
       listMonos().flatMap((mono) => {

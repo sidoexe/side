@@ -18,6 +18,7 @@ struct MonoAvatar: View {
 struct ColleaguesView: View {
     @Environment(AppModel.self) private var model
     @State private var roster: [Mono]?
+    @State private var accounts: ColleagueAccounts?
 
     var body: some View {
         ScrollView {
@@ -33,8 +34,11 @@ struct ColleaguesView: View {
                                 MonoAvatar(mono: mono, size: 22)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(mono.displayName).font(.system(size: 15, weight: .semibold))
-                                    Text(mono.projects.map(folderName).joined(separator: ", ").ifEmpty("No projects"))
-                                        .font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1)
+                                    ColleagueStatusLine(
+                                        state: accounts?.status?[mono.id],
+                                        fallback: mono.projects.map(folderName).joined(separator: ", ").ifEmpty("No projects")
+                                    )
+                                    .font(Theme.meta).foregroundStyle(Theme.muted)
                                 }
                                 Spacer()
                                 Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.faint)
@@ -56,12 +60,21 @@ struct ColleaguesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Theme.sidebar, for: .navigationBar)
         .refreshable { await load() }
-        .task { await load() }
+        .task {
+            // Their states change as they work; read them again while open.
+            while !Task.isCancelled {
+                await load()
+                try? await Task.sleep(for: .seconds(4))
+            }
+        }
     }
 
     private func load() async {
         do {
             roster = try await model.client?.rpc("employees.roster", as: MonoRoster.self).roster
+            if model.can("employees.accounts") {
+                accounts = (try? await model.client?.rpc("employees.accounts", as: ColleagueAccounts?.self)) ?? accounts
+            }
         } catch {
             model.report(error)
         }
@@ -86,6 +99,7 @@ struct ColleagueView: View {
     @State private var items: [TranscriptItem] = []
     @State private var inbox: [InboxMessage] = []
     @State private var accounts: ColleagueAccounts?
+    @State private var showsUsage = false
     @State private var now = Date()
     @State private var atEnd = true
 
@@ -110,9 +124,14 @@ struct ColleagueView: View {
         .toolbarBackground(Theme.bg, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                HStack(spacing: 8) {
-                    if let mono { MonoAvatar(mono: mono, size: 16) }
-                    Text(mono?.displayName ?? "Colleague").font(.system(size: 15, weight: .semibold))
+                VStack(spacing: 1) {
+                    HStack(spacing: 8) {
+                        if let mono { MonoAvatar(mono: mono, size: 16) }
+                        Text(mono?.displayName ?? "Colleague").font(.system(size: 15, weight: .semibold))
+                    }
+                    if let state = accounts?.status?[id], state.status != "idle" {
+                        ColleagueStatusLine(state: state).font(.system(size: 11))
+                    }
                 }
             }.flat()
         }
@@ -120,6 +139,10 @@ struct ColleagueView: View {
             files = try? await model.client?.rpc("employees.load", ["mono": id], as: MonoFiles.self)
         }
         .task(id: id) { await poll() }
+        #if DEBUG
+        // SIDE_OPEN=usage opens the usage detail on a scripted simulator run.
+        .task { if ProcessInfo.processInfo.environment["SIDE_OPEN"] == "usage" { try? await Task.sleep(for: .seconds(3)); showsUsage = true } }
+        #endif
     }
 
     private var conversation: some View {
@@ -162,7 +185,7 @@ struct ColleagueView: View {
                         ComposerView(
                             placeholder: "Message \(mono?.displayName ?? "")",
                             allowsAttachments: false,
-                            hint: "Sent through a desktop with sIDE open",
+                            hint: "Via your desktop",
                             onSend: { outgoing in try await post(outgoing.text) },
                             context: { EmptyView() },
                             tools: { accountChip }
@@ -182,21 +205,25 @@ struct ColleagueView: View {
         }
     }
 
-    /// The colleague's account, switched on the desktop that runs it with
-    /// its conversation carried over.
+    /// The colleague's plan usage, as the desktop shows it under the
+    /// composer; it opens the detail, where it can move to another account.
     @ViewBuilder private var accountChip: some View {
         if let current = accounts?.current[id] {
-            let choices = accounts?.accounts.filter { $0.provider == current.provider } ?? []
             let pending = inbox.last { $0.account != nil }?.account
-            if choices.count > 1 {
-                Chip(label: pending.map { "→ \(accountLabel($0))" } ?? accountLabel(current.account), disabled: pending != nil) {
-                    ForEach(choices) { account in
-                        ChoiceButton(label: account.label, selected: account.id == current.account) {
-                            guard account.id != current.account else { return }
-                            Task {
-                                do { try await move(to: account.id) } catch { model.report(error) }
-                            }
-                        }
+            UsageStrip(
+                provider: current.provider,
+                usage: accounts?.accounts.first { $0.id == current.account && $0.provider == current.provider }?.usage,
+                pending: pending.map(accountLabel)
+            ) { showsUsage = true }
+            .sheet(isPresented: $showsUsage) {
+                UsageSheet(
+                    accounts: accounts?.accounts.filter { $0.provider == current.provider } ?? [],
+                    current: current.account,
+                    pending: pending,
+                    busy: accounts?.status?[id]?.status == "working"
+                ) { account in
+                    Task {
+                        do { try await move(to: account) } catch { model.report(error) }
                     }
                 }
             }

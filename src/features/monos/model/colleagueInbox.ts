@@ -1,7 +1,8 @@
 import { remoteRequest } from "../../connections/model/connections";
 import { homeWith } from "../../connections/model/homeCapability";
 import type { RemoteMachine } from "../../connections/model/protocol";
-import { findMono } from "./mono";
+import type { ProviderRateLimits } from "../../providers/model/rateLimits";
+import { findMono, type MonoState } from "./mono";
 
 /**
  * Messages written to a colleague in the browser app. Its chat runs on a
@@ -26,11 +27,34 @@ type Request = <T>(machine: RemoteMachine, method: string, params?: unknown) => 
  * that account; false when it could not yet. */
 export type Deliver = (monoId: string, text: string, account?: string) => Promise<boolean>;
 
-/** The accounts this desktop can move colleagues to, and each one's current. */
-export type ColleagueAccounts = {
-  accounts: { provider: string; id: string; label: string }[];
-  current: Record<string, { provider: string; account: string }>;
+/** How much of a plan window is used, and when it starts over. */
+export type ColleagueUsageWindow = { used: number; resetsAt: number | null };
+
+export type ColleagueUsage = {
+  session?: ColleagueUsageWindow;
+  weekly?: ColleagueUsageWindow;
+  updatedAt: number;
 };
+
+/** The accounts this desktop can move colleagues to with how much of each
+ * is left, and every colleague's account and state. */
+export type ColleagueAccounts = {
+  accounts: { provider: string; id: string; label: string; usage?: ColleagueUsage }[];
+  current: Record<string, { provider: string; account: string }>;
+  status: Record<string, MonoState>;
+};
+
+/** An account's plan windows as the phone shows them; none until read once. */
+export function colleagueUsage(limits: ProviderRateLimits): ColleagueUsage | undefined {
+  if (!limits.updatedAt || (!limits.session && !limits.weekly)) return undefined;
+  const window = (value: ProviderRateLimits["session"]) =>
+    value ? { used: Math.round(value.usedPercent), resetsAt: value.resetsAt } : undefined;
+  return {
+    ...(limits.session ? { session: window(limits.session) } : {}),
+    ...(limits.weekly ? { weekly: window(limits.weekly) } : {}),
+    updatedAt: limits.updatedAt,
+  };
+}
 
 const POLL_MS = 3_000;
 

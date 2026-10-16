@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import type { RemoteMachine } from "../../connections/model/protocol";
-import { deliverInbox, publishAccounts, type InboxMessage } from "./colleagueInbox";
+import { colleagueUsage, deliverInbox, publishAccounts, type InboxMessage } from "./colleagueInbox";
+import { idleRateLimits } from "../../providers/model/rateLimits";
 
 const home = { id: "home" } as RemoteMachine;
 
@@ -65,9 +66,22 @@ it("publishes the accounts only when they changed", async () => {
   const accounts = {
     accounts: [{ provider: "claude", id: "default", label: "Personal" }],
     current: { a: { provider: "claude", account: "default" } },
+    status: { a: { status: "idle" as const } },
   };
   const first = await publishAccounts(request, home, accounts, undefined);
   await publishAccounts(request, home, accounts, first);
   const calls = (request as unknown as { mock: { calls: unknown[][] } }).mock.calls;
   expect(calls.filter(([, method]) => method === "employees.setAccounts")).toHaveLength(1);
+});
+
+it("reports an account's plan windows once they were read", () => {
+  expect(colleagueUsage(idleRateLimits("claude"))).toBeUndefined();
+  expect(
+    colleagueUsage({
+      ...idleRateLimits("claude"),
+      session: { usedPercent: 81.6, windowMinutes: 300, resetsAt: 5 },
+      weekly: { usedPercent: 59, windowMinutes: 10080, resetsAt: null },
+      updatedAt: 9,
+    }),
+  ).toEqual({ session: { used: 82, resetsAt: 5 }, weekly: { used: 59, resetsAt: null }, updatedAt: 9 });
 });

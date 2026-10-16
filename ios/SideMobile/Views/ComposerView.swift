@@ -107,6 +107,7 @@ struct ComposerView<Context: View, Tools: View>: View {
                     } label: {
                         Image(systemName: "plus").font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.muted).frame(width: 28, height: 28)
                     }
+                    .buttonStyle(.plain)
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
@@ -115,7 +116,16 @@ struct ComposerView<Context: View, Tools: View>: View {
                         }
                         tools()
                     }
+                    .padding(.trailing, 12)
                 }
+                // The last chips fade out under the send button, so the row
+                // reads as one that scrolls rather than one cut short.
+                .mask(
+                    HStack(spacing: 0) {
+                        Rectangle()
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 16)
+                    }
+                )
                 if let hint {
                     Text(hint).font(Theme.meta).foregroundStyle(Theme.faint).lineLimit(1)
                     Spacer(minLength: 0)
@@ -127,6 +137,7 @@ struct ComposerView<Context: View, Tools: View>: View {
                             .foregroundStyle(Theme.text)
                             .background(Theme.fill, in: .rect(cornerRadius: 6))
                     }
+                    .buttonStyle(.plain)
                 } else {
                     Button {
                         Task { await send() }
@@ -137,6 +148,7 @@ struct ComposerView<Context: View, Tools: View>: View {
                             .background(canSend ? Theme.text : Theme.fill, in: .rect(cornerRadius: 6))
                             .opacity(sending ? 0.5 : 1)
                     }
+                    .buttonStyle(.plain)
                     .disabled(!canSend)
                 }
             }
@@ -244,6 +256,8 @@ struct Chip<Content: View>: View {
         } label: {
             ChipLabel(icon: icon, text: label, caret: true)
         }
+        // iOS 26 wraps a bare menu in its own glass pill, around the chip's.
+        .buttonStyle(.plain)
         .disabled(disabled)
         .opacity(disabled ? 0.5 : 1)
     }

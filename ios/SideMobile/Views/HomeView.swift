@@ -199,9 +199,11 @@ struct HomeView: View {
                 } label: {
                     Image(systemName: "ellipsis").font(.system(size: 13)).foregroundStyle(Theme.muted).frame(width: 28, height: 28)
                 }
+                .buttonStyle(.plain)
                 NavigationLink(value: Route.newSession(projectId: project.id)) {
                     Image(systemName: "plus").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.muted).frame(width: 28, height: 28)
                 }
+                .buttonStyle(.plain)
             }
             .padding(.leading, 16)
             .padding(.trailing, 8)
@@ -279,6 +281,8 @@ struct SessionRow: View {
                 Spacer(minLength: 0)
                 if session.needsInput == true {
                     Pill(text: "Needs you")
+                } else if session.running {
+                    Pill(text: "Working", color: Theme.link)
                 } else if session.done {
                     Pill(text: "Done", color: Theme.addFg)
                 } else if session.interrupted {
@@ -306,9 +310,18 @@ struct ProjectStatusCounts: View {
 
     var body: some View {
         let live = sessions.filter { $0.archived != true && $0.draft != true }
-        let working = live.filter { $0.running }.count
+        let working = live.filter { $0.running && $0.needsInput != true }.count
+        let waiting = live.filter { $0.needsInput == true }.count
         let done = live.filter(\.done).count
         HStack(spacing: 8) {
+            if waiting > 0 {
+                HStack(spacing: 2) {
+                    Image(systemName: "exclamationmark").font(.system(size: 9, weight: .bold))
+                    Text("\(waiting)")
+                }
+                .foregroundStyle(Theme.amber)
+                .accessibilityLabel("\(waiting) waiting for you")
+            }
             if working > 0 {
                 HStack(spacing: 3) {
                     Circle().fill(Theme.link).frame(width: 5, height: 5)

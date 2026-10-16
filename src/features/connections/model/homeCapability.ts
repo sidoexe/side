@@ -2,19 +2,26 @@ import { loadRemoteMachines, remoteRequest } from "./connections";
 import { resolveHomeMachine } from "./homeMachine";
 import type { HostDescriptor, RemoteMachine } from "./protocol";
 
-const described = new Map<string, Promise<string[]>>();
+const described = new Map<string, { at: number; capabilities: Promise<string[]> }>();
+/** A host updated behind this window's back gains capabilities; ask again
+ * after this long rather than only once per run. */
+const DESCRIBE_TTL_MS = 5 * 60_000;
 
-/** What a connected machine's host advertises, asked once per run. */
-export function machineCapabilities(machine: RemoteMachine): Promise<string[]> {
-  let capabilities = described.get(machine.id);
-  if (!capabilities) {
-    capabilities = remoteRequest<HostDescriptor>(machine.id, "environment.describe").then(
-      (descriptor) => descriptor.capabilities ?? [],
-    );
-    described.set(machine.id, capabilities);
-    // Asked again next time rather than written off.
-    capabilities.catch(() => described.delete(machine.id));
-  }
+/** What a connected machine's host advertises, asked again every few minutes. */
+export function machineCapabilities(
+  machine: RemoteMachine,
+  now = Date.now(),
+): Promise<string[]> {
+  const known = described.get(machine.id);
+  if (known && now - known.at < DESCRIBE_TTL_MS) return known.capabilities;
+  const capabilities = remoteRequest<HostDescriptor>(machine.id, "environment.describe").then(
+    (descriptor) => descriptor.capabilities ?? [],
+  );
+  described.set(machine.id, { at: now, capabilities });
+  // Asked again next time rather than written off.
+  capabilities.catch(() => {
+    if (described.get(machine.id)?.capabilities === capabilities) described.delete(machine.id);
+  });
   return capabilities;
 }
 

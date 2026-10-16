@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The phone app's Colleagues show **what each one is doing**, as on the desktop: working and on what, waiting on you (a question, an approval, a usage limit), or idle, in the list and under the Colleague's name. Its chat has the desktop's **usage chip** under the composer: the account's 5-hour window as a bar with both windows left. Tapping it opens the 5-hour and weekly limits, and the accounts it can move to with what is left on each.
+- Phone session rows show **Working** while a session runs, and a project counts the sessions waiting on you.
 - The phone app can **move a Colleague to another account**: a chip under its composer lists the Claude or Codex accounts of the desktop that runs it. The desktop carries the conversation over as when you switch from its settings, once the Colleague is idle and sIDE is open there. It needs sIDE Host 0.35.
 - **To review** under the projects lists a remote project's finished and needs-input sessions, read from its host, alongside this desktop's own. Opening one opens it and marks it checked on the host.
 - Remote hosts can run on **Linux without systemd**, such as containers and Firecracker microVMs. Setup starts the host as a detached background process there instead of a systemd user service, so it keeps running after SSH disconnects, and the next connect starts it again if it has stopped. Machines with systemd keep the user service and lingering.
@@ -18,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Moving a Claude **Colleague** to another account keeps its whole conversation. Its transcript, with subagent transcripts and large tool results, is copied into the new account's profile, and the Colleague resumes the same conversation there instead of starting a fresh one from a recap, from its settings and from the usage-limit notice alike. A Colleague on another machine, or one whose transcript cannot be copied, falls back to the recap as before. Remote sessions moved to another account on their host also take their subagent files along.
+
+### Fixed
+
+- The phone app's composer chips, attach and send buttons, and a project's ⋯ and + buttons no longer sit inside an extra glass pill on iOS 26, which pushed the last chips off the row. That row now fades out under the send button as it scrolls.
+- Tables in the phone app's transcripts wrap long cells instead of cutting them off with "…", so a URL in a table can be read in full.
+- A Mac's host is named after its Computer Name, not the network hostname a router handed it (such as `Host-004.lan`).
+- A desktop notices new capabilities of a host that was updated while it was open, within five minutes, instead of only after a restart.
 
 ### Fixed
 

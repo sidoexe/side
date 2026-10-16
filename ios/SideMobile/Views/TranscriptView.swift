@@ -569,22 +569,28 @@ struct MarkdownView: View {
                     .background(Theme.fillSubtle, in: .rect(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.stroke))
                 case .table(let rows):
+                    let widths = columnWidths(rows)
                     ScrollView(.horizontal, showsIndicators: false) {
-                        Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
+                        Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
                             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                                if index > 0 { Divider().overlay(Theme.strokeStrong) }
                                 GridRow {
-                                    ForEach(Array(cells(row).enumerated()), id: \.offset) { _, cell in
+                                    ForEach(Array(cells(row).enumerated()), id: \.offset) { column, cell in
+                                        // A set width lets a long cell wrap and its row grow,
+                                        // rather than end in "…" or spill over the next row.
                                         inline(cell)
                                             .font(.system(size: size - 2, weight: index == 0 ? .semibold : .regular))
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .frame(width: column < widths.count ? widths[column] : Self.cellMax, alignment: .leading)
                                             .padding(.horizontal, 9)
-                                            .padding(.vertical, 4)
-                                            .frame(maxWidth: 260, alignment: .leading)
-                                            .background(index == 0 ? Theme.fillSubtle : .clear)
-                                            .border(Theme.strokeStrong, width: 0.5)
+                                            .padding(.vertical, 5)
                                     }
                                 }
+                                .background(index == 0 ? Theme.fillSubtle : .clear)
                             }
                         }
+                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.strokeStrong))
+                        .clipShape(.rect(cornerRadius: 6))
                     }
                 case .rule:
                     Rectangle().fill(Theme.stroke).frame(height: 1)
@@ -595,6 +601,24 @@ struct MarkdownView: View {
         .lineSpacing(size * 0.25)
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private static let cellMax: CGFloat = 240
+
+    /// Each column as wide as its widest cell's text on one line, up to `cellMax`.
+    private func columnWidths(_ rows: [String]) -> [CGFloat] {
+        var widths: [CGFloat] = []
+        for (index, row) in rows.enumerated() {
+            let font = UIFont.systemFont(ofSize: size - 2, weight: index == 0 ? .semibold : .regular)
+            for (column, cell) in cells(row).enumerated() {
+                // Code spans are set in a wider monospaced face.
+                let plain = cell.replacingOccurrences(of: #"[*_`]"#, with: "", options: .regularExpression)
+                let code = cell.contains("`") ? 1.25 : 1
+                let width = min(Self.cellMax, ceil((plain as NSString).size(withAttributes: [.font: font]).width * code) + 1)
+                if column < widths.count { widths[column] = max(widths[column], width) } else { widths.append(width) }
+            }
+        }
+        return widths
     }
 
     private func cells(_ row: String) -> [String] {

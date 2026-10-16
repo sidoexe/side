@@ -164,8 +164,10 @@ it("queues an account move for a desktop and keeps the accounts it offers", () =
       { provider: "claude", id: "../bad", label: "Bad" },
     ],
     current: { m: { provider: "claude", account: "default" } },
+    status: { m: { status: "working", activity: "Thinking" } },
   });
   expect(store.accounts()).toMatchObject({
+    status: { m: { status: "working", activity: "Thinking" } },
     accounts: [{ provider: "claude", id: "default", label: "Personal" }],
     current: { m: { provider: "claude", account: "default" } },
   });

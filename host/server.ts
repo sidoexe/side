@@ -6,7 +6,7 @@ import {
 } from "node:http";
 import { hostCommitMessage } from "./commit-message";
 import { hostname, homedir } from "node:os";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { promisify } from "node:util";
@@ -69,6 +69,28 @@ import {
   resolveOpenCodeBinary,
   resolvePiBinary,
 } from "../src/integrations/harness/core/child";
+
+/**
+ * The name people know this machine by. A Mac's network hostname comes from
+ * whatever router it joined last (`Host-004.lan`), so it reads the Computer
+ * Name instead; elsewhere the hostname, without a local DNS suffix.
+ */
+let knownName: string | undefined;
+function machineName(): string {
+  if (knownName) return knownName;
+  if (process.platform === "darwin") {
+    try {
+      knownName = execFileSync("/usr/sbin/scutil", ["--get", "ComputerName"], {
+        encoding: "utf8",
+        timeout: 2_000,
+      }).trim();
+    } catch {
+      /* falls back to the hostname */
+    }
+  }
+  knownName ||= hostname().replace(/\.(local|lan|home|localdomain)$/i, "");
+  return knownName;
+}
 
 const exec = promisify(execFile);
 // Providers also add models server-side, without a CLI update.
@@ -350,7 +372,7 @@ export function createHostServer(
             result = {
               protocolVersion: HOST_PROTOCOL_VERSION,
               environmentId: engine.store.environmentId,
-              name: hostname(),
+              name: machineName(),
               platform: process.platform,
               version,
               // Older clients validate this list against Codex and Claude only.
