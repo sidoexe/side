@@ -314,7 +314,7 @@ function WebAppRow({
         title={`${app.name}\n${app.url}`}
         aria-label={app.name}
         aria-current={selected ? "true" : undefined}
-        className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left transition-[padding] duration-150 motion-reduce:transition-none group-hover:pr-[4.5rem] group-has-[:focus-visible]:pr-[4.5rem]"
+        className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left transition-[padding] duration-150 motion-reduce:transition-none group-hover:pr-[4.5rem] group-has-[button:focus-visible]:pr-[4.5rem]"
       >
         <span
           aria-hidden
@@ -329,7 +329,7 @@ function WebAppRow({
       <div
         data-no-drag
         onPointerDown={(event) => event.stopPropagation()}
-        className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center group-hover:flex group-has-[:focus-visible]:flex"
+        className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center group-hover:flex group-has-[button:focus-visible]:flex"
       >
         <label
           title="Move to folder"
@@ -415,7 +415,7 @@ function FolderRow({
         title={name}
         onClick={onToggle}
         onDoubleClick={onRename}
-        className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left group-hover:pr-12 group-has-[:focus-visible]:pr-12"
+        className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left group-hover:pr-12 group-has-[button:focus-visible]:pr-12"
       >
         <span className="grid size-5 shrink-0 place-items-center text-content/55">
           <Folder
@@ -441,7 +441,7 @@ function FolderRow({
           {count}
         </span>
       </button>
-      <div className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center group-hover:flex group-has-[:focus-visible]:flex">
+      <div className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center group-hover:flex group-has-[button:focus-visible]:flex">
         <button
           type="button"
           title="Rename folder"
