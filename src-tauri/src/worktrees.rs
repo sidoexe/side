@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -30,15 +29,15 @@ pub struct Worktrees {
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<String, String> {
-    let mut command = Command::new("git");
+    // `status` runs git-lfs on LFS files; see `fs::git_cmd`.
+    let mut command =
+        crate::harness::command_on_path("git", crate::harness::cached_gui_search_path());
     let output = command
         .arg("-C")
         .arg(root)
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_OPTIONAL_LOCKS", "0")
-        // `status` runs git-lfs on LFS files; see `fs::git_cmd`.
-        .env("PATH", crate::harness::cached_gui_search_path())
         .output()
         .map_err(|e| e.to_string())?;
     if !output.status.success() {

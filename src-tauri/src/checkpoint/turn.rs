@@ -586,7 +586,7 @@ fn resolve_edit_path(workspace: &Path, root: &Path, path: &str) -> Result<String
 }
 
 fn git_command(root: &Path, args: &[&str]) -> Command {
-    let mut command = Command::new("git");
+    let mut command = crate::harness::command_on_path("git", crate::harness::gui_search_path());
     command
         .args(["--no-pager", "-C"])
         .arg(root)
@@ -594,8 +594,7 @@ fn git_command(root: &Path, args: &[&str]) -> Command {
         .args(args)
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_LITERAL_PATHSPECS", "1")
-        .env("PATH", crate::harness::gui_search_path());
+        .env("GIT_LITERAL_PATHSPECS", "1");
     for name in [
         "GIT_DIR",
         "GIT_WORK_TREE",
