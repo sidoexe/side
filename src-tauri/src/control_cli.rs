@@ -309,6 +309,19 @@ fn parse_args(args: &[String]) -> Result<Parsed, String> {
     parse_args_for(args, false)
 }
 
+fn parse_object(raw: &str) -> Result<Value, String> {
+    if raw.len() > 262_144 {
+        return Err("Input exceeds 256 KiB".into());
+    }
+    let parsed: Value = serde_json::from_str(raw).map_err(|e| {
+        format!("Invalid JSON: {e}. Pass one JSON object, e.g. --json '{{\"taskId\":\"...\"}}'.")
+    })?;
+    if !parsed.is_object() {
+        return Err("Input must be a JSON object".into());
+    }
+    Ok(parsed)
+}
+
 fn parse_args_for(args: &[String], app_mode: bool) -> Result<Parsed, String> {
     let is_help = |value: &str| matches!(value, "help" | "--help" | "-h");
     let Some(action) = args.first() else {
@@ -343,10 +356,17 @@ fn parse_args_for(args: &[String], app_mode: bool) -> Result<Parsed, String> {
         if is_help(flag) {
             return Ok(Parsed::Help);
         }
+        // Colleague prompts teach `app memory.add {"fact":"..."}`: in app
+        // mode a lone object is the input, the same as --json.
         if !flag.starts_with("--") {
-            return Err(format!(
-                "Unexpected argument: {flag}. Pass the JSON object as --json '<JSON>'."
-            ));
+            if !app_mode || input.is_some() || !flag.trim_start().starts_with('{') {
+                return Err(format!(
+                    "Unexpected argument: {flag}. Pass the JSON object as --json '<JSON>'."
+                ));
+            }
+            input = Some(parse_object(flag)?);
+            index += 1;
+            continue;
         }
         let value = args.get(index + 1).ok_or_else(|| {
             format!("Missing value for {flag}. Run control --help for the argument list.")
@@ -367,12 +387,7 @@ fn parse_args_for(args: &[String], app_mode: bool) -> Result<Parsed, String> {
                 } else {
                     read_capped(std::fs::File::open(value).map_err(|e| e.to_string())?)?
                 };
-                let parsed: Value = serde_json::from_str(&raw)
-                    .map_err(|e| format!("Invalid JSON: {e}. Pass one JSON object, e.g. --json '{{\"taskId\":\"...\"}}'."))?;
-                if !parsed.is_object() {
-                    return Err("Input must be a JSON object".into());
-                }
-                input = Some(parsed);
+                input = Some(parse_object(&raw)?);
             }
             _ => {
                 return Err(format!(
@@ -446,6 +461,22 @@ mod tests {
         assert!(call(&["get", "--json", "{taskId}"])
             .unwrap_err()
             .contains("Invalid JSON"));
+    }
+    #[test]
+    fn app_mode_takes_a_lone_json_object_as_its_input() {
+        let Ok(Parsed::Call(action, input, _)) = parse_args_for(
+            &args(&["memory.search", r#"{"query":"linear 1.1.2"}"#]),
+            true,
+        ) else {
+            panic!("a lone object should parse");
+        };
+        assert_eq!(action, "memory.search");
+        assert_eq!(input["query"], "linear 1.1.2");
+        assert!(parse_args_for(&args(&["memory.search", "{}", "--json", "{}"]), true).is_err());
+        assert!(parse_args_for(&args(&["memory.search", "query"]), true)
+            .err()
+            .is_some_and(|e| e.contains("--json")));
+        assert!(parse_args_for(&args(&["memory.search", "[]"]), true).is_err());
     }
     #[test]
     fn help_names_every_action_and_the_real_executable() {

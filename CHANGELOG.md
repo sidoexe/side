@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A workspace showing a web app keeps working as a workspace: its Colleagues, reminders, quick composer deliveries, glass, close and quit no longer fail with an error. Tauri stops counting a window that holds child webviews as a webview window, so these now find workspaces as plain windows.
+- `app ACTION '{"...":"..."}'`, the way Colleague prompts write it, works: a lone JSON object after the action is taken as the input, as with `--json`, on the desktop and on a host.
 - A desktop sends its Colleagues' accounts and states to the home machine again each minute even when nothing changed, so a host restarted or updated in between, which may have dropped them, gets them back within a minute.
 - Starting a new thread with a Colleague on the phone no longer flashes an empty page and goes back to the open thread. The new thread stays on screen until its first message is sent and the desktop has started it.
 - The phone app's Colleague chats show the account chip and Balanced again. The desktop's bridge to its host refused the call that publishes its accounts and Colleagues' states, so the phone only ever saw "Via your desktop"; a test now checks that every host method the app calls gets through.

@@ -44,7 +44,25 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSDictionary, NSEdgeInsets, NSNumber, NSSize, NSString, NSUserDefaults};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use tauri::{AppHandle, Manager, WebviewWindow, WindowEvent};
+use tauri::{AppHandle, Manager, WebviewWindow, Window, WindowEvent};
+
+/// A native window by its label. A workspace showing a web app is a plain
+/// `Window` (it holds child webviews); every other window is a `WebviewWindow`.
+pub(crate) trait AppKitWindow: HasWindowHandle {
+    fn label(&self) -> &str;
+}
+
+impl AppKitWindow for Window {
+    fn label(&self) -> &str {
+        Window::label(self)
+    }
+}
+
+impl AppKitWindow for WebviewWindow {
+    fn label(&self) -> &str {
+        WebviewWindow::label(self)
+    }
+}
 
 /// Must match the HTML title bar (`h-10` = 40px).
 const TAB_BAR_HEIGHT: f64 = 40.0;
@@ -197,14 +215,14 @@ fn glass_windows() -> &'static Mutex<HashSet<String>> {
     GLASS_WINDOWS.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
-fn glass_enabled(window: &WebviewWindow) -> bool {
+fn glass_enabled(window: &impl AppKitWindow) -> bool {
     glass_windows()
         .lock()
         .unwrap_or_else(|err| err.into_inner())
         .contains(window.label())
 }
 
-fn set_glass_enabled(window: &WebviewWindow, enabled: bool) {
+fn set_glass_enabled(window: &impl AppKitWindow, enabled: bool) {
     let mut windows = glass_windows()
         .lock()
         .unwrap_or_else(|err| err.into_inner());
@@ -226,7 +244,7 @@ fn prepare_launch(window: &WebviewWindow) {
     ns_window.setTitlebarSeparatorStyle(NSTitlebarSeparatorStyle::None);
 }
 
-fn set_launch_background(window: &WebviewWindow, r: u8, g: u8, b: u8) {
+fn set_launch_background(window: &impl AppKitWindow, r: u8, g: u8, b: u8) {
     let Some(ns_window) = ns_window(window) else {
         return;
     };
@@ -322,7 +340,7 @@ fn floating_corner_mask() -> Retained<NSImage> {
     mask
 }
 
-fn set_native_background(window: &WebviewWindow, native: &NSWindow, color: &NSColor) {
+fn set_native_background(window: &impl AppKitWindow, native: &NSWindow, color: &NSColor) {
     if window.label().starts_with(crate::window::MONO_CHAT_PREFIX) {
         if let Some(layer) = native.contentView().and_then(|view| {
             view.subviews()
@@ -346,7 +364,7 @@ fn set_native_background(window: &WebviewWindow, native: &NSWindow, color: &NSCo
 /// Turn on desktop blur after the first UI paint. Report whether AppKit paints
 /// the tint so the page can stop painting the same translucent colour twice.
 pub fn enable_glass(
-    window: &WebviewWindow,
+    window: &impl AppKitWindow,
     background: crate::window::Rgb,
     opacity: Option<f64>,
 ) -> bool {
@@ -359,14 +377,14 @@ pub fn enable_glass(
 }
 
 /// Turn off the blur and fall back to an opaque window in the caller's colour.
-pub fn disable_glass(window: &WebviewWindow, r: u8, g: u8, b: u8) {
+pub fn disable_glass(window: &impl AppKitWindow, r: u8, g: u8, b: u8) {
     set_glass_enabled(window, false);
     apply_blur(window, 0);
     set_launch_background(window, r, g, b);
 }
 
 fn prepare_glass(
-    window: &WebviewWindow,
+    window: &impl AppKitWindow,
     background: crate::window::Rgb,
     opacity: Option<f64>,
 ) -> bool {
@@ -447,7 +465,7 @@ fn set_glass_backing(window: &NSWindow, enabled: bool) {
     content.addSubview_positioned_relativeTo(&backing, NSWindowOrderingMode::Below, None);
 }
 
-fn apply_blur(window: &WebviewWindow, radius: u8) {
+fn apply_blur(window: &impl AppKitWindow, radius: u8) {
     // This API blurs the window rectangle independently of CALayer clipping.
     // The floating panel's masked AppKit material owns its backdrop instead.
     let radius = if window.label().starts_with(crate::window::MONO_CHAT_PREFIX) {
@@ -493,7 +511,7 @@ fn stretch_titlebar(window: &WebviewWindow) {
     unsafe { stretch_ns_window(&ns_window) }
 }
 
-pub(crate) fn ns_window(window: &WebviewWindow) -> Option<objc2::rc::Retained<NSWindow>> {
+pub(crate) fn ns_window(window: &impl AppKitWindow) -> Option<objc2::rc::Retained<NSWindow>> {
     let Ok(handle) = window.window_handle() else {
         return None;
     };

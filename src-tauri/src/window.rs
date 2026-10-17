@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use tauri::window::Color;
-use tauri::{AppHandle, Emitter, EventTarget, Manager, WebviewWindow, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, EventTarget, Manager, WebviewWindow, WebviewWindowBuilder, Window,
+};
 
 static WINDOW_COUNTER: AtomicU32 = AtomicU32::new(1);
 
@@ -143,7 +145,7 @@ impl Rgb {
 /// Desktop blur goes on after the first UI paint and only in dark mode.
 #[tauri::command]
 pub fn set_window_glass_enabled(
-    window: WebviewWindow,
+    window: Window,
     enabled: bool,
     background: Rgb,
     opacity: Option<f64>,
@@ -187,14 +189,14 @@ pub fn set_window_glass_enabled(
 
 /// Close with a running chat hides the webview so the harness child keeps going.
 #[tauri::command]
-pub fn hide_window(window: WebviewWindow) -> Result<(), String> {
+pub fn hide_window(window: Window) -> Result<(), String> {
     window.hide().map_err(|err| err.to_string())
 }
 
 /// Finish an idle close. `destroy` skips CloseRequested so the JS handler
 /// does not loop; `close` would fire it again.
 #[tauri::command]
-pub fn destroy_window(window: WebviewWindow) -> Result<(), String> {
+pub fn destroy_window(window: Window) -> Result<(), String> {
     window.destroy().map_err(|err| err.to_string())
 }
 
@@ -207,9 +209,12 @@ pub fn is_workspace_window(label: &str) -> bool {
 }
 
 /// Every workspace window, sorted by label.
-pub fn workspace_windows(app: &AppHandle) -> Vec<WebviewWindow> {
-    let mut windows: Vec<WebviewWindow> = app
-        .webview_windows()
+///
+/// Windows, not webview windows: a workspace showing a web app holds child
+/// webviews, and Tauri stops counting it as a webview window then.
+pub fn workspace_windows(app: &AppHandle) -> Vec<Window> {
+    let mut windows: Vec<Window> = app
+        .windows()
         .into_values()
         .filter(|window| is_workspace_window(window.label()))
         .collect();
@@ -385,7 +390,7 @@ pub fn request_quit(app: &AppHandle) {
 
 /// One window's live turn count, counted before anything is killed.
 #[tauri::command]
-pub fn quit_poll_reply(app: AppHandle, window: WebviewWindow, id: u32, in_flight: u32) {
+pub fn quit_poll_reply(app: AppHandle, window: Window, id: u32, in_flight: u32) {
     let next = record_reply(&mut QUIT_RUN.lock().unwrap(), id, window.label(), in_flight);
     if next == Next::Confirm {
         start_confirm(&app, id);
@@ -403,7 +408,7 @@ fn resurface_prompt(app: &AppHandle) {
         }
         run.prompt.clone()
     };
-    let Some(window) = label.and_then(|label| app.get_webview_window(&label)) else {
+    let Some(window) = label.and_then(|label| app.get_window(&label)) else {
         return;
     };
     let _ = window.unminimize();
@@ -413,7 +418,7 @@ fn resurface_prompt(app: &AppHandle) {
 
 /// The answer to the one dialog the whole app gets to show.
 #[tauri::command]
-pub fn quit_decision(app: AppHandle, window: WebviewWindow, id: u32, confirmed: bool) {
+pub fn quit_decision(app: AppHandle, window: Window, id: u32, confirmed: bool) {
     {
         let guard = QUIT_RUN.lock().unwrap();
         let Some(run) = guard.as_ref() else { return };
@@ -435,7 +440,7 @@ pub fn quit_decision(app: AppHandle, window: WebviewWindow, id: u32, confirmed: 
 /// One window has persisted. The last one out turns the lights off, so a slow
 /// window cannot lose its workspace to a faster window's exit.
 #[tauri::command]
-pub fn quit_ready(app: AppHandle, window: WebviewWindow, id: u32, persisted: bool) {
+pub fn quit_ready(app: AppHandle, window: Window, id: u32, persisted: bool) {
     // A window that could not save its workspace keeps the app open, the way a
     // failed persist did before the handshake existed. The windows that did
     // save are staying too, so take them back out of quitting.
@@ -534,7 +539,7 @@ fn start_commit(app: &AppHandle, id: u32) {
 /// listeners are live. A window still booting would swallow the dialog, and
 /// confirming has nothing to time out on.
 fn prompt_window(app: &AppHandle, replied: &HashSet<String>) -> Option<String> {
-    let windows = app.webview_windows();
+    let windows = app.windows();
     let labels = workspace_labels(app);
     let answered: Vec<String> = labels
         .iter()

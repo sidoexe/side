@@ -23,6 +23,13 @@ export function parseAppArgs(args: readonly string[], stdin: () => string): Pars
     const flag = rest[i];
     const value = rest[i + 1];
     if (["help", "--help", "-h"].includes(flag)) return { kind: "help" };
+    // Colleague prompts teach `app memory.add {"fact":"..."}`: a lone object
+    // is the input, the same as --json.
+    if (!flag.startsWith("--") && flag.trimStart().startsWith("{")) {
+      if (raw !== undefined) throw new Error("Pass only one of --json or --input");
+      raw = flag;
+      continue;
+    }
     if (value === undefined) throw new Error(`Missing value for ${flag}`);
     if (flag === "--json") {
       if (raw !== undefined) throw new Error("Pass only one of --json or --input");

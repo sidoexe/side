@@ -23,6 +23,13 @@ it("parses the same arguments as the desktop's app CLI", () => {
   expect(() => parseAppArgs(["x", "--wat", "1"], () => "")).toThrow("Unknown argument");
 });
 
+it("takes a lone JSON object as the input, the way Colleague prompts write it", () => {
+  expect(parseAppArgs(["memory.search", '{"query":"linear"}', "--request-id", "r"], () => ""))
+    .toEqual({ kind: "call", action: "memory.search", input: { query: "linear" }, requestId: "r" });
+  expect(() => parseAppArgs(["x", "{}", "--json", "{}"], () => "")).toThrow("only one");
+  expect(() => parseAppArgs(["x", "query"], () => "")).toThrow();
+});
+
 it("prints help naming this host's command", () => {
   const help = appHelp("/home/me/.side-host/bin/side-host app");
   expect(help).toContain("Usage: /home/me/.side-host/bin/side-host app ACTION");
