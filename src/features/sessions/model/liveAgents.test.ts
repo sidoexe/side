@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   formatLiveElapsed,
   liveAgentsFromSessions,
+  storedDoneAgents,
 } from "./liveAgents";
+import type { SessionSummary } from "../data/sessionStore";
 import { newSession, type Block, type Session } from "./session";
 
 function chat(cwd: string, patch: Partial<Session> = {}): Session {
@@ -214,5 +216,53 @@ describe("formatLiveElapsed", () => {
     expect(formatLiveElapsed(0, 120_000)).toBe("2m");
     expect(formatLiveElapsed(0, 3_600_000)).toBe("1h");
     expect(formatLiveElapsed(0, 3_720_000)).toBe("1h 2m");
+  });
+});
+
+describe("stored done agents", () => {
+  const summary = (id: string, patch: Partial<SessionSummary> = {}) =>
+    [
+      id,
+      {
+        id,
+        cwd: "/repo",
+        harness: "claude",
+        model: "m",
+        runtimeMode: "supervised",
+        title: `Chat ${id}`,
+        createdAt: 0,
+        updatedAt: 0,
+        ...patch,
+      } as SessionSummary,
+    ] as const;
+
+  it("lists done sessions that are not loaded, newest first", () => {
+    const stored = new Map([
+      ["old", "/repo"],
+      ["new", "/repo"],
+      ["open", "/repo"],
+      ["gone", "/repo"],
+      ["shelved", "/repo"],
+    ]);
+    const rows = storedDoneAgents(
+      stored,
+      new Set(["open"]),
+      new Map([
+        summary("old", { updatedAt: 1 }),
+        summary("new", { updatedAt: 2 }),
+        summary("open"),
+        summary("shelved", { archived: true }),
+      ]),
+    );
+    expect(rows.map((row) => row.id)).toEqual(["new", "old"]);
+    expect(rows[0]).toEqual({
+      id: "new",
+      cwd: "/repo",
+      title: "Chat new",
+      harness: "claude",
+      activity: "Done",
+      needsApproval: false,
+      done: true,
+    });
   });
 });

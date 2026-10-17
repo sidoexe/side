@@ -82,3 +82,30 @@ export function markSessionsReviewed(ids: Iterable<string>) {
   for (const id of ids) next.delete(id);
   if (next.size !== current.size) save(next);
 }
+
+/** These sessions wait to be checked, as when a turn finishes. */
+export function addSessionsToReview(
+  entries: Iterable<{ id: string; cwd: string }>,
+) {
+  const current = sessionsToReview();
+  const next = new Map(current);
+  for (const { id, cwd } of entries) if (!next.has(id)) next.set(id, cwd);
+  if (next.size !== current.size) save(next);
+}
+
+const stoppedByUser = new Set<string>();
+
+/** The user stopped this session's turn: when it settles, it is not done. */
+export function noteStoppedByUser(id: string) {
+  stoppedByUser.add(id);
+}
+
+/** Sessions stopped by the user whose turn has not been seen to settle. */
+export function stoppedByUserIds(): ReadonlySet<string> {
+  return stoppedByUser;
+}
+
+/** Their stop has been accounted for once they stopped working. */
+export function forgetStoppedByUser(idleIds: Iterable<string>) {
+  for (const id of idleIds) stoppedByUser.delete(id);
+}

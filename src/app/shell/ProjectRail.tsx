@@ -98,7 +98,6 @@ import { Popover } from "../../shared/ui/Popover";
 import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/connections";
 import {
   cachedRemoteReviewAgents,
-  markRemoteSessionReviewed,
   remoteSessionFor,
   useRemoteMachineOnline,
   useRemoteMachines,
@@ -435,8 +434,8 @@ export function ProjectRail({
   const onSelectReviewAgent = (sessionId: string) => {
     const project = remoteReviewProjects.get(sessionId);
     if (!project) return onSelectAgent?.(sessionId);
+    // Opening one is not checking it, as with a local session.
     onSelectRemoteSession?.(project, sessionId);
-    void markRemoteSessionReviewed(project, sessionId);
   };
   const workingAgents = liveAgents.filter(
     (agent) => !agent.needsApproval && !agent.done,

@@ -44,6 +44,9 @@ struct HostSessionSummary: Decodable, Identifiable, Hashable {
     var interrupted: Bool { status == "interrupted" }
     /// Finished and waiting to be checked: it stays until marked so.
     var done: Bool { toReview == true && !running && needsInput != true }
+    /// Only a saved draft: kept off lists. A draft never hides a session that
+    /// works, waits on the user or is done, as on desktop.
+    var draftOnly: Bool { draft == true && !running && needsInput != true && !done }
 }
 
 struct HostAccountSummary: Decodable, Identifiable, Hashable {

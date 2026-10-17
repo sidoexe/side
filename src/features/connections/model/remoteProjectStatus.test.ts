@@ -32,6 +32,12 @@ describe("remote project status", () => {
       remoteProjectStatus([summary({ status: "running", toReview: true })]),
     ).toEqual({ working: 1, done: 0 });
   });
+
+  it("counts a session waiting on the user as waiting, not done", () => {
+    expect(
+      remoteProjectStatus([summary({ toReview: true, needsInput: true })]),
+    ).toEqual({ working: 0, done: 0 });
+  });
 });
 
 describe("remote review rows", () => {

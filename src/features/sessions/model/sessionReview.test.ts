@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  addSessionsToReview,
   markSessionsReviewed,
   replaceSessionsToReview,
   sessionsToReview,
@@ -37,5 +38,17 @@ describe("sessions to review", () => {
     const first = sessionsToReview();
     replaceSessionsToReview(new Set(["a"]), () => "/q");
     expect(sessionsToReview()).toBe(first);
+  });
+
+  it("adds sessions without moving ones already waiting", () => {
+    replaceSessionsToReview(new Set(["a"]), () => "/p");
+    addSessionsToReview([
+      { id: "a", cwd: "/elsewhere" },
+      { id: "b", cwd: "/q" },
+    ]);
+    expect([...sessionsToReview()]).toEqual([
+      ["a", "/p"],
+      ["b", "/q"],
+    ]);
   });
 });

@@ -4,7 +4,9 @@ import { isLiveAgentSession } from "../model/liveAgents";
 import type { Session } from "../model/session";
 import { nextUnseenFinishedSessions } from "../model/sessionDone";
 import {
+  forgetStoppedByUser,
   replaceSessionsToReview,
+  stoppedByUserIds,
   sessionsToReview,
   subscribeSessionsToReview,
 } from "../model/sessionReview";
@@ -46,7 +48,11 @@ export function useUnseenFinishedSessions(
           )
           .map((session) => session.id),
       ),
+      stoppedIds: stoppedByUserIds(),
     });
+    forgetStoppedByUser(
+      [...stoppedByUserIds()].filter((id) => !busySessionIds.has(id)),
+    );
     busyForDoneRef.current = busySessionIds;
   }
   const unseenFinished = unseenFinishedRef.current;

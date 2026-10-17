@@ -194,7 +194,7 @@ struct HomeView: View {
 
     private func sessions(of project: HostProject) -> [HostSessionSummary] {
         (model.sessions[project.id] ?? [])
-            .filter { $0.draft != true && (showArchived || $0.archived != true) }
+            .filter { !$0.draftOnly && (showArchived || $0.archived != true) }
             .filter { query.isEmpty || $0.displayName.lowercased().contains(query) || project.name.lowercased().contains(query) }
             .sorted { ($0.pinned == true ? 1 : 0, $0.updatedAt) > ($1.pinned == true ? 1 : 0, $1.updatedAt) }
     }
@@ -331,7 +331,7 @@ struct ProjectStatusCounts: View {
     let sessions: [HostSessionSummary]
 
     var body: some View {
-        let live = sessions.filter { $0.archived != true && $0.draft != true }
+        let live = sessions.filter { $0.archived != true && !$0.draftOnly }
         let working = live.filter { $0.running && $0.needsInput != true }.count
         let waiting = live.filter { $0.needsInput == true }.count
         let done = live.filter(\.done).count

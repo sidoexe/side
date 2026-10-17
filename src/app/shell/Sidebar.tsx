@@ -66,7 +66,10 @@ import type { OpenFileFn } from "../../features/search/model/search";
 import { sessionDisplayTitle } from "../../features/sessions/model/session";
 import { ParticleText } from "../../shared/ui/ParticleText";
 import { nextUnseenFinishedSessions } from "../../features/sessions/model/sessionDone";
-import { markSessionsReviewed } from "../../features/sessions/model/sessionReview";
+import {
+  markSessionsReviewed,
+  stoppedByUserIds,
+} from "../../features/sessions/model/sessionReview";
 import { orchestrationTaskLabel } from "../../features/orchestration/model/orchestrationSummary";
 import {
   orderedSessionActionIds,
@@ -200,6 +203,7 @@ import {
   type MonoRailProps,
 } from "./MonoRailSection";
 import {
+  markRemoteSessionReviewed,
   refreshRemoteProjectSessions,
   remoteRequest,
   remotePendingWorktree,
@@ -464,7 +468,6 @@ function SidebarComponent({
       title?: string;
       archived?: boolean;
       pinned?: boolean;
-      reviewed?: true;
       linkedWorkItem?: LinkedWorkItem | null;
     },
   ) => {
@@ -556,7 +559,7 @@ function SidebarComponent({
   const onMarkSessionsChecked = remoteProject
     ? (sessionIds: readonly string[]) => {
         void Promise.all(
-          sessionIds.map((id) => remoteChange(id, { reviewed: true })),
+          sessionIds.map((id) => markRemoteSessionReviewed(cwd, id)),
         );
       }
     : (sessionIds: readonly string[]) => markSessionsReviewed(sessionIds);
@@ -690,12 +693,17 @@ function SidebarComponent({
       previousBusyIds: busyIdsRef.current,
       busyIds: busySessionIds,
       previousUnseenIds: unseenFinishedLocalRef.current,
+      stoppedIds: stoppedByUserIds(),
     });
     busyIdsRef.current = busySessionIds;
   }
   // A host keeps its own sessions' done state, so every device sees it.
   const remoteToReviewKey = remote.sessions
-    .flatMap((session) => (session.toReview ? [session.id] : []))
+    .flatMap((session) =>
+      session.toReview && !session.needsInput && session.status !== "running"
+        ? [session.id]
+        : [],
+    )
     .join("\0");
   const remoteToReviewIds = useMemo(
     () => new Set(remoteToReviewKey ? remoteToReviewKey.split("\0") : []),

@@ -1588,12 +1588,16 @@ export class HostEngine {
               : active.cancelled
               ? "Stopped by you."
               : error;
+          const settled = this.settled(
+            latest,
+            this.closing || active.persistenceFailed ? "interrupted" : "idle",
+            message,
+          );
           this.save(
-            this.settled(
-              latest,
-              this.closing || active.persistenceFailed ? "interrupted" : "idle",
-              message,
-            ),
+            // A turn the user stopped is one they already saw end.
+            settled.status === "idle" && active.cancelled
+              ? { ...settled, toReview: undefined }
+              : settled,
             { type: "settled", error, cancelled: active.cancelled },
           );
         }
@@ -1674,7 +1678,9 @@ export class HostEngine {
     return {
       ...value,
       status,
-      toReview: status === "idle" ? true : value.toReview,
+      // A turn the host cut short is as much the user's to check as one
+      // that finished.
+      toReview: true,
       session,
     };
   }

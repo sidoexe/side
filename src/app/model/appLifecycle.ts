@@ -24,6 +24,9 @@ import {
   type ProjectTerminalDock,
 } from "../../features/projects/model/projectTerminal";
 import { sessionWorkCwd, type Session } from "../../features/sessions/model/session";
+import { addSessionsToReview } from "../../features/sessions/model/sessionReview";
+import { isLiveAgentSession } from "../../features/sessions/model/liveAgents";
+import { isMonoSession } from "../../features/monos/model/mono";
 import { sessionChildHarnesses } from "../../features/sessions/model/handoff";
 import {
   getSession,
@@ -275,6 +278,33 @@ async function historyForCwd(
   return listProjectHistory(cwd);
 }
 
+/**
+ * A turn cut short by a quit or crash waits to be checked, as one the host
+ * cut short does. Only a fresh cut counts, so a session already checked after
+ * an earlier one is not brought back.
+ */
+export function cutTurnsToRemind(
+  sessions: Iterable<Session>,
+): { id: string; cwd: string }[] {
+  return [...sessions]
+    .filter(
+      (session) =>
+        !wasTurnInterrupted(session) &&
+        isLiveAgentSession(session) &&
+        !session.ephemeral &&
+        !isMonoSession(session.id),
+    )
+    .map((session) => ({ id: session.id, cwd: session.cwd }));
+}
+
+function remindCutTurns(sessions: Iterable<Session>): void {
+  try {
+    addSessionsToReview(cutTurnsToRemind(sessions));
+  } catch {
+    // A reminder never holds up a quit or a boot.
+  }
+}
+
 async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   const [snapshotRaw, refs] = await Promise.all([
     loadWorkspaceSnapshot().catch(() => null),
@@ -300,6 +330,9 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     }),
   );
 
+  remindCutTurns(
+    [...interrupted].flatMap((id) => loaded.get(id) ?? []),
+  );
   let workspace = snapshot
     ? hydrateWorkspaceSnapshot(snapshot, loaded, interrupted)
     : null;
@@ -423,6 +456,8 @@ export async function persistQuitState(
   if (mode === "quit" || refs.length > 0) {
     await write(replaceInFlightSessions(refs));
   }
+  // Once saved: a quit called off for a failed write keeps them working.
+  remindCutTurns(sessions.filter((session) => interrupted.has(session.id)));
 }
 
 async function persistBootingResume(workspace: ResumedWorkspace): Promise<void> {

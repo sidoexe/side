@@ -7,6 +7,7 @@ import {
   type HarnessId,
   type Session,
 } from "./session";
+import type { SessionSummary } from "../data/sessionStore";
 
 export type LiveAgent = {
   id: string;
@@ -44,6 +45,36 @@ export function liveAgentsFromSessions(
       toLiveAgent(session, unseenFinishedIds.has(session.id)),
     )
     .sort(compareLiveAgents);
+}
+
+/**
+ * Done rows for sessions waiting to be checked that are not loaded, from
+ * their stored summaries. Loaded ones already have a row.
+ */
+export function storedDoneAgents(
+  stored: ReadonlyMap<string, string>,
+  loadedIds: ReadonlySet<string>,
+  summaries: ReadonlyMap<string, SessionSummary>,
+): LiveAgent[] {
+  return [...stored.keys()]
+    .flatMap((id) => {
+      const summary = summaries.get(id);
+      if (!summary || loadedIds.has(id) || summary.archived) return [];
+      return [
+        {
+          id,
+          cwd: summary.cwd,
+          title: sessionDisplayTitle(summary.title, summary.harness),
+          harness: summary.harness,
+          activity: "Done",
+          needsApproval: false,
+          done: true,
+          updatedAt: summary.updatedAt,
+        },
+      ];
+    })
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map(({ updatedAt: _updatedAt, ...agent }) => agent);
 }
 
 export function formatLiveElapsed(startedAt: number, now: number): string {

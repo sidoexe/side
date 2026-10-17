@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A session stays **done until you mark it checked**, the same way on the desktop, on a host's projects and on the phone:
+  - A host turn cut short because the host stopped, restarted or updated is done, instead of ending neither working nor done, as if checked.
+  - Opening a host session from its done card under the projects no longer marks it checked on every device. Only **Checked** does, as for a local session; that button also clears it at once instead of after the host answers.
+  - The phone no longer hides a done session that holds a saved draft from Now, its project or the counts.
+  - A local turn cut short by quitting or a crash is done after relaunch when it does not continue on its own.
+  - After a relaunch, every session a project counts as done has its card under the projects, not only those already open.
+  - A session waiting on your answer counts as waiting, not done, on the desktop as on the phone.
+- A turn you stop yourself is no longer marked done, on the desktop, on a host or from the phone: you saw it end.
 - A workspace showing a web app keeps working as a workspace: its Colleagues, reminders, quick composer deliveries, glass, close and quit no longer fail with an error. Tauri stops counting a window that holds child webviews as a webview window, so these now find workspaces as plain windows.
 - `app ACTION '{"...":"..."}'`, the way Colleague prompts write it, works: a lone JSON object after the action is taken as the input, as with `--json`, on the desktop and on a host.
 - A desktop sends its Colleagues' accounts and states to the home machine again each minute even when nothing changed, so a host restarted or updated in between, which may have dropped them, gets them back within a minute.

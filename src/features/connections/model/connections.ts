@@ -427,7 +427,7 @@ export function remoteProjectStatus(
   for (const session of sessions) {
     if (session.archived) continue;
     if (session.status === "running") working += 1;
-    else if (session.toReview) done += 1;
+    else if (session.toReview && !session.needsInput) done += 1;
   }
   return { working, done };
 }
@@ -479,8 +479,8 @@ export function cachedRemoteReviewAgents(
 }
 
 /**
- * Marks a finished host session checked, as opening a local one does. The
- * cached list drops it at once so the rail does not wait for the next poll.
+ * Marks a finished host session checked, when the user says so. The cached
+ * list drops it at once so nothing waits for the next poll.
  */
 export async function markRemoteSessionReviewed(
   project: string,

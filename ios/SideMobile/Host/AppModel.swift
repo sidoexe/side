@@ -217,7 +217,7 @@ final class AppModel {
             session.needsInput == true ? 0 : session.done ? 1 : 2
         }
         return sessions.values.joined()
-            .filter { $0.archived != true && $0.draft != true && ($0.needsInput == true || $0.running || $0.done) }
+            .filter { $0.archived != true && !$0.draftOnly && ($0.needsInput == true || $0.running || $0.done) }
             .sorted { (rank($0), -$0.updatedAt) < (rank($1), -$1.updatedAt) }
     }
 

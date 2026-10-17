@@ -528,11 +528,15 @@ import {
 } from "../features/sessions/ui/TranscriptPool";
 import { syncDockBadge } from "../features/notifications/model/dockBadge";
 import { liveAgentsFromSessions } from "../features/sessions/model/liveAgents";
+import { useStoredDoneAgents } from "../features/sessions/hooks/useStoredDoneAgents";
 import { hiddenApprovalNotices } from "../features/notifications/model/approvalToast";
 import { useSessionReminders } from "../features/notifications/hooks/useSessionReminders";
 import { ReminderNotices } from "../features/sessions/ui/ReminderNotices";
 import { useUnseenFinishedSessions } from "../features/sessions/hooks/useUnseenFinishedSessions";
-import { markSessionsReviewed } from "../features/sessions/model/sessionReview";
+import {
+  markSessionsReviewed,
+  noteStoppedByUser,
+} from "../features/sessions/model/sessionReview";
 import { useUnseenReplyCounts } from "../features/sessions/hooks/useUnseenReplyCounts";
 import {
   loadNotificationsEnabled,
@@ -2212,20 +2216,38 @@ function Workspace({
     activeSessionId,
   );
 
+  const loadedSessionIds = useMemo(
+    () => new Set(sessions.map((session) => session.id)),
+    [sessions],
+  );
+  const storedDoneRows = useStoredDoneAgents(
+    loadedSessionIds,
+    liveAgentsEnabled,
+  );
   const liveAgentRows = useMemo(
     () =>
       liveAgentsEnabled
-        ? liveAgentsFromSessions(
-            promptableSessions,
-            unseenFinishedIds,
-            new Set(
-              listMonos().flatMap((mono) =>
-                mono.sessionId ? [mono.sessionId] : [],
+        ? [
+            ...liveAgentsFromSessions(
+              promptableSessions,
+              unseenFinishedIds,
+              new Set(
+                listMonos().flatMap((mono) =>
+                  mono.sessionId ? [mono.sessionId] : [],
+                ),
               ),
             ),
-          )
+            // Done before this launch and not opened since.
+            ...storedDoneRows,
+          ]
         : [],
-    [liveAgentsEnabled, promptableSessions, unseenFinishedIds, monosSnap],
+    [
+      liveAgentsEnabled,
+      promptableSessions,
+      unseenFinishedIds,
+      monosSnap,
+      storedDoneRows,
+    ],
   );
   // Rebuilt for every streamed batch; identity only moves when a row does.
   const liveAgents = useStableValue(liveAgentRows);
@@ -10566,6 +10588,8 @@ function Workspace({
         }
       }
       const session = sessionsRef.current.find((s) => s.id === sessionId);
+      // The user saw this turn end, so it does not wait to be checked.
+      if (!managed && session?.busy) noteStoppedByUser(sessionId);
       turnGen.current.set(sessionId, (turnGen.current.get(sessionId) ?? 0) + 1);
       flushHarnessEvents();
       const cancelling = Promise.all(

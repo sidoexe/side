@@ -7,6 +7,7 @@ export function nextUnseenFinishedSessions({
   busyIds,
   previousUnseenIds,
   untrackedIds,
+  stoppedIds,
 }: {
   previousBusyIds: ReadonlySet<string>;
   busyIds: ReadonlySet<string>;
@@ -15,10 +16,12 @@ export function nextUnseenFinishedSessions({
    * workers and inbox discussions. A done session stays loaded until it
    * works again, so marking one of these would keep it in memory for good. */
   untrackedIds?: ReadonlySet<string>;
+  /** Sessions the user stopped: they saw the turn end, so it is not done. */
+  stoppedIds?: ReadonlySet<string>;
 }): Set<string> {
   const next = new Set(previousUnseenIds);
   for (const id of previousBusyIds) {
-    if (!busyIds.has(id)) next.add(id);
+    if (!busyIds.has(id) && !stoppedIds?.has(id)) next.add(id);
   }
   for (const id of busyIds) next.delete(id);
   if (untrackedIds) for (const id of untrackedIds) next.delete(id);

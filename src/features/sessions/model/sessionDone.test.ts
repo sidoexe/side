@@ -25,6 +25,17 @@ describe("nextUnseenFinishedSessions", () => {
     ).toEqual(new Set(["a"]));
   });
 
+  it("does not mark a session the user stopped", () => {
+    expect(
+      nextUnseenFinishedSessions({
+        previousBusyIds: new Set(["a", "b"]),
+        busyIds: new Set(),
+        previousUnseenIds: new Set(),
+        stoppedIds: new Set(["a"]),
+      }),
+    ).toEqual(new Set(["b"]));
+  });
+
   it("clears done when the session starts working again", () => {
     expect(
       nextUnseenFinishedSessions({

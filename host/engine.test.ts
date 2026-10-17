@@ -228,6 +228,25 @@ describe("headless session ownership", () => {
     expect(store.session(id).toReview).toBeUndefined();
   });
 
+  it("does not keep a turn the user stopped to review", async () => {
+    const { engine, store, turns, id } = setup();
+    engine.command({ type: "send", commandId: "run", sessionId: id, text: "Go" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    const runId = store.session(id).runId!;
+    engine.command({ type: "cancel", commandId: "stop", sessionId: id, runId });
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    expect(store.session(id).toReview).toBeUndefined();
+  });
+
+  it("keeps a turn the host stopped mid-way to review", async () => {
+    const { engine, store, turns, id } = setup();
+    engine.command({ type: "send", commandId: "cut", sessionId: id, text: "Go" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await engine.close();
+    expect(store.session(id).status).toBe("interrupted");
+    expect(store.session(id).toReview).toBe(true);
+  });
+
   it("marks a reviewed host plan as built after its build turn", async () => {
     const { engine, store, turns, id } = setup();
     engine.command({
@@ -766,6 +785,8 @@ describe("headless session ownership", () => {
     );
     const recovered = new HostEngine(store, { codex: provider });
     expect(store.session(id).status).toBe("interrupted");
+    // Cut short by the restart, it still waits for the user to check it.
+    expect(store.session(id).toReview).toBe(true);
     expect(store.session(id).session.busy).toBe(false);
     expect(store.session(id).session.blocks[0].durationMs).toBe(2_000);
     expect(provider.send).not.toHaveBeenCalled();
@@ -814,6 +835,7 @@ describe("headless session ownership", () => {
           .session.blocks.some((block) => block.text === "Retained output"),
       ).toBe(true);
       expect(store.session(id).session.busy).toBe(false);
+      expect(store.session(id).toReview).toBe(true);
     } finally {
       log.mockRestore();
     }

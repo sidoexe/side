@@ -4,12 +4,14 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import { forgetHarnessSession } from "../../integrations/harness/core/registry";
 import { killAllChildren } from "../../integrations/harness/core/child";
 import { newSession } from "../../features/sessions/model/session";
+import { markTurnInterrupted } from "../../features/sessions/model/inFlight";
 import { newTab } from "../../features/workspace/model/layout";
 import {
   askQuitConfirmation,
   closeBusyWindow,
   commitQuit,
   confirmReload,
+  cutTurnsToRemind,
   reportQuitPoll,
   setQuitWorkspace,
 } from "./appLifecycle";
@@ -508,5 +510,18 @@ describe("remembering the terminal dock side across restarts", () => {
     const { handleQuitRequested } = await import("./appLifecycle");
     await handleQuitRequested();
     expect(await lastSavedDockSide()).toBe("left");
+  });
+});
+
+describe("turns cut short by a quit", () => {
+  it("wait to be checked, once per cut, for sessions the user can see", () => {
+    const cut = newSession("claude", "/repo");
+    cut.busy = true;
+    const already = markTurnInterrupted(newSession("claude", "/repo"));
+    const ephemeral = { ...newSession("claude", "/repo"), ephemeral: true };
+    const worker = { ...newSession("claude", "/repo"), orchestrationLeadId: "lead" };
+    expect(cutTurnsToRemind([cut, already, ephemeral, worker])).toEqual([
+      { id: cut.id, cwd: "/repo" },
+    ]);
   });
 });
