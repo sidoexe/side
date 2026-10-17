@@ -213,12 +213,14 @@ struct ColleagueView: View {
             UsageStrip(
                 provider: current.provider,
                 usage: accounts?.accounts.first { $0.id == current.account && $0.provider == current.provider }?.usage,
+                balanced: current.balanced == true,
                 pending: pending.map(accountLabel)
             ) { showsUsage = true }
             .sheet(isPresented: $showsUsage) {
                 UsageSheet(
                     accounts: accounts?.accounts.filter { $0.provider == current.provider } ?? [],
                     current: current.account,
+                    balanced: current.balanced == true,
                     pending: pending,
                     busy: accounts?.status?[id]?.status == "working"
                 ) { account in
@@ -231,7 +233,8 @@ struct ColleagueView: View {
     }
 
     private func accountLabel(_ id: String) -> String {
-        accounts?.accounts.first { $0.id == id }?.label ?? (id == "default" ? "Default" : id)
+        if id == UsageSheet.balancedId { return "Balanced" }
+        return accounts?.accounts.first { $0.id == id }?.label ?? (id == "default" ? "Default" : id)
     }
 
     private func move(to account: String) async throws {

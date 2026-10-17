@@ -370,10 +370,14 @@ struct ColleagueAccounts: Decodable, Equatable {
         let id: String
         let label: String
         let usage: Usage?
+        /// Why its usage could not be read, such as an expired sign-in.
+        let error: String?
     }
     struct Current: Decodable, Equatable {
         let provider: String
         let account: String
+        /// Keeps to whichever account has the most room, moving on at a limit.
+        let balanced: Bool?
     }
     /// A colleague's state on its desktop.
     struct State: Decodable, Equatable {

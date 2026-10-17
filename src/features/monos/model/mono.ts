@@ -56,6 +56,9 @@ export type Mono = {
    * (see `employeeStorage.ts`): left out of the shared roster, its files and
    * conversation stay in this computer's data folder. */
   localOnly?: boolean;
+  /** Runs on whichever account has the most weekly room, and moves to the
+   * next one, conversation and all, when a limit stops it. */
+  balancedAccounts?: boolean;
   /** Superseded by SOUL.md; only read once, to seed it. */
   instructions?: string;
   /**
@@ -185,6 +188,7 @@ function parseMono(value: unknown): Mono | undefined {
       : {}),
     ...(entry.useSidebarFolders === true ? { useSidebarFolders: true } : {}),
     ...(entry.localOnly === true ? { localOnly: true } : {}),
+    ...(entry.balancedAccounts === true ? { balancedAccounts: true } : {}),
     ...(instructions ? { instructions } : {}),
     ...(legacyProject ? { legacyProject } : {}),
   };
@@ -334,6 +338,12 @@ export function reorderMonos(ids: readonly string[]): void {
 
 export function saveMonoSessionId(monoId: string, sessionId: string): void {
   updateMono(monoId, (mono) => ({ ...mono, sessionId }));
+}
+
+export function saveMonoBalanced(monoId: string, balanced: boolean): void {
+  updateMono(monoId, ({ balancedAccounts: _balanced, ...mono }) =>
+    balanced ? { ...mono, balancedAccounts: true } : mono,
+  );
 }
 
 export function saveMonoName(monoId: string, name: string): void {

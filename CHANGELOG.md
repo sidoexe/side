@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A Colleague's composer has an **account menu**, as a remote session's host accounts: every Claude or Codex account with its 5-hour and weekly bars and any sign-in error, a refresh, and a way to add or manage accounts. Picking one moves the Colleague there with its conversation.
+- Colleagues can run **Balanced**: on whichever account has the most weekly room, moving on to the next one with room, conversation and all, when a limit stops it. With none to spare it waits and asks again every few minutes. Picking an account by hand, here or in the usage-limit notice, turns it off.
+- The phone app's Colleague usage sheet offers Balanced too, says which account a balanced Colleague is on, and shows each account's sign-in error and both windows left.
 - The phone app's Colleagues show **what each one is doing**, as on the desktop: working and on what, waiting on you (a question, an approval, a usage limit), or idle, in the list and under the Colleague's name. Its chat has the desktop's **usage chip** under the composer: the account's 5-hour window as a bar with both windows left. Tapping it opens the 5-hour and weekly limits, and the accounts it can move to with what is left on each.
 - Phone session rows show **Working** while a session runs, and a project counts the sessions waiting on you.
 - The phone app can **move a Colleague to another account**: a chip under its composer lists the Claude or Codex accounts of the desktop that runs it. The desktop carries the conversation over as when you switch from its settings, once the Colleague is idle and sIDE is open there. It needs sIDE Host 0.35.

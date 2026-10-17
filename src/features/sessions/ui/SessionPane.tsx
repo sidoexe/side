@@ -73,6 +73,8 @@ import type { LaunchedSessionView } from "../../monos/model/monoSpawnedSessions"
 import { ModelControlPills, ModelPicker } from "./ModelPicker";
 import { ContextMeter } from "./ContextMeter";
 import { UsageChips } from "../../../app/shell/UsageFooter";
+import { MonoAccountPicker } from "../../monos/ui/MonoAccountPicker";
+import { supportsProviderAccounts } from "../../providers/model/providerAccounts";
 import type { RateLimitProvider } from "../../providers/model/rateLimits";
 import { MonoUsageLimitNotice } from "../../monos/ui/MonoUsageLimitNotice";
 import { QuestionForm } from "./QuestionForm";
@@ -173,6 +175,13 @@ export type SessionPaneProps = {
     settings: Record<string, string>,
   ) => void;
   onRuntimeModeChange: (sessionId: string, mode: RuntimeMode) => void;
+  /** Moves a Mono to an account, with its conversation. */
+  onMonoAccountChange?: (sessionId: string, accountId: string) => void;
+  /** Keeps a Mono on whichever account has the most room. */
+  onMonoBalanced?: (sessionId: string) => void;
+  /** The Mono conversations set to Balanced. */
+  balancedMonoSessionIds?: ReadonlySet<string>;
+  onManageAccounts?: () => void;
   onSubmit: (
     sessionId: string,
     text: string,
@@ -331,6 +340,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onModelChange,
   onModelSettingsChange,
   onRuntimeModeChange,
+  onMonoAccountChange,
+  onMonoBalanced,
+  balancedMonoSessionIds,
+  onManageAccounts,
   onSaveDraft,
   onRemoveDraft,
   onSubmit,
@@ -1202,23 +1215,39 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       onSubmit(session.id, text, attachments)
                     }
                     // The plan's usage, as the session footer shows it,
-                    // which a Mono in full view covers. Its account moves
-                    // with the usage-limit notice, not here. A narrow chat
-                    // drops it first, then shows the model controls as icons.
+                    // which a Mono in full view covers, with the account it
+                    // runs on. A narrow chat drops it first, then shows the
+                    // model controls as icons.
                     tools={
                       <div className="flex shrink-0 items-center gap-0.5 text-[11px] text-content/55 @max-md:hidden">
-                        <UsageChips
-                          providers={monoUsageProviders(session.harness)}
-                          session={{
-                            id: session.id,
-                            harness: session.harness,
-                            model: session.model,
-                            providerAccountId: session.providerAccountId,
-                          }}
-                          project={session.cwd}
-                          accountPicker={false}
-                          variant="composer"
-                        />
+                        {supportsProviderAccounts(session.harness) &&
+                        onMonoAccountChange &&
+                        onMonoBalanced ? (
+                          <MonoAccountPicker
+                            provider={session.harness}
+                            value={session.providerAccountId}
+                            balanced={!!balancedMonoSessionIds?.has(session.id)}
+                            disabled={!!session.busy}
+                            onChange={(accountId) =>
+                              onMonoAccountChange(session.id, accountId)
+                            }
+                            onBalanced={() => onMonoBalanced(session.id)}
+                            onManageAccounts={onManageAccounts}
+                          />
+                        ) : (
+                          <UsageChips
+                            providers={monoUsageProviders(session.harness)}
+                            session={{
+                              id: session.id,
+                              harness: session.harness,
+                              model: session.model,
+                              providerAccountId: session.providerAccountId,
+                            }}
+                            project={session.cwd}
+                            accountPicker={false}
+                            variant="composer"
+                          />
+                        )}
                       </div>
                     }
                     controls={
@@ -1254,7 +1283,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
                             its current thread is. It rotates threads itself,
                             so there is nothing to compact here. */}
                         <div className="grid size-6.5 place-items-center rounded-md transition-colors hover:bg-content/8">
-                          <ContextMeter usage={session.context} empty={isEmpty} />
+                          <ContextMeter
+                            usage={session.context}
+                            empty={isEmpty}
+                          />
                         </div>
                       </>
                     }

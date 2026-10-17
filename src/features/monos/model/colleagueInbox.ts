@@ -39,8 +39,15 @@ export type ColleagueUsage = {
 /** The accounts this desktop can move colleagues to with how much of each
  * is left, and every colleague's account and state. */
 export type ColleagueAccounts = {
-  accounts: { provider: string; id: string; label: string; usage?: ColleagueUsage }[];
-  current: Record<string, { provider: string; account: string }>;
+  accounts: {
+    provider: string;
+    id: string;
+    label: string;
+    usage?: ColleagueUsage;
+    /** Why its usage could not be read, such as an expired sign-in. */
+    error?: string;
+  }[];
+  current: Record<string, { provider: string; account: string; balanced?: boolean }>;
   status: Record<string, MonoState>;
 };
 

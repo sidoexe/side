@@ -35,6 +35,14 @@ private func remaining(_ window: ColleagueAccounts.Window?) -> String? {
     return "\(left) \(reset)"
 }
 
+/// `100% 5h · 40% 7d`: what is left of each window, as the desktop's menu.
+private func windowsLeft(_ usage: ColleagueAccounts.Usage) -> String {
+    [usage.session.map { "\(Int(max(0, 100 - $0.used).rounded()))% 5h" },
+     usage.weekly.map { "\(Int(max(0, 100 - $0.used).rounded()))% 7d" }]
+        .compactMap { $0 }
+        .joined(separator: " · ")
+}
+
 /// `56m`, `3h`, `2d`: the time until a window starts over.
 func resetsIn(_ at: Double) -> String {
     let seconds = max(0, at / 1000 - Date().timeIntervalSince1970)
@@ -55,6 +63,7 @@ private func left(_ used: Double) -> Double { min(1, max(0, (100 - used) / 100))
 struct UsageStrip: View {
     let provider: String
     let usage: ColleagueAccounts.Usage?
+    var balanced = false
     var pending: String?
     let onOpen: () -> Void
 
@@ -62,6 +71,7 @@ struct UsageStrip: View {
         Button(action: onOpen) {
             HStack(spacing: 6) {
                 HarnessIcon(harness: provider, size: 12)
+                if balanced && pending == nil { Text("Balanced").foregroundStyle(Theme.faint) }
                 if let pending {
                     Text("→ \(pending)…").foregroundStyle(Theme.muted)
                 } else if let usage {
@@ -90,8 +100,12 @@ struct UsageStrip: View {
 /// A colleague's plan usage and the accounts it can move to, as the
 /// desktop's usage popover.
 struct UsageSheet: View {
+    /// What the phone sends to turn Balanced on, as the desktop reads it.
+    static let balancedId = "auto"
+
     let accounts: [ColleagueAccounts.Account]
     let current: String
+    var balanced = false
     var pending: String?
     var busy = false
     let onMove: (String) -> Void
@@ -116,11 +130,15 @@ struct UsageSheet: View {
                     if let session = usage.session { card("5-hour limit", session) }
                     if let weekly = usage.weekly { card("Weekly limit", weekly) }
                 } else {
-                    Text("No usage read for this account yet.").font(Theme.small).foregroundStyle(Theme.muted)
+                    Text(account?.error ?? "No usage read for this account yet.")
+                        .font(Theme.small)
+                        .foregroundStyle(account?.error == nil ? Theme.muted : Theme.delFg)
                 }
                 if accounts.count > 1 {
                     SectionLabel(text: "Account").padding(.top, 8)
                     VStack(spacing: 0) {
+                        balancedRow
+                        Divider().overlay(Theme.stroke)
                         ForEach(accounts) { entry in
                             accountRow(entry)
                             if entry.id != accounts.last?.id { Divider().overlay(Theme.stroke) }
@@ -179,21 +197,56 @@ struct UsageSheet: View {
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.stroke))
     }
 
+    private var balancedRow: some View {
+        Button {
+            guard !balanced, pending == nil else { return }
+            onMove(Self.balancedId)
+            dismiss()
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: balanced ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(balanced ? Theme.text : Theme.faint)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Balanced").foregroundStyle(Theme.text)
+                    Text(balanced
+                        ? "On \(account?.label ?? current) now · moves on at a limit with its conversation"
+                        : "Runs on the most weekly room, moves on at a limit with its conversation")
+                        .font(Theme.meta)
+                        .foregroundStyle(Theme.faint)
+                }
+                Spacer()
+                if pending == Self.balancedId { Text("Moving…").foregroundStyle(Theme.muted) }
+            }
+            .font(.system(size: 14))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(pending != nil)
+    }
+
     private func accountRow(_ entry: ColleagueAccounts.Account) -> some View {
         Button {
-            guard entry.id != current, pending == nil else { return }
+            guard (entry.id != current || balanced), pending == nil else { return }
             onMove(entry.id)
             dismiss()
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: entry.id == current ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(entry.id == current ? Theme.text : Theme.faint)
-                Text(entry.label).foregroundStyle(Theme.text)
+                let chosen = !balanced && entry.id == current
+                Image(systemName: chosen ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(chosen ? Theme.text : Theme.faint)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(entry.label).foregroundStyle(Theme.text)
+                    if let error = entry.error {
+                        Text(error).font(Theme.meta).foregroundStyle(Theme.delFg).lineLimit(2)
+                    }
+                }
                 Spacer()
                 if entry.id == pending {
                     Text("Moving…").foregroundStyle(Theme.muted)
-                } else if let left = remaining(entry.usage?.session) {
-                    Text("5h \(left)").foregroundStyle(windowColor(entry.usage?.session?.used ?? 0))
+                } else if let usage = entry.usage {
+                    Text(windowsLeft(usage)).foregroundStyle(windowColor(max(usage.session?.used ?? 0, usage.weekly?.used ?? 0)))
                 }
             }
             .font(.system(size: 14).monospacedDigit())
