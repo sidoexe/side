@@ -66,6 +66,9 @@ it("lists every account with its windows and errors, and Balanced above them", a
   expect(menu.textContent).toContain("Balanced");
   expect(menu.textContent).toContain("Weekly");
   expect(menu.textContent).toContain("Sign-in expired");
+  // The expired account can sign in again from its row.
+  expect(document.querySelector("[aria-label='Sign work in again']")).not.toBeNull();
+  expect(document.querySelector("[aria-label='Sign Default in again']")).toBeNull();
 
   await act(async () => button(/^work/).click());
   expect(calls.change).toHaveBeenCalledWith("account-work");

@@ -18,6 +18,8 @@ import {
   type ProviderAccountProvider,
 } from "../../providers/model/providerAccounts";
 import { barClass, UsageMeter } from "../../providers/ui/ProviderAccountUsage";
+import { needsProviderLogin } from "../../providers/model/providerSignIn";
+import { SignInAgainButton } from "../../providers/ui/SignInAgainButton";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { Check, Plus, RefreshCw } from "../../../shared/ui/icons";
@@ -276,29 +278,42 @@ export function MonoAccountPicker({
           ) : null}
           {accounts.map((account) => {
             const checked = !balanced && account.id === current?.id;
+            const expired = needsProviderLogin(limitsOf(account.id));
             return (
-              <button
-                key={account.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={checked}
-                className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] leading-none text-content hover:bg-content/10"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  setOpen(false);
-                  if (!checked) onChange(account.id);
-                }}
-              >
-                <span className="grid size-3 shrink-0 place-items-center pt-px">
-                  {checked ? (
-                    <Check className="size-3" strokeWidth={2} aria-hidden />
-                  ) : null}
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <span className="truncate">{account.label}</span>
-                  <AccountUsage limits={limitsOf(account.id)} now={now} />
-                </span>
-              </button>
+              <div key={account.id} className="relative">
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={checked}
+                  className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] leading-none text-content hover:bg-content/10"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    setOpen(false);
+                    if (!checked) onChange(account.id);
+                  }}
+                >
+                  <span className="grid size-3 shrink-0 place-items-center pt-px">
+                    {checked ? (
+                      <Check className="size-3" strokeWidth={2} aria-hidden />
+                    ) : null}
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                    <span className={`truncate ${expired ? "pr-28" : ""}`}>
+                      {account.label}
+                    </span>
+                    <AccountUsage limits={limitsOf(account.id)} now={now} />
+                  </span>
+                </button>
+                {/* Beside the row, not in it: a button cannot hold another. */}
+                {expired ? (
+                  <SignInAgainButton
+                    provider={provider}
+                    accountId={account.id}
+                    label={account.label}
+                    className="absolute right-1.5 top-1"
+                  />
+                ) : null}
+              </div>
             );
           })}
           {onManageAccounts ? (

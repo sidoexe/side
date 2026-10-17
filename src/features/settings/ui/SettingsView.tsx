@@ -1,4 +1,6 @@
 import { ColleagueAvatar } from "../../monos/ui/ColleagueAvatar";
+import { needsProviderLogin } from "../../providers/model/providerSignIn";
+import { SignInAgainButton } from "../../providers/ui/SignInAgainButton";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ConnectionsSettings } from "../../connections/ui/ConnectionsSettings";
@@ -3589,7 +3591,15 @@ function ProviderAccountsSettings() {
                         />
                       </div>
                     </div>
-                    <AccountUsageMeters limits={limits} now={usage.now} />
+                    {needsProviderLogin(limits) ? (
+                      <SignInAgainButton
+                        provider={account.provider}
+                        accountId={account.id}
+                        label={account.label}
+                      />
+                    ) : (
+                      <AccountUsageMeters limits={limits} now={usage.now} />
+                    )}
                     <div className="flex w-24 shrink-0 items-center justify-end gap-1">
                       {account.isDefault ? (
                         <span className="mr-1 text-[10px] font-medium uppercase tracking-wide text-content/30">
@@ -4040,7 +4050,11 @@ function MonosPage() {
           label="Show colleagues"
           description="Agents of your own on the project rail. Each works on the projects you give it, remembers what matters and picks up habits it runs on its own. Turn this off to hide them."
         >
-          <Toggle label="Show colleagues" on={enabled} onChange={saveMonosEnabled} />
+          <Toggle
+            label="Show colleagues"
+            on={enabled}
+            onChange={saveMonosEnabled}
+          />
         </Row>
         <Row
           id="rail-monos-pinned"

@@ -1,4 +1,5 @@
 import { RefreshCw, Terminal } from "../../shared/ui/icons";
+import { signInProviderAccount } from "../../features/providers/model/providerSignIn";
 import {
   useCallback,
   useEffect,
@@ -360,35 +361,7 @@ export function UsageChips({
     async (provider: RateLimitProvider, accountId: string) => {
       while (inflight.current) await inflight.current;
       setRefreshing(true);
-      const operation = (async () => {
-        try {
-          await (accountId === "default"
-            ? loginHarness(provider)
-            : loginHarness(provider, accountId));
-          const value = await loadRateLimits(provider, accountId, true);
-          if (value.status !== "ok") {
-            throw new Error(
-              value.error ||
-                `${HARNESS_TITLE[provider]} sign-in could not be verified`,
-            );
-          }
-        } catch (error) {
-          const message =
-            error instanceof Error
-              ? error.message
-              : "Could not complete sign-in";
-          setCachedRateLimits(
-            provider,
-            accountId,
-            errorRateLimits(
-              provider,
-              message,
-              getCachedRateLimits(provider, accountId),
-            ),
-          );
-          throw error;
-        }
-      })();
+      const operation = signInProviderAccount(provider, accountId);
       const tracked = operation.finally(() => {
         inflight.current = null;
         setRefreshing(false);

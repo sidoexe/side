@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { needsProviderLogin } from "../../features/providers/model/providerSignIn";
 import {
   clampUsedPercent,
   DAILY_WINDOW_MINUTES,
@@ -1142,18 +1143,7 @@ function EmptyUsageState({
   );
 }
 
-export function needsProviderLogin(limits: ProviderRateLimits): boolean {
-  if (limits.status === "unavailable") return true;
-  if (limits.status !== "error") return false;
-  const text = limits.error?.toLowerCase() ?? "";
-  return (
-    text.includes("expired") ||
-    text.includes("sign-in") ||
-    text.includes("not signed in") ||
-    text.includes("not connected") ||
-    text.includes("authentication")
-  );
-}
+export { needsProviderLogin };
 
 function updatedLabel(limits: ProviderRateLimits, now: number): string {
   if (limits.updatedAt <= 0) return "Rate-limit details";

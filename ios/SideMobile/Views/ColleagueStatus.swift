@@ -240,6 +240,8 @@ struct UsageSheet: View {
                     Text(entry.label).foregroundStyle(Theme.text)
                     if let error = entry.error {
                         Text(error).font(Theme.meta).foregroundStyle(Theme.delFg).lineLimit(2)
+                        // The provider's sign-in opens in a browser, on the desktop.
+                        Text("Sign in again from its row in sIDE on your Mac.").font(Theme.meta).foregroundStyle(Theme.faint)
                     }
                 }
                 Spacer()
