@@ -119,17 +119,23 @@ export async function deliverInbox(
   return sent;
 }
 
+/** How long the same accounts go unsent: a host restarted or updated in
+ * the meantime may have dropped what it was told. */
+const REPUBLISH_MS = 60_000;
+
 /** Tells the home machine where colleagues can move, when that changed
- * since `last`. Returns what it last published. */
+ * since `last` or a minute went by. Returns what it last published. */
 export async function publishAccounts(
   request: Request,
   home: RemoteMachine,
   accounts: ColleagueAccounts,
-  last: string | undefined,
-): Promise<string> {
+  last: { text: string; at: number } | undefined,
+  now = Date.now(),
+): Promise<{ text: string; at: number }> {
   const text = JSON.stringify(accounts);
-  if (text !== last) await request(home, "employees.setAccounts", accounts);
-  return text;
+  if (last && text === last.text && now - last.at < REPUBLISH_MS) return last;
+  await request(home, "employees.setAccounts", accounts);
+  return { text, at: now };
 }
 
 /** Runs while the app is open. */
@@ -142,7 +148,7 @@ export function startColleagueInbox(
   // Each window apart, so two windows of one desktop never both send it.
   const by = crypto.randomUUID();
   let running = false;
-  let published: string | undefined;
+  let published: { text: string; at: number } | undefined;
   const run = async () => {
     if (running) return;
     running = true;

@@ -61,7 +61,7 @@ it("hands an account move to the desktop instead of a message", async () => {
   expect(delivered).toEqual(["1"]);
 });
 
-it("publishes the accounts only when they changed", async () => {
+it("publishes the accounts when they changed, and again each minute", async () => {
   const { request } = host([]);
   const accounts = {
     accounts: [{ provider: "claude", id: "default", label: "Personal" }],
@@ -69,10 +69,14 @@ it("publishes the accounts only when they changed", async () => {
     status: { a: { status: "idle" as const } },
     threads: {},
   };
-  const first = await publishAccounts(request, home, accounts, undefined);
-  await publishAccounts(request, home, accounts, first);
+  const first = await publishAccounts(request, home, accounts, undefined, 0);
+  const again = await publishAccounts(request, home, accounts, first, 30_000);
   const calls = (request as unknown as { mock: { calls: unknown[][] } }).mock.calls;
-  expect(calls.filter(([, method]) => method === "employees.setAccounts")).toHaveLength(1);
+  const sent = () => calls.filter(([, method]) => method === "employees.setAccounts").length;
+  expect(sent()).toBe(1);
+  // A minute on, the same accounts go again, for a host that restarted.
+  await publishAccounts(request, home, accounts, again, 61_000);
+  expect(sent()).toBe(2);
 });
 
 it("reports an account's plan windows once they were read", () => {

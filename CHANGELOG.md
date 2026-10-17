@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A desktop sends its Colleagues' accounts and states to the home machine again each minute even when nothing changed, so a host restarted or updated in between, which may have dropped them, gets them back within a minute.
 - Starting a new thread with a Colleague on the phone no longer flashes an empty page and goes back to the open thread. The new thread stays on screen until its first message is sent and the desktop has started it.
 - The phone app's Colleague chats show the account chip and Balanced again. The desktop's bridge to its host refused the call that publishes its accounts and Colleagues' states, so the phone only ever saw "Via your desktop"; a test now checks that every host method the app calls gets through.
 - A Colleague's chat on the phone follows its work as on the desktop: a working Colleague's chat reaches the host every few seconds instead of only once the reply is done, and the phone shows what it is doing, such as "Thinking…", below its last message.
