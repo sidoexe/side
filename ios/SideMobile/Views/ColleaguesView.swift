@@ -106,6 +106,8 @@ struct ColleagueView: View {
     @State private var thread: String?
     /// The open thread when a new one was asked for, to notice it start.
     @State private var newFrom: String?
+    /// Its first message went: the desktop is starting the new thread.
+    @State private var newSent = false
     @State private var now = Date()
     @State private var atEnd = true
 
@@ -300,7 +302,7 @@ struct ColleagueView: View {
         if let thread { params["thread"] = thread }
         if let control { params["control"] = control }
         let message = try await client.rpc("employees.post", params, as: InboxMessage.self)
-        if thread == Self.newThread { newFrom = mono?.sessionId }
+        if thread == Self.newThread { newSent = true }
         inbox.append(message)
     }
 
@@ -352,6 +354,10 @@ struct ColleagueView: View {
 
     private func select(_ next: String?) {
         guard next != thread else { return }
+        // A new thread waits for its first message, then for the desktop to
+        // open it, before the chat follows it.
+        newFrom = next == Self.newThread ? mono?.sessionId : nil
+        newSent = false
         thread = next
         chat = next == Self.newThread ? [] : nil
         items = []
@@ -367,7 +373,7 @@ struct ColleagueView: View {
                 // Read each time: its threads and their names change.
                 mono = try await client.rpc("employees.roster", as: MonoRoster.self).roster.first { $0.id == id } ?? mono
                 // The new thread started on the desktop: follow it.
-                if thread == Self.newThread, let open = mono?.sessionId, open != newFrom,
+                if thread == Self.newThread, newSent, let open = mono?.sessionId, open != newFrom,
                    !inbox.contains(where: { $0.thread == Self.newThread }) {
                     select(nil)
                 }
