@@ -100,6 +100,7 @@ struct ColleagueView: View {
     @State private var inbox: [InboxMessage] = []
     @State private var accounts: ColleagueAccounts?
     @State private var showsUsage = false
+    @State private var wasWorking = false
     @State private var now = Date()
     @State private var atEnd = true
 
@@ -155,6 +156,19 @@ struct ColleagueView: View {
                         Text("No conversation yet.").font(Theme.small).foregroundStyle(Theme.muted)
                     }
                     ForEach(items) { TranscriptItemView(item: $0) }
+                    // What it is doing on its desktop, until the next steps
+                    // of its chat arrive here.
+                    if let state = accounts?.status?[id], state.status == "working" {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.mini)
+                            Text((state.activity ?? "Thinking") + "…")
+                                .font(Theme.small)
+                                .foregroundStyle(Theme.muted)
+                                .lineLimit(1)
+                                .shimmer(true)
+                        }
+                        .transition(.opacity)
+                    }
                     ForEach(inbox) { message in
                         VStack(alignment: .trailing, spacing: 4) {
                             Text(message.account.map { "Switch to \(accountLabel($0))" } ?? message.text)
@@ -276,9 +290,11 @@ struct ColleagueView: View {
                 if let sessionId = mono?.sessionId {
                     let transcript = try await client.rpc("employees.sessionGet", ["sessionId": sessionId], as: ColleagueTranscript?.self)
                     let blocks = transcript?.blocks ?? []
-                    if blocks != chat {
+                    let working = accounts?.status?[id]?.status == "working"
+                    if blocks != chat || working != wasWorking {
                         chat = blocks
-                        items = TranscriptItem.build(blocks, running: false)
+                        wasWorking = working
+                        items = TranscriptItem.build(blocks, running: working)
                     }
                 } else if chat == nil {
                     chat = []
@@ -293,7 +309,8 @@ struct ColleagueView: View {
             } catch {
                 model.report(error)
             }
-            try? await Task.sleep(for: .seconds(2.5))
+            // Closer while it works, so its steps follow the desktop's.
+            try? await Task.sleep(for: wasWorking ? .seconds(1.2) : .seconds(2.5))
         }
     }
 }

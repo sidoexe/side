@@ -12,20 +12,26 @@ function sources(dir: string): string[] {
   });
 }
 
-// The desktop's native layer forwards only the host methods it lists, and
-// tests mock `remote_request`, so a method missing there fails only in the app.
-it("lets every host method the desktop calls through the native allowlist", () => {
+// A host method the desktop calls but its Rust bridge does not list fails
+// silently: `employees.setAccounts` once never reached the host that way.
+it("lets the desktop's bridge pass every host method the app calls", () => {
   const rust = readFileSync(join(root, "src-tauri/src/remote.rs"), "utf8");
-  const list = rust.slice(rust.indexOf("fn supported_remote_method"));
+  const listed = rust.slice(rust.indexOf("fn supported_remote_method"));
   const allowed = new Set(
-    [...list.slice(0, list.indexOf("\n}\n")).matchAll(/"([a-zA-Z.]+)"/g)].map((m) => m[1]),
+    [...listed.slice(0, listed.indexOf("\n}\n")).matchAll(/"([a-zA-Z]+\.[a-zA-Z]+)"/g)].map(
+      (match) => match[1],
+    ),
   );
   const called = new Set<string>();
   for (const file of sources(join(root, "src"))) {
     const text = readFileSync(file, "utf8");
-    for (const match of text.matchAll(/remoteRequest(?:<[^>]*>)?\(\s*[\w.]+,\s*"([a-zA-Z.]+)"/g))
+    // The method is the argument after the machine: `remoteRequest(id, "x.y"`
+    // or a wrapper's `request(home, "x.y"`.
+    for (const match of text.matchAll(
+      /\b(?:remoteRequest|request)\s*(?:<[^>]*>)?\(\s*[\w.]+\s*,\s*"([a-zA-Z]+\.[a-zA-Z]+)"/g,
+    ))
       called.add(match[1]);
   }
-  expect(called.size).toBeGreaterThan(10);
-  expect([...called].filter((method) => !allowed.has(method))).toEqual([]);
+  expect(called.size).toBeGreaterThan(20);
+  expect([...called].filter((method) => !allowed.has(method)).sort()).toEqual([]);
 });

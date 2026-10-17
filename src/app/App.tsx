@@ -2417,6 +2417,7 @@ function Workspace({
     prefetchProjectFiles(gitCwd);
   }, [gitCwd]);
 
+  const busyMonoPersistAt = useRef(new Map<string, number>());
   const persistSession = useCallback((session: Session | undefined) => {
     if (
       !session ||
@@ -2474,6 +2475,20 @@ function Workspace({
         shouldPersistSession(session)
       ) {
         persistSession(session);
+      }
+      // A Colleague's chat is read on the phone from its home machine. While
+      // it works, it is written every few seconds, so the phone sees its
+      // steps as they come rather than only the finished reply.
+      if (
+        session.busy &&
+        isMonoSession(session.id) &&
+        shouldPersistSession(session)
+      ) {
+        const now = Date.now();
+        if (now - (busyMonoPersistAt.current.get(session.id) ?? 0) >= 4_000) {
+          busyMonoPersistAt.current.set(session.id, now);
+          persistSession(session);
+        }
       }
       if (
         shouldPersistSession(session) &&

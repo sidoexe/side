@@ -435,6 +435,8 @@ fn supported_remote_method(method: &str) -> bool {
             | "employees.waiting"
             | "employees.take"
             | "employees.delivered"
+            | "employees.accounts"
+            | "employees.setAccounts"
             | "employees.sessionUpsert"
             | "employees.sessionGet"
             | "employees.sessionPage"
