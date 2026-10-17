@@ -18,6 +18,7 @@ struct RootView: View {
                             case .colleagues: ColleaguesView()
                             case .colleague(let id): ColleagueView(id: id)
                             case .browse: FolderBrowserView()
+                            case .webApp(let app): WebAppView(app: app)
                             }
                         }
                 }
@@ -46,6 +47,7 @@ struct HomeView: View {
     @Environment(AppModel.self) private var model
     @AppStorage("home.showArchived") private var showArchived = false
     @State private var filter = ""
+    @State private var webApps: [HostWebApp] = []
     @State private var expanded: Set<String> = []
     @State private var renaming: HostSessionSummary?
     @State private var deleting: HostSessionSummary?
@@ -153,6 +155,26 @@ struct HomeView: View {
 
     @ViewBuilder
     private var links: some View {
+        // The desktop's web apps, such as a review page, signed in as there.
+        if model.can("webApps"), query.isEmpty {
+            VStack(spacing: 0) { ForEach(webApps) { app in
+                NavigationLink(value: Route.webApp(app)) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "globe").font(.system(size: 13)).frame(width: 16)
+                        Text(app.name).font(Theme.body).lineLimit(1)
+                        Spacer()
+                        Text(URL(string: app.url)?.host() ?? "").font(Theme.meta).foregroundStyle(Theme.faint).lineLimit(1)
+                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.faint)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 11)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+            } }
+            // On the stack, which is there with no app yet, so it asks once.
+            .task { webApps = (try? await model.client?.rpc("webApps.get", as: HostWebApps.self).apps) ?? webApps }
+        }
         if model.can("employees"), query.isEmpty {
             NavigationLink(value: Route.colleagues) {
                 HStack(spacing: 10) {

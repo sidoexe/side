@@ -13,6 +13,7 @@ enum Route: Hashable {
     case colleagues
     case colleague(String)
     case browse
+    case webApp(HostWebApp)
 
     var sessionId: String? {
         if case .session(let route) = self { route.sessionId } else { nil }
