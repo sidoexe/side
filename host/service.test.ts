@@ -50,6 +50,7 @@ it.each(["darwin", "linux"] as const)(
         writeFileSync(file, "existing");
       }
       const calls: string[][] = [];
+      let prints = 0;
       const notes = await uninstallService({
         platform,
         home,
@@ -59,13 +60,18 @@ it.each(["darwin", "linux"] as const)(
           // A service that is not loaded must not block cleanup.
           if (args.includes("bootout") || args.includes("disable"))
             throw new Error("not loaded");
+          // Still loaded twice after bootout, as launchd unloads it.
+          if (args[0] === "print" && ++prints > 2)
+            throw new Error("not loaded");
         },
       });
       expect(existsSync(service)).toBe(false);
       expect(readFileSync(data, "utf8")).toBe("existing");
-      if (platform === "darwin")
+      if (platform === "darwin") {
         expect(calls[0].slice(0, 2)).toEqual(["launchctl", "bootout"]);
-      else {
+        // Waits until launchd has unloaded it before the install can run.
+        expect(prints).toBe(3);
+      } else {
         expect(calls).toContainEqual([
           "systemctl",
           "--user",

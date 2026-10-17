@@ -184,10 +184,19 @@ export async function uninstallService(
       exec(command, args, { env, timeout: 30_000, maxBuffer: 128 * 1024 }));
   const ignore = () => undefined;
   if (platform === "darwin") {
-    await run("launchctl", [
-      "bootout",
-      `gui/${process.getuid!()}/${LABEL}`,
-    ]).catch(ignore);
+    const service = `gui/${process.getuid!()}/${LABEL}`;
+    await run("launchctl", ["bootout", service]).catch(ignore);
+    // bootout returns before launchd has unloaded the service. An install
+    // that runs meanwhile (as an update does) finds it still loaded, only
+    // kickstarts it, and is left with nothing once the unload completes.
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const loaded = await run("launchctl", ["print", service]).then(
+        () => true,
+        () => false,
+      );
+      if (!loaded) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
     await rm(join(home, "Library/LaunchAgents", `${LABEL}.plist`), {
       force: true,
     });
