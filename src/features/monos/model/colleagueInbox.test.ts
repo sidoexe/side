@@ -57,7 +57,7 @@ it("hands an account move to the desktop instead of a message", async () => {
     calls.push(args);
     return true;
   }, () => true);
-  expect(calls).toEqual([["a", "", "account-work", undefined]]);
+  expect(calls).toEqual([["a", "", "account-work", undefined, undefined]]);
   expect(delivered).toEqual(["1"]);
 });
 
@@ -94,5 +94,21 @@ it("hands a message for another thread to the desktop with that thread", async (
     calls.push(args);
     return true;
   }, () => true);
-  expect(calls).toEqual([["a", "hi", undefined, "t2"]]);
+  expect(calls).toEqual([["a", "hi", undefined, "t2", undefined]]);
+});
+
+it("hands a stop or a steer to the desktop with the message", async () => {
+  const { request } = host([
+    { id: "1", mono: "a", text: "", control: "stop", at: 0 },
+    { id: "2", mono: "a", text: "go", control: "steer", thread: "t2", at: 0 },
+  ]);
+  const calls: unknown[][] = [];
+  await deliverInbox(request, home, "me", async (...args) => {
+    calls.push(args);
+    return true;
+  }, () => true);
+  expect(calls).toEqual([
+    ["a", "", undefined, undefined, "stop"],
+    ["a", "go", undefined, "t2", "steer"],
+  ]);
 });

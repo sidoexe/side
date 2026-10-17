@@ -15,6 +15,8 @@ struct ComposerView<Context: View, Tools: View>: View {
     @Environment(AppModel.self) private var model
     var placeholder = "Ask, build, plan…"
     var running = false
+    /// Replaces "Queue a follow-up…" while running, where a message steers.
+    var runningPlaceholder: String?
     var disabled = false
     /// Offers the "Plan" toggle: the agent proposes a plan before building.
     var canPlan = false
@@ -87,7 +89,7 @@ struct ComposerView<Context: View, Tools: View>: View {
                     .padding(.top, 8)
                 }
             }
-            TextField(running ? "Queue a follow-up…" : placeholder, text: $text, axis: .vertical)
+            TextField(running ? (runningPlaceholder ?? "Queue a follow-up…") : placeholder, text: $text, axis: .vertical)
                 .font(.system(size: 15))
                 .lineLimit(1...10)
                 .focused($focused)

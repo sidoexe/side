@@ -365,6 +365,8 @@ struct InboxMessage: Decodable, Identifiable, Equatable {
     let account: String?
     /// The conversation it goes to, or `new`; the open one when absent.
     let thread: String?
+    /// `stop` interrupts the turn; `steer` goes into it at once.
+    let control: String?
     let at: Double
     let takenBy: String?
 }

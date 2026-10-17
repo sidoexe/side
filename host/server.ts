@@ -816,7 +816,13 @@ export function createHostServer(
             result = employees().setBackground(params.mono, params);
             break;
           case "employees.post":
-            result = employees().post(params.mono, params.text, params.account, params.thread);
+            result = employees().post(
+              params.mono,
+              params.text,
+              params.account,
+              params.thread,
+              params.control,
+            );
             break;
           case "employees.accounts":
             result = employees().accounts();

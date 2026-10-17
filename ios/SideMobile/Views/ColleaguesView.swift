@@ -101,6 +101,7 @@ struct ColleagueView: View {
     @State private var accounts: ColleagueAccounts?
     @State private var showsUsage = false
     @State private var wasWorking = false
+    @State private var stopping = false
     /// The thread shown: nil follows the open one, `new` starts another.
     @State private var thread: String?
     /// The open thread when a new one was asked for, to notice it start.
@@ -181,7 +182,7 @@ struct ColleagueView: View {
                     }
                     ForEach(inbox.filter(isShown)) { message in
                         VStack(alignment: .trailing, spacing: 4) {
-                            Text(message.account.map { "Switch to \(accountLabel($0))" } ?? message.text)
+                            Text(message.account.map { "Switch to \(accountLabel($0))" } ?? (message.control == "stop" ? "Stop" : message.text))
                                 .font(.system(size: 15))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
@@ -206,11 +207,16 @@ struct ColleagueView: View {
                         JumpToEnd { withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
                     }
                     if canWrite {
+                        // While it works a message steers the turn, and stop interrupts it.
+                        let working = shownState?.status == "working"
                         ComposerView(
                             placeholder: thread == Self.newThread ? "Start a new thread with \(mono?.displayName ?? "")" : "Message \(mono?.displayName ?? "")",
+                            running: working,
+                            runningPlaceholder: "Steer \(mono?.displayName ?? "")…",
                             allowsAttachments: false,
-                            hint: "Via your desktop",
-                            onSend: { outgoing in try await post(outgoing.text) },
+                            hint: working ? nil : "Via your desktop",
+                            onStop: stopping ? nil : { Task { await stop() } },
+                            onSend: { outgoing in try await post(outgoing.text, control: working ? "steer" : nil) },
                             context: { EmptyView() },
                             tools: { accountChip }
                         )
@@ -282,10 +288,17 @@ struct ColleagueView: View {
         return "Waiting for a desktop…"
     }
 
-    private func post(_ text: String) async throws {
+    private func stop() async {
+        stopping = true
+        defer { stopping = false }
+        do { try await post("", control: "stop") } catch { model.report(error) }
+    }
+
+    private func post(_ text: String, control: String? = nil) async throws {
         guard let client = model.client else { return }
         var params: [String: Any] = ["mono": id, "text": text]
         if let thread { params["thread"] = thread }
+        if let control { params["control"] = control }
         let message = try await client.rpc("employees.post", params, as: InboxMessage.self)
         if thread == Self.newThread { newFrom = mono?.sessionId }
         inbox.append(message)

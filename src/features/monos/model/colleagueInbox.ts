@@ -20,6 +20,8 @@ export type InboxMessage = {
   account?: string;
   /** The conversation it goes to, or `new`; the open one when absent. */
   thread?: string;
+  /** `stop` interrupts the turn; `steer` sends the text into it at once. */
+  control?: "stop" | "steer";
   at: number;
 };
 
@@ -35,6 +37,7 @@ export type Deliver = (
   text: string,
   account?: string,
   thread?: string,
+  control?: "stop" | "steer",
 ) => Promise<boolean>;
 
 /** How much of a plan window is used, and when it starts over. */
@@ -99,9 +102,13 @@ export async function deliverInbox(
       held.add(message.mono);
       continue;
     }
-    const ok = await deliver(message.mono, message.text, message.account, message.thread).catch(
-      () => false,
-    );
+    const ok = await deliver(
+      message.mono,
+      message.text,
+      message.account,
+      message.thread,
+      message.control,
+    ).catch(() => false);
     if (!ok) {
       held.add(message.mono);
       continue;

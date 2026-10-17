@@ -8888,6 +8888,7 @@ function Workspace({
   const moveMonoAccountRef = useRef<
     (sessionId: string, accountId: string) => Promise<boolean>
   >(async () => false);
+  const onStopRef = useRef<(sessionId: string) => void>(() => undefined);
   const chooseMonoAccountRef = useRef<
     (sessionId: string, accountId: string) => Promise<boolean>
   >(async () => false);
@@ -8956,36 +8957,56 @@ function Workspace({
   // as if typed in this window, and so do its requests to change account.
   useEffect(() => {
     if (!monosEnabled || windowTransfer) return;
-    return startColleagueInbox(async (monoId, text, account, thread) => {
-      const mono = findMono(monoId);
-      // Another of its threads takes the message in place of the open one.
-      if (
-        mono &&
-        thread &&
-        thread !== MONO_NEW_THREAD &&
-        thread !== mono.sessionId
-      ) {
-        if (!monoThreads(mono).some((entry) => entry.id === thread))
-          return false;
-        const other = await ensureOpenSessionRef.current(thread);
-        if (!other) return false;
-        return await submitSessionRef.current(other.id, text);
-      }
-      if (mono && thread === MONO_NEW_THREAD) startMonoThread(monoId);
-      const session = await ensureMonoSession(monoId, {
-        home: homeDir,
-        load: (id) => ensureOpenSessionRef.current(id),
-        create: newDefaultSession,
-        add: (created) => {
-          sessionsRef.current = [...sessionsRef.current, created];
-          setSessions(sessionsRef.current);
-        },
-      });
-      if (!session) return false;
-      if (account)
-        return await chooseMonoAccountRef.current(session.id, account);
-      return await submitSessionRef.current(session.id, text);
-    }, colleagueAccounts);
+    return startColleagueInbox(
+      async (monoId, text, account, thread, control) => {
+        const mono = findMono(monoId);
+        // A stop interrupts the turn; a steer goes into it at once, as the
+        // composer's own steer does. Anything else follows the user's setting.
+        const send = async (sessionId: string): Promise<boolean> => {
+          if (control === "stop") {
+            if (
+              sessionsRef.current.find((entry) => entry.id === sessionId)?.busy
+            )
+              onStopRef.current(sessionId);
+            return true;
+          }
+          return !!(await submitSessionRef.current(
+            sessionId,
+            text,
+            [],
+            control === "steer" ? { followUpBehavior: "steer" } : undefined,
+          ));
+        };
+        // Another of its threads takes the message in place of the open one.
+        if (
+          mono &&
+          thread &&
+          thread !== MONO_NEW_THREAD &&
+          thread !== mono.sessionId
+        ) {
+          if (!monoThreads(mono).some((entry) => entry.id === thread))
+            return false;
+          const other = await ensureOpenSessionRef.current(thread);
+          if (!other) return false;
+          return await send(other.id);
+        }
+        if (mono && thread === MONO_NEW_THREAD) startMonoThread(monoId);
+        const session = await ensureMonoSession(monoId, {
+          home: homeDir,
+          load: (id) => ensureOpenSessionRef.current(id),
+          create: newDefaultSession,
+          add: (created) => {
+            sessionsRef.current = [...sessionsRef.current, created];
+            setSessions(sessionsRef.current);
+          },
+        });
+        if (!session) return false;
+        if (account)
+          return await chooseMonoAccountRef.current(session.id, account);
+        return await send(session.id);
+      },
+      colleagueAccounts,
+    );
   }, [monosEnabled, windowTransfer]);
 
   const appReceipts = useRef(
@@ -10588,6 +10609,7 @@ function Workspace({
     },
     [flushHarnessEvents],
   );
+  onStopRef.current = onStop;
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {

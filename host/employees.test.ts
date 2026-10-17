@@ -183,3 +183,12 @@ it("addresses a message to one of an employee's conversations, or a new one", ()
   store.setAccounts({ accounts: [], current: {}, threads: { "thread-2": { status: "working" } } });
   expect(store.accounts()?.threads).toEqual({ "thread-2": { status: "working" } });
 });
+
+it("carries a stop or a steer for the desktop to apply to the turn", () => {
+  const { store } = employees();
+  store.saveRoster([{ id: "m" }], 0);
+  expect(store.post("m", "", undefined, undefined, "stop")).toMatchObject({ control: "stop", text: "" });
+  expect(store.post("m", "focus on mobile", undefined, "t2", "steer")).toMatchObject({ control: "steer", thread: "t2" });
+  expect(() => store.post("m", "", undefined, undefined, "steer")).toThrow("Write a message first");
+  expect(() => store.post("m", "x", undefined, undefined, "explode")).toThrow("Invalid control");
+});

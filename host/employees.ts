@@ -94,6 +94,8 @@ export type EmployeeInboxMessage = {
   account?: string;
   /** The conversation it goes to, or `new` to start one; the open one when absent. */
   thread?: string;
+  /** `stop` interrupts the turn; `steer` sends the text into it at once. */
+  control?: "stop" | "steer";
   at: number;
   takenBy?: string;
   takenAt?: number;
@@ -381,14 +383,23 @@ export class HostEmployees {
 
   /** Queues a message from the browser app for an employee on the roster,
    * or with `account`, a request to move it to that account. */
-  post(id: unknown, text: unknown, account?: unknown, thread?: unknown): EmployeeInboxMessage {
+  post(
+    id: unknown,
+    text: unknown,
+    account?: unknown,
+    thread?: unknown,
+    control?: unknown,
+  ): EmployeeInboxMessage {
+    if (control !== undefined && control !== "stop" && control !== "steer")
+      throw new Error("Invalid control");
     if (typeof id !== "string" || !ID.test(id)) throw new Error("Invalid employee ID");
     if (thread !== undefined && (typeof thread !== "string" || !THREAD_ID.test(thread)))
       throw new Error("Invalid conversation");
     if (account !== undefined && (typeof account !== "string" || !ACCOUNT_ID.test(account)))
       throw new Error("Invalid account");
     const body = typeof text === "string" ? text : "";
-    if (account === undefined && !body.trim()) throw new Error("Write a message first");
+    if (account === undefined && control !== "stop" && !body.trim())
+      throw new Error("Write a message first");
     if (Buffer.byteLength(body) > INBOX_TEXT_MAX) throw new Error("The message is too long");
     if (!this.roster().roster.some((entry) => (entry as { id?: unknown } | null)?.id === id))
       throw new Error("Unknown colleague");
@@ -400,6 +411,7 @@ export class HostEmployees {
       text: body,
       ...(account === undefined ? {} : { account: account as string }),
       ...(thread === undefined ? {} : { thread: thread as string }),
+      ...(control === undefined ? {} : { control: control as "stop" | "steer" }),
       at: this.now(),
     };
     this.saveInbox([...messages, message]);
