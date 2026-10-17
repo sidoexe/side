@@ -57,7 +57,7 @@ it("hands an account move to the desktop instead of a message", async () => {
     calls.push(args);
     return true;
   }, () => true);
-  expect(calls).toEqual([["a", "", "account-work"]]);
+  expect(calls).toEqual([["a", "", "account-work", undefined]]);
   expect(delivered).toEqual(["1"]);
 });
 
@@ -67,6 +67,7 @@ it("publishes the accounts only when they changed", async () => {
     accounts: [{ provider: "claude", id: "default", label: "Personal" }],
     current: { a: { provider: "claude", account: "default" } },
     status: { a: { status: "idle" as const } },
+    threads: {},
   };
   const first = await publishAccounts(request, home, accounts, undefined);
   await publishAccounts(request, home, accounts, first);
@@ -84,4 +85,14 @@ it("reports an account's plan windows once they were read", () => {
       updatedAt: 9,
     }),
   ).toEqual({ session: { used: 82, resetsAt: 5 }, weekly: { used: 59, resetsAt: null }, updatedAt: 9 });
+});
+
+it("hands a message for another thread to the desktop with that thread", async () => {
+  const { request } = host([{ id: "1", mono: "a", text: "hi", thread: "t2", at: 0 }]);
+  const calls: unknown[][] = [];
+  await deliverInbox(request, home, "me", async (...args) => {
+    calls.push(args);
+    return true;
+  }, () => true);
+  expect(calls).toEqual([["a", "hi", undefined, "t2"]]);
 });

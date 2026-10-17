@@ -135,7 +135,7 @@ struct Block: Decodable, Identifiable, Equatable {
     }
     let id: String
     let role: String
-    let text: String
+    var text: String
     let streaming: Bool?
     let attachments: [Attachment]?
     let tool: Tool?
@@ -146,6 +146,8 @@ struct Block: Decodable, Identifiable, Equatable {
     let taskList: TaskList?
     let plan: Plan?
     let notice: String?
+    /// A Colleague's emoji reaction to this message (`MonoReaction`).
+    var monoReaction: String?
 
     struct TaskList: Decodable, Equatable {
         struct Item: Decodable, Equatable {
@@ -328,6 +330,20 @@ struct Mono: Decodable, Identifiable, Hashable {
     let color: String
     let avatar: Avatar?
     let projects: [String]
+    /// Every conversation it has, each on its own topic; `sessionId` is the open one.
+    let threads: [Thread]?
+
+    struct Thread: Decodable, Hashable, Identifiable {
+        let id: String
+        let title: String?
+        let createdAt: Double?
+    }
+
+    /// Its threads, newest first; one from before threads is its only one.
+    var allThreads: [Thread] {
+        if let threads, !threads.isEmpty { return threads.sorted { ($0.createdAt ?? 0) > ($1.createdAt ?? 0) } }
+        return sessionId.map { [Thread(id: $0, title: nil, createdAt: nil)] } ?? []
+    }
 
     var displayName: String { name?.isEmpty == false ? name! : mascot.prefix(1).uppercased() + mascot.dropFirst() }
 }
@@ -347,6 +363,8 @@ struct InboxMessage: Decodable, Identifiable, Equatable {
     let text: String
     /// A request to move the colleague to this account, not a message.
     let account: String?
+    /// The conversation it goes to, or `new`; the open one when absent.
+    let thread: String?
     let at: Double
     let takenBy: String?
 }
@@ -388,6 +406,8 @@ struct ColleagueAccounts: Decodable, Equatable {
     let accounts: [Account]
     let current: [String: Current]
     let status: [String: State]?
+    /// The state of each thread its desktop has open, by its id.
+    let threads: [String: State]?
 }
 
 struct ColleagueTranscript: Decodable {

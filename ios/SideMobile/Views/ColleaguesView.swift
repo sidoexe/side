@@ -101,6 +101,10 @@ struct ColleagueView: View {
     @State private var accounts: ColleagueAccounts?
     @State private var showsUsage = false
     @State private var wasWorking = false
+    /// The thread shown: nil follows the open one, `new` starts another.
+    @State private var thread: String?
+    /// The open thread when a new one was asked for, to notice it start.
+    @State private var newFrom: String?
     @State private var now = Date()
     @State private var atEnd = true
 
@@ -130,9 +134,10 @@ struct ColleagueView: View {
                         if let mono { MonoAvatar(mono: mono, size: 16) }
                         Text(mono?.displayName ?? "Colleague").font(.system(size: 15, weight: .semibold))
                     }
-                    if let state = accounts?.status?[id], state.status != "idle" {
+                    if let state = shownState, state.status != "idle" {
                         ColleagueStatusLine(state: state).font(.system(size: 11))
                     }
+                    threadMenu
                 }
             }.flat()
         }
@@ -142,7 +147,12 @@ struct ColleagueView: View {
         .task(id: id) { await poll() }
         #if DEBUG
         // SIDE_OPEN=usage opens the usage detail on a scripted simulator run.
-        .task { if ProcessInfo.processInfo.environment["SIDE_OPEN"] == "usage" { try? await Task.sleep(for: .seconds(3)); showsUsage = true } }
+        .task {
+            let open = ProcessInfo.processInfo.environment["SIDE_OPEN"] ?? ""
+            if open == "usage" { try? await Task.sleep(for: .seconds(3)); showsUsage = true }
+            // SIDE_OPEN=thread:<id> shows that thread.
+            if open.hasPrefix("thread:") { select(String(open.dropFirst("thread:".count))) }
+        }
         #endif
     }
 
@@ -158,7 +168,7 @@ struct ColleagueView: View {
                     ForEach(items) { TranscriptItemView(item: $0) }
                     // What it is doing on its desktop, until the next steps
                     // of its chat arrive here.
-                    if let state = accounts?.status?[id], state.status == "working" {
+                    if let state = shownState, state.status == "working" {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.mini)
                             Text((state.activity ?? "Thinking") + "…")
@@ -169,7 +179,7 @@ struct ColleagueView: View {
                         }
                         .transition(.opacity)
                     }
-                    ForEach(inbox) { message in
+                    ForEach(inbox.filter(isShown)) { message in
                         VStack(alignment: .trailing, spacing: 4) {
                             Text(message.account.map { "Switch to \(accountLabel($0))" } ?? message.text)
                                 .font(.system(size: 15))
@@ -197,7 +207,7 @@ struct ColleagueView: View {
                     }
                     if canWrite {
                         ComposerView(
-                            placeholder: "Message \(mono?.displayName ?? "")",
+                            placeholder: thread == Self.newThread ? "Start a new thread with \(mono?.displayName ?? "")" : "Message \(mono?.displayName ?? "")",
                             allowsAttachments: false,
                             hint: "Via your desktop",
                             onSend: { outgoing in try await post(outgoing.text) },
@@ -274,8 +284,65 @@ struct ColleagueView: View {
 
     private func post(_ text: String) async throws {
         guard let client = model.client else { return }
-        let message = try await client.rpc("employees.post", ["mono": id, "text": text], as: InboxMessage.self)
+        var params: [String: Any] = ["mono": id, "text": text]
+        if let thread { params["thread"] = thread }
+        let message = try await client.rpc("employees.post", params, as: InboxMessage.self)
+        if thread == Self.newThread { newFrom = mono?.sessionId }
         inbox.append(message)
+    }
+
+    private static let newThread = "new"
+
+    /// The conversation on screen: the chosen one, else the open one.
+    private var shownThread: String? { thread ?? mono?.sessionId }
+
+    private var shownState: ColleagueAccounts.State? {
+        guard let shown = shownThread else { return nil }
+        if let state = accounts?.threads?[shown] { return state }
+        return shown == mono?.sessionId ? accounts?.status?[id] : nil
+    }
+
+    private func isShown(_ message: InboxMessage) -> Bool {
+        if message.account != nil { return true }
+        if thread == Self.newThread { return message.thread == Self.newThread }
+        return (message.thread ?? mono?.sessionId) == shownThread
+    }
+
+    private func title(_ entry: Mono.Thread) -> String { entry.title ?? "New conversation" }
+
+    /// Its conversations, each on its own topic, and a new one.
+    @ViewBuilder private var threadMenu: some View {
+        if let mono, !mono.allThreads.isEmpty {
+            Menu {
+                Button { select(Self.newThread) } label: { Label("New thread", systemImage: "plus") }
+                Divider()
+                ForEach(mono.allThreads) { entry in
+                    let working = accounts?.threads?[entry.id]?.status == "working"
+                    Button { select(entry.id == mono.sessionId ? nil : entry.id) } label: {
+                        if entry.id == shownThread { Label(title(entry), systemImage: "checkmark") }
+                        else { Text(working ? "\(title(entry)) · working" : title(entry)) }
+                    }
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Text(thread == Self.newThread ? "New thread" : mono.allThreads.first { $0.id == shownThread }.map(title) ?? "New conversation")
+                        .lineLimit(1)
+                    if mono.allThreads.count > 1 { Text("\(mono.allThreads.count)").foregroundStyle(Theme.faint) }
+                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.muted)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func select(_ next: String?) {
+        guard next != thread else { return }
+        thread = next
+        chat = next == Self.newThread ? [] : nil
+        items = []
+        wasWorking = false
     }
 
     private func poll() async {
@@ -284,17 +351,23 @@ struct ColleagueView: View {
             do {
                 // A first message gives the colleague its chat on the desktop
                 // that takes it; the roster then names it.
-                if mono?.sessionId == nil {
-                    mono = try await client.rpc("employees.roster", as: MonoRoster.self).roster.first { $0.id == id }
+                // Read each time: its threads and their names change.
+                mono = try await client.rpc("employees.roster", as: MonoRoster.self).roster.first { $0.id == id } ?? mono
+                // The new thread started on the desktop: follow it.
+                if thread == Self.newThread, let open = mono?.sessionId, open != newFrom,
+                   !inbox.contains(where: { $0.thread == Self.newThread }) {
+                    select(nil)
                 }
-                if let sessionId = mono?.sessionId {
+                if thread == Self.newThread {
+                    // Nothing to read until the desktop starts it.
+                } else if let sessionId = shownThread {
                     let transcript = try await client.rpc("employees.sessionGet", ["sessionId": sessionId], as: ColleagueTranscript?.self)
                     let blocks = transcript?.blocks ?? []
-                    let working = accounts?.status?[id]?.status == "working"
+                    let working = shownState?.status == "working"
                     if blocks != chat || working != wasWorking {
                         chat = blocks
                         wasWorking = working
-                        items = TranscriptItem.build(blocks, running: working)
+                        items = TranscriptItem.build(MonoReaction.blocks(blocks), running: working)
                     }
                 } else if chat == nil {
                     chat = []

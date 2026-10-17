@@ -18,14 +18,24 @@ export type InboxMessage = {
   text: string;
   /** A request to move the colleague to this account rather than a message. */
   account?: string;
+  /** The conversation it goes to, or `new`; the open one when absent. */
+  thread?: string;
   at: number;
 };
+
+/** What the phone sends to start a colleague's message in a new thread. */
+export const MONO_NEW_THREAD = "new";
 
 type Request = <T>(machine: RemoteMachine, method: string, params?: unknown) => Promise<T>;
 
 /** Sends the text to the colleague's chat, or with `account` moves it to
  * that account; false when it could not yet. */
-export type Deliver = (monoId: string, text: string, account?: string) => Promise<boolean>;
+export type Deliver = (
+  monoId: string,
+  text: string,
+  account?: string,
+  thread?: string,
+) => Promise<boolean>;
 
 /** How much of a plan window is used, and when it starts over. */
 export type ColleagueUsageWindow = { used: number; resetsAt: number | null };
@@ -49,6 +59,8 @@ export type ColleagueAccounts = {
   }[];
   current: Record<string, { provider: string; account: string; balanced?: boolean }>;
   status: Record<string, MonoState>;
+  /** The state of each thread this desktop has open, by its id. */
+  threads: Record<string, MonoState>;
 };
 
 /** An account's plan windows as the phone shows them; none until read once. */
@@ -87,7 +99,9 @@ export async function deliverInbox(
       held.add(message.mono);
       continue;
     }
-    const ok = await deliver(message.mono, message.text, message.account).catch(() => false);
+    const ok = await deliver(message.mono, message.text, message.account, message.thread).catch(
+      () => false,
+    );
     if (!ok) {
       held.add(message.mono);
       continue;

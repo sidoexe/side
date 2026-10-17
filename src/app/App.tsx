@@ -4,6 +4,7 @@ import {
   MONO_BALANCED_ACCOUNT,
   pickBalancedAccount,
 } from "../features/monos/model/monoBalance";
+import { MONO_NEW_THREAD } from "../features/monos/model/colleagueInbox";
 import {
   canCarryMonoAccount,
   carryMonoAccount,
@@ -571,6 +572,12 @@ import {
 import {
   createMono,
   findMono,
+  forgetMonoThread,
+  monoThreads,
+  monoThreadTitle,
+  renameMonoThread,
+  startMonoThread,
+  switchMonoThread,
   isMonoSession,
   listMonos,
   saveMonoBalanced,
@@ -4941,6 +4948,88 @@ function Workspace({
     [invalidateLoadedSession, stopSessionForRemoval],
   );
 
+  // A Colleague's threads: each a conversation on a topic of its own, all
+  // sharing its soul, memory and habits.
+  const onNewMonoThread = useCallback(
+    (monoId: string) => {
+      startMonoThread(monoId);
+      void onOpenMono(monoId);
+    },
+    [onOpenMono],
+  );
+  const onSwitchMonoThread = useCallback(
+    (monoId: string, threadId: string) => {
+      if (switchMonoThread(monoId, threadId)) void onOpenMono(monoId);
+    },
+    [onOpenMono],
+  );
+  const onRenameMonoThread = useCallback(
+    (monoId: string, threadId: string, title: string) =>
+      renameMonoThread(monoId, threadId, title),
+    [],
+  );
+  const onDeleteMonoThread = useCallback(
+    async (monoId: string, threadId: string): Promise<void> => {
+      const mono = findMono(monoId);
+      if (!mono || !monoThreads(mono).some((thread) => thread.id === threadId))
+        return;
+      if (removingSessionIds.current.has(threadId)) return;
+      removingSessionIds.current.add(threadId);
+      pendingPersist.current.delete(threadId);
+      invalidateLoadedSession(threadId);
+      try {
+        const loaded = sessionsRef.current.find(
+          (session) => session.id === threadId,
+        );
+        const stopped = loaded
+          ? ((await stopSessionForRemoval(threadId)) ?? loaded)
+          : undefined;
+        if (stopped) {
+          await Promise.all(
+            sessionChildHarnesses(stopped).map((harness) =>
+              forgetHarnessSession(harness, threadId),
+            ),
+          );
+          await flushSessionCheckpoint(threadId);
+        }
+        const imagePaths =
+          stopped?.blocks.flatMap((block) =>
+            block.role === "image" && block.image ? [block.image.path] : [],
+          ) ?? [];
+        // Deleted while still the Mono's, so its home machine's copy goes too.
+        await orchestrator.deleteSession(threadId, () =>
+          deleteSession(threadId, imagePaths),
+        );
+        forgetMonoThread(monoId, threadId);
+        sessionsRef.current = sessionsRef.current.filter(
+          (session) => session.id !== threadId,
+        );
+        setSessions(sessionsRef.current);
+        setHistory((history) =>
+          history.filter((entry) => entry.id !== threadId),
+        );
+        if (monoViewIdRef.current === threadId) void onOpenMono(monoId);
+      } finally {
+        removingSessionIds.current.delete(threadId);
+      }
+    },
+    [invalidateLoadedSession, onOpenMono, stopSessionForRemoval],
+  );
+
+  // A thread is named after the first thing asked in it, until renamed.
+  useEffect(() => {
+    for (const mono of listMonos()) {
+      for (const thread of monoThreads(mono)) {
+        if (thread.title) continue;
+        const session = sessions.find((entry) => entry.id === thread.id);
+        const asked = session?.blocks.find(
+          (block) => block.role === "user" && block.text?.trim(),
+        )?.text;
+        if (asked) renameMonoThread(mono.id, thread.id, monoThreadTitle(asked));
+      }
+    }
+  }, [sessions, monosSnap]);
+
   const onSelectHistorySession = useCallback(
     async (sessionId: string) => {
       workspaceNavigation.cancel();
@@ -5797,27 +5886,32 @@ function Workspace({
     [onRemoveHistorySession],
   );
 
-  /** Deletes the Mono's conversation, then the Mono. Its files stay on disk. */
+  /** Deletes the Mono's conversations, then the Mono. Its files stay on disk. */
   const onDeleteMono = useCallback(
     async (monoId: string) => {
       const mono = findMono(monoId);
       if (!mono) return;
       const { name } = monoLook(mono);
       const confirmed = await ask(
-        `Delete ${name}? Its conversation will be deleted and its habits stop. This can’t be undone.`,
+        `Delete ${name}? Its conversations will be deleted and its habits stop. This can’t be undone.`,
         { title: "sIDE", kind: "warning" },
       );
       if (!confirmed) return;
-      if (mono.sessionId) {
-        if (monoViewIdRef.current === mono.sessionId) closeMonoView();
+      if (mono.sessionId && monoViewIdRef.current === mono.sessionId)
+        closeMonoView();
+      // Every thread goes, the open one last so a failure leaves it shown.
+      const threads = monoThreads(mono)
+        .map((thread) => thread.id)
+        .sort(
+          (a, b) => Number(a === mono.sessionId) - Number(b === mono.sessionId),
+        );
+      for (const threadId of threads) {
         if (
-          sessionsRef.current.some(
-            (session) => session.id === mono.sessionId,
-          ) ||
-          history.some((entry) => entry.id === mono.sessionId)
+          sessionsRef.current.some((session) => session.id === threadId) ||
+          history.some((entry) => entry.id === threadId)
         ) {
           const removed = await onRemoveHistorySession(
-            mono.sessionId,
+            threadId,
             "delete",
             true,
           );
@@ -8816,6 +8910,17 @@ function Workspace({
         };
       }),
     ),
+    // Every thread this window has open, so the phone shows the one it reads.
+    threads: Object.fromEntries(
+      listMonos().flatMap((mono) =>
+        monoThreads(mono).flatMap((thread) => {
+          const session = sessionsRef.current.find(
+            (entry) => entry.id === thread.id,
+          );
+          return session ? [[thread.id, monoState(session)]] : [];
+        }),
+      ),
+    ),
     status: Object.fromEntries(
       listMonos().map((mono) => {
         const session = mono.sessionId
@@ -8851,7 +8956,22 @@ function Workspace({
   // as if typed in this window, and so do its requests to change account.
   useEffect(() => {
     if (!monosEnabled || windowTransfer) return;
-    return startColleagueInbox(async (monoId, text, account) => {
+    return startColleagueInbox(async (monoId, text, account, thread) => {
+      const mono = findMono(monoId);
+      // Another of its threads takes the message in place of the open one.
+      if (
+        mono &&
+        thread &&
+        thread !== MONO_NEW_THREAD &&
+        thread !== mono.sessionId
+      ) {
+        if (!monoThreads(mono).some((entry) => entry.id === thread))
+          return false;
+        const other = await ensureOpenSessionRef.current(thread);
+        if (!other) return false;
+        return await submitSessionRef.current(other.id, text);
+      }
+      if (mono && thread === MONO_NEW_THREAD) startMonoThread(monoId);
       const session = await ensureMonoSession(monoId, {
         home: homeDir,
         load: (id) => ensureOpenSessionRef.current(id),
@@ -13189,7 +13309,25 @@ function Workspace({
       tabs={monoCovers ? NO_TITLE_TABS : titleTabs}
       mono={
         monoCovers && monoViewMono && monoViewSession
-          ? { look: monoLook(monoViewMono), state: monoState(monoViewSession) }
+          ? {
+              look: monoLook(monoViewMono),
+              state: monoState(monoViewSession),
+              threads: {
+                threads: monoThreads(monoViewMono).map((thread) => ({
+                  ...thread,
+                  busy: !!sessions.find((entry) => entry.id === thread.id)
+                    ?.busy,
+                })),
+                current: monoViewSession.id,
+                onSelect: (threadId) =>
+                  onSwitchMonoThread(monoViewMono.id, threadId),
+                onNew: () => onNewMonoThread(monoViewMono.id),
+                onRename: (threadId, title) =>
+                  onRenameMonoThread(monoViewMono.id, threadId, title),
+                onDelete: (threadId) =>
+                  void onDeleteMonoThread(monoViewMono.id, threadId),
+              },
+            }
           : undefined
       }
       onToggleMonoOverview={

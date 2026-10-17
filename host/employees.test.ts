@@ -173,3 +173,13 @@ it("queues an account move for a desktop and keeps the accounts it offers", () =
   });
   expect(() => store.setAccounts({ accounts: "no" })).toThrow("Invalid accounts");
 });
+
+it("addresses a message to one of an employee's conversations, or a new one", () => {
+  const { store } = employees();
+  store.saveRoster([{ id: "m" }], 0);
+  expect(store.post("m", "hi", undefined, "thread-2")).toMatchObject({ text: "hi", thread: "thread-2" });
+  expect(store.post("m", "start", undefined, "new")).toMatchObject({ thread: "new" });
+  expect(() => store.post("m", "hi", undefined, "../x")).toThrow("Invalid conversation");
+  store.setAccounts({ accounts: [], current: {}, threads: { "thread-2": { status: "working" } } });
+  expect(store.accounts()?.threads).toEqual({ "thread-2": { status: "working" } });
+});

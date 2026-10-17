@@ -181,6 +181,14 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: r
   padding: 8px 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .user-message.draft { border-style: dashed; background: none; }
+.user-message { position: relative; }
+/* A colleague's emoji reaction, pinned to the message it answers. */
+.mono-reaction {
+  position: absolute; top: -10px; left: -10px; z-index: 1; display: grid; place-items: center;
+  height: 22px; padding: 0 7px; border-radius: 8px; font-size: 11px; line-height: 1;
+  background: color-mix(in srgb, var(--bg) 80%, var(--text)); backdrop-filter: blur(14px);
+  box-shadow: 0 0 0 0.5px var(--stroke-strong), 0 2px 6px rgb(0 0 0 / 0.28);
+}
 .attachments { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .prose { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .md > :first-child { margin-top: 0; }

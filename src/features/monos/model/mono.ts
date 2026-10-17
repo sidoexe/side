@@ -36,10 +36,22 @@ export type MonoAvatar =
   | { kind: "emoji"; value: string }
   | { kind: "icon"; value: string };
 
+/** One of a Mono's conversations, each on a topic of its own. */
+export type MonoThread = {
+  /** The conversation's session id. */
+  id: string;
+  /** Set from its first message, or by the user. */
+  title?: string;
+  createdAt: number;
+};
+
 export type Mono = {
   id: string;
-  /** Its conversation; absent until it is first opened. */
+  /** The conversation open now; absent until it is first opened. */
   sessionId?: string;
+  /** Every conversation it has, the open one too. They share its soul,
+   * memory and habits; each keeps its own context. */
+  threads?: MonoThread[];
   /** Replaces the mascot's own name. */
   name?: string;
   mascot: string;
@@ -189,9 +201,41 @@ function parseMono(value: unknown): Mono | undefined {
     ...(entry.useSidebarFolders === true ? { useSidebarFolders: true } : {}),
     ...(entry.localOnly === true ? { localOnly: true } : {}),
     ...(entry.balancedAccounts === true ? { balancedAccounts: true } : {}),
+    ...(parseThreads(entry.threads, sessionId)),
     ...(instructions ? { instructions } : {}),
     ...(legacyProject ? { legacyProject } : {}),
   };
+}
+
+function parseThreads(value: unknown, sessionId: string | undefined): { threads?: MonoThread[] } {
+  if (!Array.isArray(value)) return {};
+  const seen = new Set<string>();
+  const threads = value.flatMap((item): MonoThread[] => {
+    const entry = record(item);
+    if (typeof entry.id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(entry.id)) return [];
+    if (seen.has(entry.id)) return [];
+    seen.add(entry.id);
+    const title = typeof entry.title === "string" ? entry.title.trim().slice(0, 120) : "";
+    return [
+      {
+        id: entry.id,
+        ...(title ? { title } : {}),
+        createdAt: typeof entry.createdAt === "number" ? entry.createdAt : 0,
+      },
+    ];
+  });
+  if (sessionId && !seen.has(sessionId)) threads.push({ id: sessionId, createdAt: 0 });
+  return threads.length ? { threads } : {};
+}
+
+/** A Mono's conversations, newest first; one that predates threads is its only one. */
+export function monoThreads(mono: Pick<Mono, "sessionId" | "threads">): MonoThread[] {
+  const threads = mono.threads?.length
+    ? mono.threads
+    : mono.sessionId
+      ? [{ id: mono.sessionId, createdAt: 0 }]
+      : [];
+  return [...threads].sort((a, b) => b.createdAt - a.createdAt);
 }
 
 function parseAvatar(value: unknown): MonoAvatar | undefined {
@@ -226,8 +270,13 @@ export function findMono(id: string): Mono | undefined {
 }
 
 /** The Mono whose conversation this is. */
+/** The Mono a conversation belongs to, whichever of its threads it is. */
 export function monoForSession(sessionId: string): Mono | undefined {
-  return listMonos().find((mono) => mono.sessionId === sessionId);
+  return listMonos().find(
+    (mono) =>
+      mono.sessionId === sessionId ||
+      !!mono.threads?.some((thread) => thread.id === sessionId),
+  );
 }
 
 export function isMonoSession(sessionId: string): boolean {
@@ -336,8 +385,77 @@ export function reorderMonos(ids: readonly string[]): void {
   );
 }
 
+/** Opens a conversation as the Mono's current one, adding it to its threads. */
 export function saveMonoSessionId(monoId: string, sessionId: string): void {
-  updateMono(monoId, (mono) => ({ ...mono, sessionId }));
+  updateMono(monoId, (mono) => {
+    const threads = monoThreads(mono);
+    return {
+      ...mono,
+      sessionId,
+      threads: threads.some((thread) => thread.id === sessionId)
+        ? threads
+        : [{ id: sessionId, createdAt: Date.now() }, ...threads],
+    };
+  });
+}
+
+/** Leaves the open conversation in its threads; the next open starts a new one. */
+export function startMonoThread(monoId: string): void {
+  updateMono(monoId, ({ sessionId: _open, ...mono }) => ({
+    ...mono,
+    threads: monoThreads({ ...mono, sessionId: _open }),
+  }));
+}
+
+/** Opens one of the Mono's own threads; false for any other session. */
+export function switchMonoThread(monoId: string, threadId: string): boolean {
+  const mono = findMono(monoId);
+  if (!mono || !monoThreads(mono).some((thread) => thread.id === threadId)) return false;
+  updateMono(monoId, (current) => ({
+    ...current,
+    sessionId: threadId,
+    threads: monoThreads(current),
+  }));
+  return true;
+}
+
+/** A thread's name from the first thing asked in it: its first line, short. */
+export function monoThreadTitle(text: string): string {
+  const line =
+    text
+      .split("\n")
+      .map((part) => part.replace(/[#*_`>]+/g, "").trim())
+      .find(Boolean) ?? "";
+  return line.length > 48 ? `${line.slice(0, 47).trimEnd()}…` : line;
+}
+
+export function renameMonoThread(monoId: string, threadId: string, title: string): void {
+  const clean = title.trim().slice(0, 120);
+  updateMono(monoId, (mono) => ({
+    ...mono,
+    threads: monoThreads(mono).map((thread) => {
+      if (thread.id !== threadId) return thread;
+      const { title: _title, ...untitled } = thread;
+      return clean ? { ...untitled, title: clean } : untitled;
+    }),
+  }));
+}
+
+/**
+ * Drops a thread from the Mono. When it was the open one, the newest other
+ * thread opens, or none, and the next open starts a fresh conversation.
+ */
+export function forgetMonoThread(monoId: string, threadId: string): void {
+  updateMono(monoId, (mono) => {
+    const threads = monoThreads(mono).filter((thread) => thread.id !== threadId);
+    const { sessionId, threads: _old, ...rest } = mono;
+    const open = sessionId === threadId ? threads[0]?.id : sessionId;
+    return {
+      ...rest,
+      ...(open ? { sessionId: open } : {}),
+      ...(threads.length ? { threads } : {}),
+    };
+  });
 }
 
 export function saveMonoBalanced(monoId: string, balanced: boolean): void {

@@ -1,5 +1,9 @@
 import { ColleagueAvatar } from "../../features/monos/ui/ColleagueAvatar";
 import {
+  MonoThreadMenu,
+  type MonoThreadMenuProps,
+} from "../../features/monos/ui/MonoThreadMenu";
+import {
   CheckCircle,
   ChevronLeft,
   ChevronRight,
@@ -98,7 +102,7 @@ type Props = {
    * The Mono filling the main area. It takes the tabs' place, and nothing
    * project-scoped belongs beside it.
    */
-  mono?: { look: MonoLook; state: MonoState };
+  mono?: { look: MonoLook; state: MonoState; threads?: MonoThreadMenuProps };
   /** Shows or hides the Mono's overview panel beside its chat. */
   onToggleMonoOverview?: () => void;
   monoOverviewOpen?: boolean;
@@ -663,49 +667,48 @@ function TitleBarComponent({
   const { displayed, setTabNode, finishMotion } = useTabCloseMotion(tabs);
   const tabStripRef = useRef<HTMLDivElement | null>(null);
   const paneDropArmed = useRef(false);
-  const externalTabDrop = useMemo<ReorderExternalDrop<string> | undefined>(
-    () => {
-      // A sideways drag sags, so only a deliberate pull below the tab bar
-      // targets a pane. Once armed it stays armed until the pointer is back
-      // over the tabs.
-      const pulledBelowTabs = (event: PointerEvent) => {
-        const bottom = tabStripRef.current?.getBoundingClientRect().bottom ?? 0;
-        if (event.clientY <= bottom) paneDropArmed.current = false;
-        else if (event.clientY >= bottom + PANE_DROP_PULL)
-          paneDropArmed.current = true;
-        return paneDropArmed.current;
-      };
-      return onPlaceOnPane
-        ? {
-            onMove: (tabId, event) => {
-              if (tabId === activeId || !pulledBelowTabs(event)) {
-                setExternalPaneDrop(null);
-                return false;
-              }
-              const over = paneDropFromPoint(event.clientX, event.clientY);
-              setExternalPaneDrop({
-                fromId: tabId,
-                overId: over?.id ?? null,
-                edge: over?.edge ?? "left",
-              });
-              return over != null;
-            },
-            onDrop: (tabId, event) => {
-              if (tabId === activeId || !pulledBelowTabs(event)) return false;
-              const over = paneDropFromPoint(event.clientX, event.clientY);
-              if (!over) return false;
-              onPlaceOnPane(tabId, over.id, over.edge);
-              return true;
-            },
-            onEnd: () => {
-              paneDropArmed.current = false;
+  const externalTabDrop = useMemo<
+    ReorderExternalDrop<string> | undefined
+  >(() => {
+    // A sideways drag sags, so only a deliberate pull below the tab bar
+    // targets a pane. Once armed it stays armed until the pointer is back
+    // over the tabs.
+    const pulledBelowTabs = (event: PointerEvent) => {
+      const bottom = tabStripRef.current?.getBoundingClientRect().bottom ?? 0;
+      if (event.clientY <= bottom) paneDropArmed.current = false;
+      else if (event.clientY >= bottom + PANE_DROP_PULL)
+        paneDropArmed.current = true;
+      return paneDropArmed.current;
+    };
+    return onPlaceOnPane
+      ? {
+          onMove: (tabId, event) => {
+            if (tabId === activeId || !pulledBelowTabs(event)) {
               setExternalPaneDrop(null);
-            },
-          }
-        : undefined;
-    },
-    [activeId, onPlaceOnPane],
-  );
+              return false;
+            }
+            const over = paneDropFromPoint(event.clientX, event.clientY);
+            setExternalPaneDrop({
+              fromId: tabId,
+              overId: over?.id ?? null,
+              edge: over?.edge ?? "left",
+            });
+            return over != null;
+          },
+          onDrop: (tabId, event) => {
+            if (tabId === activeId || !pulledBelowTabs(event)) return false;
+            const over = paneDropFromPoint(event.clientX, event.clientY);
+            if (!over) return false;
+            onPlaceOnPane(tabId, over.id, over.edge);
+            return true;
+          },
+          onEnd: () => {
+            paneDropArmed.current = false;
+            setExternalPaneDrop(null);
+          },
+        }
+      : undefined;
+  }, [activeId, onPlaceOnPane]);
   const sortable = useAnimatedReorder(tabIds, onReorder, "x", externalTabDrop);
   const paneToTabDrop = useExternalTitleTabDrop();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
@@ -1042,7 +1045,11 @@ function TitleBarComponent({
         }`}
       >
         {mono ? (
-          <MonoTitle look={mono.look} state={mono.state} />
+          <MonoTitle
+            look={mono.look}
+            state={mono.state}
+            threads={mono.threads}
+          />
         ) : (
           <div
             className="relative h-full min-w-0 flex-1 overflow-hidden"
@@ -1168,7 +1175,15 @@ function TitleBarComponent({
 export const TitleBar = memo(TitleBarComponent);
 
 /** In a Mono's view the title bar names it and shows its status. */
-function MonoTitle({ look, state }: { look: MonoLook; state: MonoState }) {
+function MonoTitle({
+  look,
+  state,
+  threads,
+}: {
+  look: MonoLook;
+  state: MonoState;
+  threads?: MonoThreadMenuProps;
+}) {
   return (
     <div
       data-mono-title
@@ -1193,6 +1208,12 @@ function MonoTitle({ look, state }: { look: MonoLook; state: MonoState }) {
       >
         {MONO_STATUS_LABEL[state.status]}
       </span>
+      {threads ? (
+        <>
+          <span className="shrink-0 text-content/20">/</span>
+          <MonoThreadMenu {...threads} />
+        </>
+      ) : null}
     </div>
   );
 }

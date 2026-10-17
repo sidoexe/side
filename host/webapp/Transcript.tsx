@@ -121,6 +121,7 @@ function Item({ block, canDecide, onDecide, editableId, onEdit, onBuild }: ItemA
     case "user":
       return (
         <div className={`user-message${block.draft ? " draft" : ""}`}>
+          {block.monoReaction ? <span className="mono-reaction">{block.monoReaction}</span> : null}
           {block.text}
           {block.attachments?.length ? (
             <div className="attachments">{block.attachments.map((a) => a.name).join(", ")}</div>

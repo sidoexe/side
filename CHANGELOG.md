@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Colleagues have **threads**: several conversations, each on a topic of its own, that share the Colleague's soul, memory and habits. The title bar names the open thread beside the Colleague; its menu switches to another, starts a new one, renames or deletes one, and marks those still working. A thread is named after its first message until renamed, and deleting a Colleague deletes all of them. On the phone, the Colleague's chat has the same menu: it reads any thread, shows that thread's own state, and sends a message to it or starts a new thread.
 - A Colleague's composer has an **account menu**, as a remote session's host accounts: every Claude or Codex account with its 5-hour and weekly bars and any sign-in error, a refresh, and a way to add or manage accounts. Picking one moves the Colleague there with its conversation.
 - Colleagues can run **Balanced**: on whichever account has the most weekly room, moving on to the next one with room, conversation and all, when a limit stops it. With none to spare it waits and asks again every few minutes. Picking an account by hand, here or in the usage-limit notice, turns it off.
 - The phone app's Colleague usage sheet offers Balanced too, says which account a balanced Colleague is on, and shows each account's sign-in error and both windows left.

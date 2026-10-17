@@ -5,6 +5,7 @@ import type { Automation } from "../../src/features/automations/model/automation
 import type { Mono } from "../../src/features/monos/model/mono";
 import type { Block } from "../../src/features/sessions/model/session";
 import { HarnessIcon } from "../../src/features/sessions/ui/HarnessIcon";
+import { monoReactionBlocks } from "../../src/features/monos/model/monoReaction";
 import { command, rpc } from "./api";
 import { ProjectBackground } from "./rail";
 import { Transcript } from "./Transcript";
@@ -203,7 +204,7 @@ export function ColleaguesPage({
             {tab === "chat" ? (
               chat === undefined ? <p className="muted">Loading…</p> : chat.length || inbox.length ? (
                 <>
-                  <Transcript blocks={chat} cwd="" running={false} canDecide={false} onDecide={() => undefined} />
+                  <Transcript blocks={monoReactionBlocks(chat)} cwd="" running={false} canDecide={false} onDecide={() => undefined} />
                   {inbox.map((message) => (
                     <div key={message.id} className="colleague-waiting">
                       <div className="colleague-waiting-text">{message.account ? "Switch account" : message.text}</div>

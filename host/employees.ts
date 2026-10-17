@@ -62,6 +62,7 @@ const FILE_MAX = 256 * 1024;
 const ROSTER_MAX = 512 * 1024;
 const ID = /^[A-Za-z0-9-]{1,80}$/;
 const ACCOUNT_ID = /^[A-Za-z0-9_-]{1,80}$/;
+const THREAD_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const TOPIC = /^[A-Za-z0-9 ._-]{1,80}$/;
 
 export const EMPLOYEE_CONFLICT = "conflict";
@@ -91,6 +92,8 @@ export type EmployeeInboxMessage = {
   text: string;
   /** Asks the desktop to move the employee to this account instead. */
   account?: string;
+  /** The conversation it goes to, or `new` to start one; the open one when absent. */
+  thread?: string;
   at: number;
   takenBy?: string;
   takenAt?: number;
@@ -103,6 +106,8 @@ export type EmployeeAccounts = {
   current: Record<string, { provider: string; account: string }>;
   /** Each employee's state on that desktop: working, waiting on the user, idle. */
   status?: Record<string, { status: string; activity?: string }>;
+  /** The same for each of their conversations that is open there, by its id. */
+  threads?: Record<string, { status: string; activity?: string }>;
   at: number;
 };
 
@@ -376,8 +381,10 @@ export class HostEmployees {
 
   /** Queues a message from the browser app for an employee on the roster,
    * or with `account`, a request to move it to that account. */
-  post(id: unknown, text: unknown, account?: unknown): EmployeeInboxMessage {
+  post(id: unknown, text: unknown, account?: unknown, thread?: unknown): EmployeeInboxMessage {
     if (typeof id !== "string" || !ID.test(id)) throw new Error("Invalid employee ID");
+    if (thread !== undefined && (typeof thread !== "string" || !THREAD_ID.test(thread)))
+      throw new Error("Invalid conversation");
     if (account !== undefined && (typeof account !== "string" || !ACCOUNT_ID.test(account)))
       throw new Error("Invalid account");
     const body = typeof text === "string" ? text : "";
@@ -392,6 +399,7 @@ export class HostEmployees {
       mono: id,
       text: body,
       ...(account === undefined ? {} : { account: account as string }),
+      ...(thread === undefined ? {} : { thread: thread as string }),
       at: this.now(),
     };
     this.saveInbox([...messages, message]);
@@ -447,7 +455,8 @@ export class HostEmployees {
     const current = record?.current && typeof record.current === "object" ? record.current : undefined;
     if (!accounts || !current) throw new Error("Invalid accounts");
     const status = record?.status && typeof record.status === "object" ? record.status : {};
-    const text = JSON.stringify({ accounts, current, status, at: this.now() });
+    const threads = record?.threads && typeof record.threads === "object" ? record.threads : {};
+    const text = JSON.stringify({ accounts, current, status, threads, at: this.now() });
     if (Buffer.byteLength(text) > ACCOUNTS_MAX) throw new Error("Too many accounts");
     mkdirSync(this.root, { recursive: true, mode: 0o700 });
     writeAtomic(join(this.root, ACCOUNTS_FILE), text);
