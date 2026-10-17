@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The host on this Mac, which the phone and the desktop's sessions reach, **keeps running after it updates itself**. An update could find the old host still answering while it stopped, skip registering the login service, and leave nothing running once it exited: the phone got HTTP 502 and the desktop listed no history and started no chat until the host was reinstalled.
 - A session stays **done until you mark it checked**, the same way on the desktop, on a host's projects and on the phone:
   - A host turn cut short because the host stopped, restarted or updated is done, instead of ending neither working nor done, as if checked.
   - Opening a host session from its done card under the projects no longer marks it checked on every device. Only **Checked** does, as for a local session; that button also clears it at once instead of after the host answers.

@@ -217,11 +217,18 @@ export async function uninstallService(
 export async function installService(
   options: ServiceOptions,
 ): Promise<{ port: number; pid: number }> {
+  const detached = process.platform === "linux" && !systemdBooted();
   // Never replace a running host: connecting must not interrupt agent turns.
-  try {
-    return await connectionInfo(options.directory);
-  } catch {
-    /* install/start */
+  // Only a detached host may short-circuit here. A host that still answers
+  // while an upgrade's uninstall stops it would otherwise leave no service
+  // registered, so nothing starts once it exits; kickstart and enable --now
+  // leave a running service alone.
+  if (detached) {
+    try {
+      return await connectionInfo(options.directory);
+    } catch {
+      /* install/start */
+    }
   }
   const path = [
     ...new Set([
@@ -264,7 +271,7 @@ export async function installService(
       await writeFile(file, launchAgent(options, path), { mode: 0o600 });
       await run("launchctl", ["bootstrap", domain, file]);
     }
-  } else if (process.platform === "linux" && !systemdBooted()) {
+  } else if (detached) {
     startDetached(options, path);
   } else if (process.platform === "linux") {
     const user = userInfo();
@@ -312,7 +319,7 @@ export async function installService(
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   throw new Error(
-    process.platform === "linux" && !systemdBooted()
+    detached
       ? `The host did not start. Check ${join(options.directory, "host.log")}.`
       : `The host service was installed but did not start. Check ${join(options.directory, "host.log")}.`,
   );
