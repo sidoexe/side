@@ -117,7 +117,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ios-packages
-          path: ios/build/SideMobile.ipa
+          path: |
+            ios/build/SideMobile.ipa
+            ios/build/SideMobile.json
           if-no-files-found: error
 
   release:

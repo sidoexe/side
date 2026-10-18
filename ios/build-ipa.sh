@@ -20,7 +20,7 @@ case "${1:-}" in
   --publish) UNSIGNED=true; PUBLISH=true ;;
 esac
 xcodegen generate --quiet
-rm -rf build/SideMobile.xcarchive build/export build/Payload build/SideMobile.ipa
+rm -rf build/SideMobile.xcarchive build/export build/Payload build/SideMobile.ipa build/SideMobile.json
 
 if [ "$UNSIGNED" = true ]; then
   # A build number that only grows, so an installed copy knows it is older.
@@ -33,9 +33,11 @@ if [ "$UNSIGNED" = true ]; then
   cp -R build/SideMobile.xcarchive/Products/Applications/SideMobile.app build/Payload/
   (cd build && zip -qry SideMobile.ipa Payload)
   rm -rf build/Payload
+  VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/SideMobile.xcarchive/Products/Applications/SideMobile.app/Info.plist)
+  # Released beside the IPA: installed copies compare their build with it.
+  printf '{"version":"%s","build":"%s"}\n' "$VERSION" "$BUILD" > build/SideMobile.json
   if [ "$PUBLISH" = true ]; then
     DIR="${SIDE_IPA_DIR:-$HOME/.side-mobile}"
-    VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/SideMobile.xcarchive/Products/Applications/SideMobile.app/Info.plist)
     mkdir -p "$DIR"
     cp build/SideMobile.ipa "$DIR/SideMobile.ipa.tmp" && mv "$DIR/SideMobile.ipa.tmp" "$DIR/SideMobile.ipa"
     printf '{"version":"%s","build":"%s"}\n' "$VERSION" "$BUILD" > "$DIR/version.json"

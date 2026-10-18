@@ -96,6 +96,11 @@ struct HomeView: View {
               .foregroundStyle(Theme.text)
             }.flat()
         }
+        .alert("Check for updates", isPresented: Binding(get: { model.updateCheck != nil }, set: { if !$0 { model.updateCheck = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.updateCheck ?? "")
+        }
         .alert("Rename session", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             RenameField(initial: renaming?.displayName ?? "") { title in
                 if let session = renaming { Task { await model.update(session, ["title": title]) } }
@@ -116,9 +121,10 @@ struct HomeView: View {
         HStack(spacing: 8) {
             Image("side-logo").resizable().frame(width: 20, height: 20).clipShape(.rect(cornerRadius: 5))
             Text(model.host?.name ?? "sIDE").font(.system(size: 15, weight: .semibold)).lineLimit(1)
-            if let version = model.host?.version {
-                Text(version).font(Theme.monoSmall).foregroundStyle(Theme.faint)
-            }
+            // The app's own version, then the host's: they update apart.
+            Text(model.host?.version.map { "app \(AppUpdate.installedVersion) · host \($0)" } ?? "app \(AppUpdate.installedVersion)")
+                .font(Theme.monoSmall)
+                .foregroundStyle(model.update == nil ? Theme.faint : Theme.accent)
         }
         .fixedSize()
     }

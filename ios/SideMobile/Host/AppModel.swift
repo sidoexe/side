@@ -36,9 +36,12 @@ final class AppModel {
     private(set) var catalog: HostModelCatalog?
     var error: String?
     var path: [Route] = []
-    /// A newer build published next to the host (`build-ipa.sh --publish`).
+    /// A newer build: from the latest GitHub release, or one published next
+    /// to the host (`build-ipa.sh --publish`).
     private(set) var update: AppUpdate?
     private var updateCheckedAt = Date.distantPast
+    /// What the last check asked by hand found, for its alert.
+    var updateCheck: String?
 
     /// The APNs token, once iOS hands it over; sent to every host signed in to.
     private var apnsToken: String?
@@ -281,19 +284,42 @@ final class AppModel {
 
     /// Every 10 minutes at most: is there a newer build at `<host>/ipa`?
     func checkForUpdate(force: Bool = false) async {
-        guard let endpoint = connection?.endpoint, force || Date().timeIntervalSince(updateCheckedAt) > 600 else { return }
+        guard force || Date().timeIntervalSince(updateCheckedAt) > 600 else { return }
         updateCheckedAt = Date()
-        let manifest = endpoint.appending(path: "ipa/version.json")
-        var request = URLRequest(url: manifest, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
+        // Each release attaches the IPA and its build number beside it.
+        let release = URL(string: "https://github.com/sidoexe/side/releases/latest/download/")!
+        var found: [AppUpdate] = []
+        if let published = await manifest(release.appending(path: "SideMobile.json")) {
+            found.append(AppUpdate(
+                version: published.version,
+                build: published.number,
+                ipa: URL(string: "https://github.com/sidoexe/side/releases/download/v\(published.version)/SideMobile.ipa")!
+            ))
+        }
+        if let endpoint = connection?.endpoint,
+           let published = await manifest(endpoint.appending(path: "ipa/version.json")) {
+            found.append(AppUpdate(version: published.version, build: published.number, ipa: endpoint.appending(path: "ipa/SideMobile.ipa")))
+        }
+        let newest = found.max { $0.build < $1.build }
+        update = newest.flatMap { $0.build > AppUpdate.installedBuild ? $0 : nil }
+        guard force else { return }
+        if let update {
+            updateCheck = "\(update.version) is available."
+        } else if newest == nil {
+            updateCheck = "Could not reach the release to check. Try again later."
+        } else {
+            updateCheck = "sIDE \(AppUpdate.installedVersion) is up to date."
+        }
+    }
+
+    private func manifest(_ url: URL) async -> AppUpdate.Manifest? {
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let published = try? JSONDecoder().decode(AppUpdate.Manifest.self, from: data),
-              let build = Int(published.build) else { return }
-        let installed = Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") ?? 0
-        update = build > installed
-            ? AppUpdate(version: published.version, build: build, ipa: endpoint.appending(path: "ipa/SideMobile.ipa"))
-            : nil
+              published.number > 0 else { return nil }
+        return published
     }
 
     // MARK: Push
@@ -325,6 +351,13 @@ struct AppUpdate: Equatable {
     struct Manifest: Decodable {
         let version: String
         let build: String
+        var number: Int { Int(build) ?? 0 }
+    }
+    static var installedBuild: Int {
+        Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") ?? 0
+    }
+    static var installedVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     }
     let version: String
     let build: Int
