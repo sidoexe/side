@@ -121,8 +121,9 @@ struct HomeView: View {
         HStack(spacing: 8) {
             Image("side-logo").resizable().frame(width: 20, height: 20).clipShape(.rect(cornerRadius: 5))
             Text(model.host?.name ?? "sIDE").font(.system(size: 15, weight: .semibold)).lineLimit(1)
-            // The app's own version, then the host's: they update apart.
-            Text(model.host?.version.map { "app \(AppUpdate.installedVersion) · host \($0)" } ?? "app \(AppUpdate.installedVersion)")
+            // The app's own version, short enough to stay beside the
+            // toolbar's buttons; the host's is in the menu.
+            Text(AppUpdate.installedVersion)
                 .font(Theme.monoSmall)
                 .foregroundStyle(model.update == nil ? Theme.faint : Theme.accent)
         }
@@ -132,7 +133,9 @@ struct HomeView: View {
     private var menu: some View {
         Menu {
             Toggle("Show archived", isOn: $showArchived)
-            Button("Check for updates", systemImage: "arrow.down.circle") { Task { await model.checkForUpdate(force: true) } }
+            Section("App \(AppUpdate.installedVersion)" + (model.host?.version.map { " · host \($0)" } ?? "")) {
+                Button("Check for updates", systemImage: "arrow.down.circle") { Task { await model.checkForUpdate(force: true) } }
+            }
             if let endpoint = model.connection?.endpoint {
                 Section(endpoint.host() ?? endpoint.absoluteString) {
                     Button("Sign out", role: .destructive) { Task { await model.signOut() } }
