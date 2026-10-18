@@ -11,20 +11,21 @@ export const MONO_BALANCED_ACCOUNT = "auto";
 /** What one account has left, as its cached plan windows say. */
 export type AccountRoom = {
   id: string;
-  limits: Pick<ProviderRateLimits, "session" | "weekly" | "error">;
+  limits: Pick<ProviderRateLimits, "session" | "weekly" | "error" | "retry">;
 };
 
 const used = (window: ProviderRateLimits["session"], now: number) =>
   !window ? undefined : window.resetsAt != null && window.resetsAt <= now ? 0 : window.usedPercent;
 
 function candidate(account: AccountRoom, now: number): BalancedCandidate {
-  const { session, weekly, error } = account.limits;
+  const { session, weekly, error, retry } = account.limits;
   return {
     id: account.id,
     fiveHour: used(session, now),
     weekly: used(weekly, now),
     read: !!(session || weekly),
-    error: !!error,
+    // A refused reading says nothing about the account.
+    error: !!error && !retry,
   };
 }
 

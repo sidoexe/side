@@ -42,6 +42,9 @@ export type ProviderRateLimits = {
   updatedAt: number;
   error: string | null;
   status: RateLimitStatus;
+  /** The failure says nothing about the account, such as the provider
+   * limiting how often usage is read: it is read again later. */
+  retry?: boolean;
 };
 
 export const SESSION_WINDOW_MINUTES = 300;

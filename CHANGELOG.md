@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **"Claude usage request failed (429)"** no longer appears on the phone or the desktop. When Anthropic limits how often usage is read, the desktop and a host keep the last reading, with its bars, and wait five minutes before asking again, instead of showing an error and asking again at once. Such a refusal no longer takes an account out of Balanced. Balanced and the account menus reuse a reading under a minute old instead of each reading every account; **Refresh** still reads at once.
 - The phone app finds its own updates: **Check for updates** reads the latest GitHub release, where every release now attaches the IPA's build number, instead of a `/ipa` address no host served, and says whether it is up to date. A newer build shows the update banner. The header shows the app's own version instead of the host's, which updates on its own and was easy to take for the app's; the menu shows both.
 - The host on this Mac, which the phone and the desktop's sessions reach, **keeps running after it updates itself**. An update could find the old host still answering while it stopped, skip registering the login service, and leave nothing running once it exited: the phone got HTTP 502 and the desktop listed no history and started no chat until the host was reinstalled.
 - A session stays **done until you mark it checked**, the same way on the desktop, on a host's projects and on the phone:

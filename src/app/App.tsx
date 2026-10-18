@@ -9665,7 +9665,7 @@ function Workspace({
       const accounts = balancedProviderAccounts(provider);
       await Promise.all(
         accounts.map((account) =>
-          loadRateLimits(provider, account.id, true).catch(() => undefined),
+          loadRateLimits(provider, account.id, "stale").catch(() => undefined),
         ),
       );
       const best = pickBalancedAccount(

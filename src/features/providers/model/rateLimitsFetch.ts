@@ -160,6 +160,23 @@ export async function fetchClaudeRateLimits(
         result.error?.trim() || "Claude not signed in",
       );
     }
+    // Anthropic limiting reads, a server error or no network: the account
+    // itself is fine.
+    if (
+      result.httpStatus == null ||
+      result.httpStatus === 429 ||
+      result.httpStatus >= 500
+    ) {
+      return {
+        ...errorRateLimits(
+          "claude",
+          result.httpStatus === 429
+            ? "Claude limits how often usage is read; trying again in a few minutes"
+            : result.error?.trim() || "Claude usage unavailable",
+        ),
+        retry: true,
+      };
+    }
     return errorRateLimits(
       "claude",
       result.error?.trim() || "Claude usage unavailable",

@@ -97,7 +97,7 @@ describe("host accounts", () => {
     expect(accounts.pick("claude")?.account.id).toBe("a");
     // c was never read: it comes after b, however full b is.
     expect(accounts.pick("claude", ["a"])?.account.id).toBe("b");
-    now += 30_000;
+    now += 60_000;
     await accounts.refreshUsage();
     expect(accounts.usage().a.error).toMatch(/expired/);
     expect(accounts.pick("claude")?.account.id).toBe("b");

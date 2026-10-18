@@ -47,6 +47,8 @@ export type AccountUsage = {
   updatedAt?: number;
   /** Why the last refresh could not read this account's usage. */
   error?: string;
+  /** No reading before this, after one failed. */
+  retryAt?: number;
 };
 
 /** What the desktop's account picker shows for a host. */
@@ -64,7 +66,9 @@ export type HostAccountSummary = {
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
 const PROVIDERS = new Set<AccountProvider>(["claude", "codex"]);
 /** A refresh asked for sooner than this after the last reading reuses it. */
-const REFRESH_MIN_MS = 20_000;
+const REFRESH_MIN_MS = 60_000;
+/** After a failed reading, or Anthropic limiting reads, wait this long. */
+const RETRY_AFTER_MS = 5 * 60_000;
 /** When Claude gives no reset time, try a limited account again after this. */
 const UNKNOWN_RESET_MS = 60 * 60 * 1000;
 
@@ -270,16 +274,22 @@ export class HostAccounts {
    */
   async refreshUsage(): Promise<void> {
     const usage = this.usage();
-    const due = this.config().accounts.filter(
-      (account) =>
-        !(usage[account.id]?.updatedAt && this.now() - usage[account.id].updatedAt! < REFRESH_MIN_MS),
-    );
+    const due = this.config().accounts.filter((account) => {
+      const entry = usage[account.id];
+      if (entry?.retryAt && entry.retryAt > this.now()) return false;
+      return !(entry?.updatedAt && this.now() - entry.updatedAt < REFRESH_MIN_MS);
+    });
     const readings = await Promise.all(due.map((account) => this.readUsage(account)));
     due.forEach((account, index) => {
       const reading = readings[index];
       this.writeUsage(account.id, (current) => {
-        if (!reading.ok) return { ...current, error: reading.error };
-        const { error: _error, blockedUntil, ...rest } = current;
+        // A refused read keeps the last levels and says nothing about the
+        // account, so Balanced keeps using it; a real failure says why.
+        if (!reading.ok)
+          return reading.retry
+            ? { ...current, retryAt: this.now() + RETRY_AFTER_MS }
+            : { ...current, error: reading.error, retryAt: this.now() + REFRESH_MIN_MS };
+        const { error: _error, retryAt: _retryAt, blockedUntil, ...rest } = current;
         const full = [reading.fiveHour, reading.sevenDay].some((window) => window && window.used >= 100);
         return {
           ...rest,

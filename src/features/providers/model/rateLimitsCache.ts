@@ -16,6 +16,13 @@ import {
 const snapshots = new Map<string, ProviderRateLimits>();
 const pending = new Map<string, Promise<ProviderRateLimits>>();
 const queuedRefreshes = new Map<string, Promise<ProviderRateLimits>>();
+/** No reading before this, after the provider refused one. */
+const retryAt = new Map<string, number>();
+/** A `"stale"` refresh asked for sooner than this after a reading reuses
+ * it, so Balanced and menus asking at once make one request. */
+const REFRESH_MIN_MS = 60_000;
+/** How long to leave an account alone after a refused reading. */
+const RETRY_AFTER_MS = 5 * 60_000;
 const listeners = new Set<() => void>();
 let allSnapshots: Record<string, ProviderRateLimits> = {};
 
@@ -75,7 +82,9 @@ export function setCachedRateLimits(
 export function loadRateLimits(
   provider: RateLimitProvider,
   accountId = "default",
-  force = false,
+  /** `true` reads again now, as Refresh does; `"stale"` only once the last
+   * reading is a minute old. Neither asks while the provider refuses. */
+  force: boolean | "stale" = false,
 ): Promise<ProviderRateLimits> {
   const key = keyFor(provider, accountId);
   const running = pending.get(key);
@@ -91,7 +100,16 @@ export function loadRateLimits(
     return next;
   }
   const cached = snapshots.get(key);
-  if (cached && !force) return Promise.resolve(cached);
+  const now = Date.now();
+  if (
+    cached &&
+    (!force ||
+      (retryAt.get(key) ?? 0) > now ||
+      (force === "stale" &&
+        cached.status === "ok" &&
+        now - cached.updatedAt < REFRESH_MIN_MS))
+  )
+    return Promise.resolve(cached);
 
   publish(key, fetchingRateLimits(provider, cached));
   const run = (async () => {
@@ -104,8 +122,20 @@ export function loadRateLimits(
             : provider === "devin"
               ? await fetchDevinRateLimits()
               : await fetchOpencodeGoRateLimits();
-      publish(key, result);
-      return result;
+      if (!result.retry) {
+        retryAt.delete(key);
+        publish(key, result);
+        return result;
+      }
+      // A refused reading keeps the last one, which still says how much
+      // the account has left, and waits before asking again.
+      retryAt.set(key, Date.now() + RETRY_AFTER_MS);
+      const kept =
+        cached && (cached.session || cached.weekly || cached.monthly)
+          ? { ...cached, status: "ok" as const, error: null }
+          : result;
+      publish(key, kept);
+      return kept;
     } catch (error) {
       const result = errorRateLimits(
         provider,
@@ -130,10 +160,12 @@ export function clearCachedRateLimits(
   if (provider && accountId) {
     const key = keyFor(provider, accountId);
     snapshots.delete(key);
+    retryAt.delete(key);
     const { [key]: _removed, ...rest } = allSnapshots;
     allSnapshots = rest;
   } else {
     snapshots.clear();
+    retryAt.clear();
     allSnapshots = {};
   }
   for (const listener of listeners) listener();

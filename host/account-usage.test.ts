@@ -136,6 +136,25 @@ describe("refreshing host account usage", () => {
     expect(accounts.usage().one.fiveHour).toEqual({ used: 10 });
   });
 
+  it("keeps the last levels when Anthropic limits reads, and waits before asking again", async () => {
+    let calls = 0;
+    const { accounts, later } = setup(() => {
+      calls += 1;
+      return calls === 1
+        ? { ok: true, fiveHour: { used: 10 } }
+        : { ok: false, error: "Usage unavailable (429)", retry: true };
+    });
+    await accounts.refreshUsage();
+    later(60_000);
+    await accounts.refreshUsage();
+    expect(accounts.usage().one.error).toBeUndefined();
+    expect(accounts.usage().one.fiveHour).toEqual({ used: 10 });
+    const asked = calls;
+    later(60_000);
+    await accounts.refreshUsage();
+    expect(calls).toBe(asked);
+  });
+
   it("keeps an account limited while a window is still full", async () => {
     const { accounts } = setup(() => ({ ok: true, fiveHour: { used: 100 } }));
     accounts.markBlocked("one", NOW + 3_600_000);

@@ -19,7 +19,9 @@ const KEYCHAIN_SERVICE = "Claude Code-credentials";
 
 export type UsageReading =
   | { ok: true; fiveHour?: AccountWindow; sevenDay?: AccountWindow }
-  | { ok: false; error: string };
+  /** `retry` marks a failure that says nothing about the account, such as
+   * Anthropic limiting how often usage is read: try again later. */
+  | { ok: false; error: string; retry?: boolean };
 
 type Token = { accessToken: string; expiresAt?: number };
 
@@ -104,11 +106,13 @@ export async function readClaudeUsage(
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (response.status === 401) return { ok: false, error: "Sign-in expired; reconnect this account" };
+    if (response.status === 429 || response.status >= 500)
+      return { ok: false, error: `Usage unavailable (${response.status})`, retry: true };
     if (!response.ok) return { ok: false, error: `Usage unavailable (${response.status})` };
     const body = (await response.json()) as { five_hour?: unknown; seven_day?: unknown };
     return { ok: true, fiveHour: window(body.five_hour), sevenDay: window(body.seven_day) };
   } catch {
-    return { ok: false, error: "Usage unavailable" };
+    return { ok: false, error: "Usage unavailable", retry: true };
   }
 }
 
