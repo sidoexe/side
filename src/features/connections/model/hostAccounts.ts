@@ -32,6 +32,13 @@ export async function setHostAccountBalanced(
   reloadHostAccounts(machineId);
 }
 
+/** Makes a host forget one of its accounts. */
+export async function removeHostAccount(machineId: string, accountId: string): Promise<void> {
+  const value = await remoteRequest<HostAccountSummary[]>(machineId, "accounts.remove", { accountId });
+  if (Array.isArray(value)) cached.set(machineId, value);
+  reloadHostAccounts(machineId);
+}
+
 /** The accounts a host offers, for hosts that advertise them. */
 export function useHostAccounts(
   machineId: string,

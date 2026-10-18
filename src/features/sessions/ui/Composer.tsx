@@ -294,6 +294,8 @@ type Props = {
   onUsageLimitResume?: () => void;
   onUsageLimitResumeAtReset?: (enabled: boolean) => void;
   onUsageLimitDismiss?: () => void;
+  /** Another model or account to keep going on, beside the limit notice. */
+  usageLimitPickers?: ReactNode;
   onOpenFile?: (path: string) => void;
   onDraftChange?: (text: string) => void;
   onRecallLastTurnReady?: (recall: () => void) => void;
@@ -409,6 +411,7 @@ export function Composer({
   onUsageLimitResume,
   onUsageLimitResumeAtReset,
   onUsageLimitDismiss,
+  usageLimitPickers,
   onOpenFile,
   onDraftChange,
   onRecallLastTurnReady,
@@ -1751,6 +1754,7 @@ export function Composer({
           onResume={onUsageLimitResume}
           onResumeAtReset={onUsageLimitResumeAtReset}
           onDismiss={onUsageLimitDismiss}
+          modelPicker={usageLimitPickers}
         />
       ) : null}
       <MessageQueue

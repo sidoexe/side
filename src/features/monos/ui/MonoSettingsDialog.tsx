@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   useSyncExternalStore,
@@ -18,12 +19,23 @@ import {
   StickyNote,
 } from "../../../shared/ui/icons";
 import {
-  providerAccounts,
   sameProviderAccountId,
-  subscribeProviderAccounts,
   supportsProviderAccounts,
   type ProviderAccount,
+  type ProviderAccountProvider,
 } from "../../providers/model/providerAccounts";
+import {
+  getAllRateLimits,
+  getCachedRateLimits,
+  loadRateLimits,
+  subscribeRateLimits,
+} from "../../providers/model/rateLimitsCache";
+import {
+  BalancedAccountRow,
+  ProviderAccountRow,
+  REMOVED_ACCOUNT_LABEL,
+  useProviderAccounts,
+} from "../../providers/ui/ProviderAccountRow";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
 import { AccessPicker } from "../../sessions/ui/AccessPicker";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
@@ -70,12 +82,15 @@ type Props = {
   modelSettings: Record<string, string>;
   /** Unset means the provider CLI's own login. */
   providerAccountId?: string;
+  /** It runs on whichever account has the most room. */
+  balanced?: boolean;
   runtimeMode: RuntimeMode;
   busy?: boolean;
   initialSection?: MonoSettingsSection;
   onModelChange: (harness: HarnessId, model: string) => void;
   onModelSettingsChange: (settings: Record<string, string>) => void;
   onAccountChange?: (accountId: string) => void;
+  onBalanced?: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   onReset?: () => Promise<void>;
   onClose: () => void;
@@ -157,11 +172,13 @@ function GeneralSection({
   model,
   modelSettings,
   providerAccountId,
+  balanced = false,
   runtimeMode,
   busy = false,
   onModelChange,
   onModelSettingsChange,
   onAccountChange,
+  onBalanced,
   onRuntimeModeChange,
   onReset,
 }: Omit<Props, "status" | "initialSection" | "onClose">) {
@@ -218,8 +235,10 @@ function GeneralSection({
           <AccountRow
             harness={harness}
             accountId={providerAccountId}
+            balanced={balanced}
             busy={busy}
             onChange={onAccountChange}
+            onBalanced={onBalanced}
           />
         ) : null}
         <SettingRow
@@ -423,87 +442,105 @@ function SettingRow({
 
 /**
  * Which login of its provider it runs on, shown once there is more than one
- * to choose from. Its conversation carries over to the new account.
+ * to choose from, or Balanced between them. Its conversation carries over
+ * to the new account.
  */
 function AccountRow({
   harness,
   accountId,
+  balanced,
   busy,
   onChange,
+  onBalanced,
 }: {
   harness: HarnessId;
   accountId?: string;
+  balanced: boolean;
   busy: boolean;
   onChange: (accountId: string) => void;
+  onBalanced?: () => void;
 }) {
-  const snapshot = useSyncExternalStore(
-    subscribeProviderAccounts,
-    () =>
-      supportsProviderAccounts(harness)
-        ? JSON.stringify(providerAccounts(harness))
-        : "[]",
-    () => "[]",
-  );
-  const accounts = JSON.parse(snapshot) as ProviderAccount[];
-  if (accounts.length < 2) return null;
-  const current =
-    accounts.find((account) => sameProviderAccountId(account.id, accountId)) ??
-    accounts[0];
+  const accounts = useProviderAccounts(harness);
+  if (accounts.length < 2 || !supportsProviderAccounts(harness)) return null;
   return (
     <SettingRow
       label="Account"
       description={
         busy
           ? "Change it once the current reply ends."
-          : "Whose plan its replies count against."
+          : balanced
+            ? "Runs on the account with the most room."
+            : "Whose plan its replies count against."
       }
     >
       <AccountPicker
-        harness={harness}
+        provider={harness}
         accounts={accounts}
-        current={current}
+        accountId={accountId}
+        balanced={balanced}
         disabled={busy}
         onChange={onChange}
+        onBalanced={onBalanced}
       />
     </SettingRow>
   );
 }
 
 function AccountPicker({
-  harness,
+  provider,
   accounts,
-  current,
+  accountId,
+  balanced,
   disabled,
   onChange,
+  onBalanced,
 }: {
-  harness: HarnessId;
+  provider: ProviderAccountProvider;
   accounts: ProviderAccount[];
-  current: ProviderAccount;
+  accountId?: string;
+  balanced: boolean;
   disabled: boolean;
   onChange: (accountId: string) => void;
+  onBalanced?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   const button = useRef<HTMLButtonElement>(null);
+  const listId = useId();
+  // Any account's new reading redraws the list.
+  useSyncExternalStore(subscribeRateLimits, getAllRateLimits, getAllRateLimits);
+  const current = accounts.find((account) =>
+    sameProviderAccountId(account.id, accountId),
+  );
+  const currentLabel = current?.label ?? REMOVED_ACCOUNT_LABEL;
+  // Balanced first, then each account.
+  const options = [
+    ...(onBalanced ? ["balanced"] : []),
+    ...accounts.map((account) => account.id),
+  ];
+  const selected = balanced && onBalanced ? "balanced" : current?.id;
   const dismiss = (restoreFocus = false) => {
     setOpen(false);
     if (restoreFocus) button.current?.focus();
   };
-  const pick = (account: ProviderAccount) => {
+  const pick = (option: string) => {
     dismiss(true);
-    if (account.id !== current.id) onChange(account.id);
+    if (option === selected) return;
+    if (option === "balanced") onBalanced?.();
+    else onChange(option);
   };
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const direction = event.key === "ArrowDown" ? 1 : -1;
       setActive(
-        (index) => (index + direction + accounts.length) % accounts.length,
+        (index) => (index + direction + options.length) % options.length,
       );
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      const account = accounts[active];
-      if (account) pick(account);
+      const option = options[active];
+      if (option) pick(option);
     }
   };
 
@@ -513,7 +550,7 @@ function AccountPicker({
         ref={button}
         type="button"
         disabled={disabled}
-        aria-label={`Account: ${current.label}`}
+        aria-label={`Account: ${balanced ? "Balanced" : currentLabel}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         data-mono-settings-account
@@ -521,16 +558,26 @@ function AccountPicker({
         onClick={() => {
           if (open) dismiss(true);
           else {
-            setActive(Math.max(0, accounts.indexOf(current)));
+            setActive(Math.max(0, selected ? options.indexOf(selected) : 0));
+            setNow(Date.now());
             setOpen(true);
+            for (const account of accounts)
+              void loadRateLimits(provider, account.id).catch(() => undefined);
           }
         }}
         className={`-mx-1.5 flex h-7 max-w-52 items-center gap-2 rounded-md px-1.5 text-[12px] text-content/85 disabled:opacity-50 ${
           open ? "bg-content/8" : "enabled:hover:bg-content/6"
         }`}
       >
-        <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
-        <span className="min-w-0 truncate">{current.label}</span>
+        <HarnessIcon harness={provider} className="size-3.5 shrink-0" />
+        <span className="min-w-0 truncate">
+          {balanced ? "Balanced" : currentLabel}
+        </span>
+        {balanced && current ? (
+          <span className="min-w-0 truncate text-content/45">
+            {current.label}
+          </span>
+        ) : null}
         <ChevronDown
           className={`size-3 shrink-0 text-content/50 ${open ? "rotate-180" : ""}`}
           strokeWidth={1.75}
@@ -540,40 +587,62 @@ function AccountPicker({
         <Popover
           anchor={button}
           side="bottom"
-          width={250}
-          maxHeight={260}
+          width={320}
+          maxHeight={360}
           autoFocus
           onDismiss={(reason) => dismiss(reason === "escape")}
           ignore="[data-mono-settings-account]"
           role="listbox"
           aria-label="Account"
+          aria-activedescendant={`${listId}-${active}`}
           tabIndex={-1}
           onKeyDown={onKeyDown}
-          className="overflow-y-auto p-1 font-sans text-content"
+          className="flex flex-col gap-1 overflow-y-auto p-1 font-sans text-content"
         >
-          {accounts.map((account, index) => (
-            <button
-              key={account.id}
-              type="button"
+          {onBalanced ? (
+            <BalancedAccountRow
+              id={`${listId}-0`}
               role="option"
-              aria-selected={account.id === current.id}
-              tabIndex={-1}
-              onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => setActive(index)}
-              onClick={() => pick(account)}
-              className={`flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] ${
-                index === active || account.id === current.id
-                  ? "bg-selection"
-                  : "hover:bg-content/5"
-              }`}
-            >
-              <HarnessIcon
-                harness={harness}
-                className="size-3.5 shrink-0 text-content/55"
+              accountCount={accounts.length}
+              checked={balanced}
+              currentLabel={current?.label}
+              highlighted={active === 0}
+              onSelect={() => pick("balanced")}
+              onHighlight={() => setActive(0)}
+            />
+          ) : null}
+          {!current && accountId ? (
+            <ProviderAccountRow
+              role="option"
+              provider={provider}
+              accountId={accountId}
+              label={REMOVED_ACCOUNT_LABEL}
+              limits={undefined}
+              now={now}
+              checked={!balanced}
+              removed
+              onSelect={() => undefined}
+            />
+          ) : null}
+          {accounts.map((account) => {
+            const index = options.indexOf(account.id);
+            return (
+              <ProviderAccountRow
+                key={account.id}
+                id={`${listId}-${index}`}
+                role="option"
+                provider={provider}
+                accountId={account.id}
+                label={account.label}
+                limits={getCachedRateLimits(provider, account.id)}
+                now={now}
+                checked={account.id === selected}
+                highlighted={index === active}
+                onSelect={() => pick(account.id)}
+                onHighlight={() => setActive(index)}
               />
-              <span className="min-w-0 flex-1 truncate">{account.label}</span>
-            </button>
-          ))}
+            );
+          })}
         </Popover>
       ) : null}
     </>

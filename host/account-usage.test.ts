@@ -1,8 +1,17 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { keychainService, readClaudeUsage, type UsageDeps } from "./account-usage";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import {
+  keychainService,
+  readClaudeUsage,
+  readCodexUsage,
+  type CodexSpawn,
+  type UsageDeps,
+} from "./account-usage";
 import { HostAccounts } from "./accounts";
 
 const dirs: string[] = [];
@@ -109,7 +118,7 @@ describe("refreshing host account usage", () => {
     accounts.recordUsage("two", { fiveHour: { used: 40 } });
     accounts.markBlocked("one", NOW + 3_600_000);
     await accounts.refreshUsage();
-    expect(asked).toEqual(["one"]); // two was read moments ago; codex is not Claude
+    expect(asked).toEqual(["one", "work"]); // two was read moments ago
     expect(accounts.usage().one).toEqual({ fiveHour: { used: 6 }, sevenDay: { used: 73 }, updatedAt: NOW });
   });
 
@@ -132,5 +141,78 @@ describe("refreshing host account usage", () => {
     accounts.markBlocked("one", NOW + 3_600_000);
     await accounts.refreshUsage();
     expect(accounts.usage().one.blockedUntil).toBe(NOW + 3_600_000);
+  });
+});
+
+/** A stand-in for `codex app-server`, answering each request as told. */
+function fakeCodexServer(answer: (method: string) => { result?: unknown; error?: { message: string } }) {
+  const calls: { args: string[]; env: NodeJS.ProcessEnv; sent: unknown[] }[] = [];
+  const spawn: CodexSpawn = (_command, args, options) => {
+    const child = Object.assign(new EventEmitter(), {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      stdin: new PassThrough(),
+      kill: () => true,
+    });
+    const call = { args, env: options.env, sent: [] as unknown[] };
+    calls.push(call);
+    let buffer = "";
+    child.stdin.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const lines = buffer.split("\n");
+      buffer = lines.pop()!;
+      for (const line of lines) {
+        const message = JSON.parse(line) as { id?: number; method: string };
+        call.sent.push(message);
+        if (message.id === undefined) continue;
+        const reply =
+          message.method === "initialize" ? { result: { codexHome: options.env.CODEX_HOME } } : answer(message.method);
+        // Codex speaks first sometimes; such notices are skipped.
+        child.stdout.write(`${JSON.stringify({ method: "account/updated", params: {} })}\n`);
+        child.stdout.write(`${JSON.stringify({ id: message.id, ...reply })}\n`);
+      }
+    });
+    return child as unknown as ChildProcessWithoutNullStreams;
+  };
+  return { calls, spawn };
+}
+
+describe("reading a Codex account's usage", () => {
+  it("asks Codex for the profile's windows, as the desktop does", async () => {
+    const codex = fakeCodexServer(() => ({
+      result: {
+        rateLimits: {
+          primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: 1_792_000_000 },
+          secondary: { usedPercent: 40, windowDurationMins: 10080, resetsAt: 1_792_500_000 },
+        },
+      },
+    }));
+    await expect(readCodexUsage({ configDir: "/tmp/codex-1" }, "/bin/codex", codex.spawn)).resolves.toEqual({
+      ok: true,
+      fiveHour: { used: 12, resetsAt: 1_792_000_000_000 },
+      sevenDay: { used: 40, resetsAt: 1_792_500_000_000 },
+    });
+    expect(codex.calls[0].args).toEqual(["app-server"]);
+    expect(codex.calls[0].env.CODEX_HOME).toBe("/tmp/codex-1");
+    expect(codex.calls[0].sent.map((message) => (message as { method: string }).method)).toEqual([
+      "initialize",
+      "initialized",
+      "account/rateLimits/read",
+    ]);
+  });
+
+  it("says when the profile is signed out, or why Codex refused", async () => {
+    const signedOut = fakeCodexServer(() => ({
+      error: { message: "codex account authentication required to read rate limits" },
+    }));
+    await expect(readCodexUsage({ configDir: "/x" }, "/bin/codex", signedOut.spawn)).resolves.toEqual({
+      ok: false,
+      error: "Not signed in",
+    });
+    const refused = fakeCodexServer(() => ({ error: { message: "Your access token could not be refreshed" } }));
+    await expect(readCodexUsage({ configDir: "/x" }, "/bin/codex", refused.spawn)).resolves.toEqual({
+      ok: false,
+      error: "Your access token could not be refreshed",
+    });
   });
 });

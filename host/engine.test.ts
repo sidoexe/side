@@ -1085,6 +1085,70 @@ describe("balanced provider accounts", () => {
     expect(sends.map((input) => input.providerAccountId)).toEqual(["b"]);
     expect(store.session(sessionId).accountInUse).toBeUndefined();
   });
+
+  it("removes an account only once no running turn uses it", async () => {
+    const { accounts, store, project, provider, engine } = await balanced();
+    let release!: () => void;
+    vi.mocked(provider.send).mockImplementationOnce(
+      (input: SendTurnInput) =>
+        new Promise<void>((resolve) => {
+          input.onEvent({ type: "session.providerBound", providerSessionId: "conv-1" });
+          release = () => {
+            input.onEvent({ type: "message.completed" });
+            resolve();
+          };
+        }),
+    );
+    const { sessionId } = engine.command({
+      type: "create", commandId: "c", projectId: project.id, harness: "claude",
+      model: "claude:test", runtimeMode: "supervised", providerAccountId: "b",
+    });
+    engine.command({ type: "send", commandId: "s", sessionId, text: "Hi" });
+    await vi.waitFor(() => expect(release).toBeDefined());
+    expect(() => engine.removeAccount({ accountId: "b" })).toThrow(/running conversation/);
+    release();
+    await vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"));
+
+    const summaries = engine.removeAccount({ accountId: "b" });
+    expect(summaries.map((entry) => entry.id)).toEqual(["a"]);
+    expect(accounts.pool("claude").map((account) => account.id)).toEqual(["a"]);
+    // The conversation stays, and says why it cannot go on until moved.
+    engine.command({ type: "send", commandId: "s2", sessionId, text: "Again" });
+    await vi.waitFor(() => expect(store.session(sessionId).status).toBe("idle"));
+    expect(JSON.stringify(store.session(sessionId))).toContain("uses a removed account");
+    engine.command({
+      type: "configure", commandId: "k", sessionId, model: "claude:test",
+      modelSettings: {}, runtimeMode: "supervised", providerAccountId: "a",
+    });
+    expect(store.session(sessionId).accountInUse).toBe("a");
+  });
+
+  it("reads the accounts' usage on its own until it closes", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const directory = mkdtempSync(join(tmpdir(), "monocode-usage-timer-"));
+      writeFileSync(join(directory, "config.json"), JSON.stringify({
+        accounts: [{ id: "a", provider: "claude", configDir: join(directory, "a") }],
+      }));
+      const read = vi.fn(async () => ({ ok: true as const, sevenDay: { used: 12 } }));
+      const accounts = new HostAccounts(directory, Date.now, read);
+      const store = new HostStore(join(directory, "host.db"));
+      const engine = new HostEngine(store, {}, accounts);
+      cleanups.push(() => {
+        store.close();
+        rmSync(directory, { recursive: true, force: true });
+      });
+      expect(read).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(read).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(accounts.usage().a?.sevenDay).toEqual({ used: 12 }));
+      await engine.close();
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(read).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("usage limit notice on a host session", () => {

@@ -26,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Accounts work the same everywhere**: normal chats, Colleagues, Settings, a host's chats and the phone.
+  - Switching a chat's account **moves the conversation** instead of opening an empty one, as a Colleague's does: a Claude transcript is carried over, otherwise the new account gets a recap. The footer's Switch suggestion does the same, and a chat stopped at a limit continues at once.
+  - Local chats can run **Balanced**, as Colleagues do: on the account with the most room, moving on at a usage limit. Picking an account by hand turns it off.
+  - One **Balanced rule** on the desktop and on a host: never an account whose sign-in expired, never-read accounts last, an account nearly out of its 5-hour window only when nothing else has room. A host no longer starts chats on a signed-out account.
+  - A chat's usage-limit notice offers **another account or model**, like a Colleague's; the floating Colleague chat has the full notice.
+  - Chat and Colleague account menus share one row: status (Ready, Running low, Exhausted), bars, **Sign in again** on each account, and a "Removed account" state instead of silently showing the first account. A Colleague's settings offer Balanced too.
+  - A host reads its accounts' usage on its own every 5 minutes, so the phone sees fresh bars and Balanced picks from them.
+  - A host account can be **removed** from the desktop or the phone. A host can sign in **Codex** accounts (with a one-time code) and reads their usage.
+  - The phone manages a host's accounts: sign in again, add Claude or Codex accounts, import ones signed in on the host, choose which ones Balanced uses, remove one, and see each account's sign-in error, reset times and "Limited until". Its usage-limit notice can cancel Resume at reset, be dismissed, and switch account.
+
 - Moving a Claude **Colleague** to another account keeps its whole conversation. Its transcript, with subagent transcripts and large tool results, is copied into the new account's profile, and the Colleague resumes the same conversation there instead of starting a fresh one from a recap, from its settings and from the usage-limit notice alike. A Colleague on another machine, or one whose transcript cannot be copied, falls back to the recap as before. Remote sessions moved to another account on their host also take their subagent files along.
 
 ### Fixed

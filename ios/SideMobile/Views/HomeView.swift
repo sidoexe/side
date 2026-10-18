@@ -372,25 +372,54 @@ struct SessionRowStyle: ButtonStyle {
     }
 }
 
-/// Each account's 5-hour and 7-day usage, as the web sidebar's footer.
+/// Each account's 5-hour and 7-day usage, as the web sidebar's footer, with
+/// its sign-in error or limit. Opens the host's accounts.
 struct UsageView: View {
+    @Environment(AppModel.self) private var model
     let accounts: [HostAccountSummary]
+    @State private var managing = false
 
     var body: some View {
-        let named = accounts.filter { !$0.isPool && $0.usage != nil }
-        if !named.isEmpty {
-            SectionLabel(text: "Usage")
+        let named = accounts.filter { !$0.isPool }
+        if !named.isEmpty || model.can("accounts.login") {
+            HStack {
+                SectionLabel(text: "Usage")
+                Button("Accounts") { managing = true }
+                    .font(Theme.meta)
+                    .foregroundStyle(Theme.link)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 18)
+                    .padding(.bottom, 6)
+            }
             VStack(spacing: 8) {
                 ForEach(named) { account in
-                    HStack(spacing: 8) {
-                        Text(account.label).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1)
-                        Spacer()
-                        bar(account.usage?.fiveHour?.used, label: "5h")
-                        bar(account.usage?.sevenDay?.used, label: "7d")
+                    Button {
+                        managing = true
+                    } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 8) {
+                                Text(account.label).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(1)
+                                Spacer()
+                                if account.usage?.fiveHour != nil || account.usage?.sevenDay != nil {
+                                    bar(account.usage?.fiveHour?.used, label: "5h")
+                                    bar(account.usage?.sevenDay?.used, label: "7d")
+                                }
+                            }
+                            if let until = account.limitedUntil {
+                                Text("Limited until \(resetTime(until.timeIntervalSince1970 * 1000))").font(Theme.meta).foregroundStyle(Theme.amber)
+                            }
+                            if let error = account.usage?.error {
+                                Text(error).font(Theme.meta).foregroundStyle(Theme.delFg).lineLimit(2).multilineTextAlignment(.leading)
+                            }
+                        }
+                        .contentShape(.rect)
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 16)
+            .sheet(isPresented: $managing) { HostAccountsSheet() }
+            .onAppear { Task { await model.refreshAccounts() } }
         }
     }
 

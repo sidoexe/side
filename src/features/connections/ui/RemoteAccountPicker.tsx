@@ -12,13 +12,14 @@ import { barClass, UsageMeter } from "../../providers/ui/ProviderAccountUsage";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowDownCircle, ArrowLeft, Check, Plus, RefreshCw, RotateCcw } from "../../../shared/ui/icons";
+import { ArrowDownCircle, ArrowLeft, Check, Plus, RefreshCw, RotateCcw, Trash2 } from "../../../shared/ui/icons";
 import { Popover, type PopoverDismissReason } from "../../../shared/ui/Popover";
 import { remoteRequest } from "../model/connections";
 import {
   AUTO_HOST_ACCOUNT,
   refreshHostAccounts,
   reloadHostAccounts,
+  removeHostAccount,
   setHostAccountBalanced,
 } from "../model/hostAccounts";
 import type { HostAccountSummary, RemoteProvider } from "../model/protocol";
@@ -26,6 +27,7 @@ import { useRemoteAccountSlot } from "./remoteAccountSlot";
 
 const DEFAULT = "default";
 const DEFAULT_LABEL = "Default account";
+const REMOVED_LABEL = "Removed account";
 
 type Window = { key: string; label: string; used: number };
 
@@ -51,6 +53,12 @@ const limited = (account: HostAccountSummary | undefined) =>
 function UsageText({ account }: { account: HostAccountSummary | undefined }) {
   const showRemaining = useShowRemainingUsage();
   if (limited(account)) return <span className="text-amber-600 dark:text-amber-300">limited</span>;
+  if (account?.usage?.error && /sign/i.test(account.usage.error))
+    return (
+      <span className="text-red-600 dark:text-red-300" title={account.usage.error}>
+        signed out
+      </span>
+    );
   const entries = windows(account);
   if (!entries.length) return null;
   return (
@@ -154,20 +162,22 @@ function MiniBar({ account }: { account: HostAccountSummary | undefined }) {
   );
 }
 
-/** On an account's row: whether the balanced choice uses it, and its own
- * sign-in again. */
+/** On an account's row: whether the balanced choice uses it, its own
+ * sign-in again, and removing it from the host. */
 function AccountActions({
   account,
   canBalance,
   toggling,
   onToggleBalanced,
   onReconnect,
+  onRemove,
 }: {
   account: HostAccountSummary;
   canBalance: boolean;
   toggling: boolean;
   onToggleBalanced: () => void;
   onReconnect?: () => void;
+  onRemove?: () => void;
 }) {
   const balanced = !!account.balanced;
   return (
@@ -206,6 +216,20 @@ function AccountActions({
           <RotateCcw className="size-3" strokeWidth={1.75} aria-hidden />
         </button>
       ) : null}
+      {onRemove ? (
+        <button
+          type="button"
+          role="menuitem"
+          aria-label={`Remove ${account.label}`}
+          title={`Remove ${account.label} from the host`}
+          disabled={toggling}
+          className="grid size-5 place-items-center rounded-md text-content/35 hover:bg-content/10 hover:text-red-600 disabled:opacity-50 dark:hover:text-red-300"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onRemove}
+        >
+          <Trash2 className="size-3" strokeWidth={1.75} aria-hidden />
+        </button>
+      ) : null}
     </span>
   );
 }
@@ -213,6 +237,7 @@ function AccountActions({
 type LoginStep =
   | { kind: "starting" }
   | { kind: "code"; loginId: string; url: string; busy?: boolean; error?: string }
+  | { kind: "device"; loginId: string; url: string; userCode: string }
   | { kind: "failed"; error: string };
 
 const MENU_ITEM =
@@ -220,15 +245,23 @@ const MENU_ITEM =
 
 const message = (error: unknown) => String(error).replace(/^Error: /, "");
 
+/** How long to wait between asking how a Codex sign-in is going; the host
+ * itself holds each question a few seconds. */
+const DEVICE_POLL_MS = 1_000;
+
 /** Signs a host account in from here: the host runs Claude's sign-in, this
- * computer opens its page, and the code it shows goes back to the host. */
+ * computer opens its page, and the code it shows goes back to the host.
+ * Codex's runs the other way: the host gives a code to enter on the page and
+ * finishes by itself. */
 function HostSignIn({
   machineId,
+  provider,
   account,
   onBack,
   onDone,
 }: {
   machineId: string;
+  provider: RemoteProvider;
   /** The account to sign in again; none adds a new one. */
   account?: HostAccountSummary;
   onBack: () => void;
@@ -241,14 +274,40 @@ function HostSignIn({
 
   useEffect(() => {
     let disposed = false;
-    void remoteRequest<{ loginId: string; url: string }>(machineId, "accounts.login", {
+    // Until the host says it is done, asks again how the device sign-in goes.
+    const follow = async (id: string) => {
+      while (!disposed) {
+        const status = await remoteRequest<{ pending?: boolean }>(machineId, "accounts.loginStatus", {
+          loginId: id,
+        });
+        if (disposed) return;
+        if (!status?.pending) {
+          finished.current = true;
+          reloadHostAccounts(machineId);
+          onDone();
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, DEVICE_POLL_MS));
+      }
+    };
+    void remoteRequest<{ loginId: string; url: string; userCode?: string }>(machineId, "accounts.login", {
       accountId: account?.id,
+      ...(provider === "claude" ? {} : { provider }),
     })
       .then((started) => {
         loginId.current = started.loginId;
         if (disposed) return;
-        setStep({ kind: "code", loginId: started.loginId, url: started.url });
         void openUrl(started.url).catch(() => undefined);
+        if (!started.userCode) {
+          setStep({ kind: "code", loginId: started.loginId, url: started.url });
+          return;
+        }
+        setStep({ kind: "device", loginId: started.loginId, url: started.url, userCode: started.userCode });
+        return follow(started.loginId).catch((error) => {
+          // The host's sign-in ended with the failure; the next try starts anew.
+          finished.current = true;
+          if (!disposed) setStep({ kind: "failed", error: message(error) });
+        });
       })
       .catch((error) => {
         if (!disposed) setStep({ kind: "failed", error: message(error) });
@@ -261,7 +320,8 @@ function HostSignIn({
           loginId: loginId.current,
         }).catch(() => undefined);
     };
-  }, [machineId, account?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machineId, provider, account?.id]);
 
   const submit = async () => {
     if (step.kind !== "code" || step.busy || !code.trim()) return;
@@ -281,7 +341,8 @@ function HostSignIn({
     }
   };
 
-  const title = account ? `Reconnect ${account.label}` : "Add a Claude account";
+  const name = provider === "codex" ? "Codex" : "Claude";
+  const title = account ? `Reconnect ${account.label}` : `Add a ${name} account`;
   return (
     <div className="flex w-full min-w-0 flex-col gap-2 p-1.5 text-[12px] text-content">
       <div className="flex items-center gap-1.5">
@@ -296,7 +357,7 @@ function HostSignIn({
         <span className="font-medium">{title}</span>
       </div>
       {step.kind === "starting" ? (
-        <p className="text-content/55">Starting Claude sign-in on the host…</p>
+        <p className="text-content/55">Starting {name} sign-in on the host…</p>
       ) : step.kind === "failed" ? (
         <>
           <p role="alert" className="text-red-600 dark:text-red-300">
@@ -310,6 +371,26 @@ function HostSignIn({
             Back
           </button>
         </>
+      ) : step.kind === "device" ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-content/55">
+            Sign in to Codex in your browser and enter this code.{" "}
+            <button
+              type="button"
+              className="text-content/75 underline underline-offset-2 hover:text-content"
+              onClick={() => void openUrl(step.url).catch(() => undefined)}
+            >
+              Open the page again
+            </button>
+          </p>
+          <p
+            aria-label="Sign-in code"
+            className="select-all self-start rounded-md border border-content/15 bg-content/3 px-2 py-1 font-mono text-[13px] tracking-wider text-content"
+          >
+            {step.userCode}
+          </p>
+          <p className="text-content/40">Waiting for the sign-in to finish…</p>
+        </div>
       ) : (
         <form
           className="flex flex-col gap-2"
@@ -387,9 +468,11 @@ export function RemoteAccountPicker({
   machineId,
   harness,
   canSignIn = false,
+  canSignInCodex = false,
   canImport = false,
   canRefresh = false,
   canBalance = false,
+  canRemove = false,
   accounts,
   value,
   disabled,
@@ -400,12 +483,16 @@ export function RemoteAccountPicker({
   harness: RemoteProvider;
   /** The host can sign its Claude accounts in from here. */
   canSignIn?: boolean;
+  /** The host can sign its Codex accounts in too, with a device code. */
+  canSignInCodex?: boolean;
   /** The host offers its signed-in profiles that are not accounts yet. */
   canImport?: boolean;
   /** The host can read its accounts' usage on demand. */
   canRefresh?: boolean;
   /** The host can put accounts in the balanced pool and take them out. */
   canBalance?: boolean;
+  /** The host can forget one of its accounts. */
+  canRemove?: boolean;
   accounts: HostAccountSummary[];
   value: string | undefined;
   disabled?: boolean;
@@ -415,7 +502,7 @@ export function RemoteAccountPicker({
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"menu" | { signIn: HostAccountSummary | undefined }>("menu");
   const slot = useRemoteAccountSlot(sessionId);
-  const signIn = canSignIn && harness === "claude";
+  const signIn = canSignIn && (harness === "claude" || (harness === "codex" && canSignInCodex));
   const [found, setFound] = useFoundAccounts(machineId, open && canImport && harness === "claude");
   const [importing, setImporting] = useState<string>();
   const [importError, setImportError] = useState<string>();
@@ -446,6 +533,9 @@ export function RemoteAccountPicker({
   if ((!accounts.length && !signIn) || !slot) return null;
   const selected = value ?? DEFAULT;
   const active = accounts.find((account) => account.id === selected);
+  // A named account the host no longer lists: removed there.
+  const removed = selected !== DEFAULT && selected !== AUTO_HOST_ACCOUNT && !active && accounts.length > 0;
+  const activeLabel = active?.label ?? (removed ? REMOVED_LABEL : DEFAULT_LABEL);
   const provider = harness;
   const named = accounts.filter((account) => account.id !== AUTO_HOST_ACCOUNT);
   const options = [
@@ -485,6 +575,25 @@ export function RemoteAccountPicker({
     }
   };
 
+  const remove = async (account: HostAccountSummary) => {
+    if (toggling) return;
+    if (
+      !window.confirm(
+        `Remove “${account.label}” from the host? Conversations on it stay, but cannot continue until you switch accounts. Its profile folder stays on the host.`,
+      )
+    )
+      return;
+    setToggling(account.id);
+    setBalanceError(undefined);
+    try {
+      await removeHostAccount(machineId, account.id);
+    } catch (error) {
+      setBalanceError(message(error));
+    } finally {
+      setToggling(undefined);
+    }
+  };
+
   const dismiss = (reason: PopoverDismissReason) => {
     setOpen(false);
     setView("menu");
@@ -499,10 +608,14 @@ export function RemoteAccountPicker({
         ref={trigger}
         type="button"
         className="-mx-1 inline-flex h-5 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1 text-content/55 transition-[background-color,color,transform] duration-150 ease-out hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-accent active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50"
-        aria-label={`Host account: ${active?.label ?? DEFAULT_LABEL}`}
+        aria-label={`Host account: ${activeLabel}`}
         aria-expanded={open}
         aria-haspopup="menu"
-        title="Account this conversation runs on, on the host"
+        title={
+          removed
+            ? "This conversation uses a removed account; choose another one"
+            : "Account this conversation runs on, on the host"
+        }
         disabled={disabled}
         onClick={() => {
           setOpen((current) => !current);
@@ -510,8 +623,8 @@ export function RemoteAccountPicker({
         }}
       >
         <HarnessIcon harness={provider} className="size-3 shrink-0" />
-        <span className="max-w-32 truncate text-content/45">
-          {active?.label ?? DEFAULT_LABEL}
+        <span className={`max-w-32 truncate ${removed ? "text-amber-600 dark:text-amber-300" : "text-content/45"}`}>
+          {activeLabel}
         </span>
         <MiniBar account={active} />
         <UsageText account={active} />
@@ -531,6 +644,7 @@ export function RemoteAccountPicker({
           {typeof view === "object" ? (
             <HostSignIn
               machineId={machineId}
+              provider={provider}
               account={view.signIn}
               onBack={() => setView("menu")}
               onDone={() => {
@@ -588,7 +702,7 @@ export function RemoteAccountPicker({
                   ) : null}
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <span className={`truncate ${option.account ? "pr-24" : ""}`}>
+                  <span className={`truncate ${option.account ? (canRemove ? "pr-28" : "pr-24") : ""}`}>
                     {option.label}
                   </span>
                   {option.id === AUTO_HOST_ACCOUNT ? (
@@ -617,6 +731,7 @@ export function RemoteAccountPicker({
                   toggling={toggling === option.account.id}
                   onToggleBalanced={() => void toggleBalanced(option.account!)}
                   onReconnect={signIn ? () => setView({ signIn: option.account }) : undefined}
+                  onRemove={canRemove ? () => void remove(option.account!) : undefined}
                 />
               ) : null}
             </div>

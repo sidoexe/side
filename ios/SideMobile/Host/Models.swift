@@ -50,11 +50,21 @@ struct HostSessionSummary: Decodable, Identifiable, Hashable {
 }
 
 struct HostAccountSummary: Decodable, Identifiable, Hashable {
-    struct Window: Decodable, Hashable { let used: Double? }
+    struct Window: Decodable, Hashable {
+        /// Percent of the window used, 0 to 100.
+        let used: Double?
+        /// When it starts over, in Unix milliseconds, if known.
+        let resetsAt: Double?
+    }
     struct Usage: Decodable, Hashable {
         let fiveHour: Window?
         let sevenDay: Window?
+        /// Why the last refresh could not read it, such as an expired sign-in.
         let error: String?
+        /// Hit a limit: Balanced skips it until then, in Unix milliseconds.
+        let blockedUntil: Double?
+        /// When the host last read it, in Unix milliseconds.
+        let updatedAt: Double?
     }
     let id: String
     let provider: String
@@ -62,8 +72,16 @@ struct HostAccountSummary: Decodable, Identifiable, Hashable {
     /// The accounts an "auto" entry balances across; absent on a real account.
     let pool: [String]?
     let usage: Usage?
+    /// A named account the Balanced choice may use; absent on older hosts.
+    let balanced: Bool?
 
     var isPool: Bool { pool != nil }
+
+    /// The limit it is waiting out, if still ahead.
+    var limitedUntil: Date? {
+        guard let until = usage?.blockedUntil, until > Date().timeIntervalSince1970 * 1000 else { return nil }
+        return Date(timeIntervalSince1970: until / 1000)
+    }
 }
 
 struct ModelSetting: Decodable, Hashable {
@@ -386,7 +404,8 @@ struct ColleagueAccounts: Decodable, Equatable {
     struct Usage: Decodable, Equatable {
         let session: Window?
         let weekly: Window?
-        let updatedAt: Double
+        /// Optional so one missing field cannot fail the whole sheet.
+        let updatedAt: Double?
     }
     struct Account: Decodable, Identifiable, Equatable {
         let provider: String

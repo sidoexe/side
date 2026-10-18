@@ -424,7 +424,8 @@ export function createHostServer(
                 "accounts",
                 "accounts.refresh",
                 "accounts.balance",
-                ...(engine.accountLogins ? ["accounts.login", "accounts.import"] : []),
+                "accounts.remove",
+                ...(engine.accountLogins ? ["accounts.login", "accounts.import", "accounts.login.codex"] : []),
               ],
             };
             break;
@@ -440,11 +441,17 @@ export function createHostServer(
           case "accounts.balance":
             result = engine.setAccountBalanced(params);
             break;
+          case "accounts.remove":
+            result = engine.removeAccount(params);
+            break;
           case "accounts.login":
             result = await accountLogins().start(params);
             break;
           case "accounts.loginCode":
             result = await accountLogins().finish(params);
+            break;
+          case "accounts.loginStatus":
+            result = await accountLogins().status(params);
             break;
           case "accounts.loginCancel":
             accountLogins().cancel(params);

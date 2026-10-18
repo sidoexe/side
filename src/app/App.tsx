@@ -2,8 +2,19 @@ import { sessionConversationPage } from "../features/agent-app/model/sessionConv
 import { readMonoConversation } from "../features/monos/model/monoConversation";
 import {
   MONO_BALANCED_ACCOUNT,
+  nextBalancedAccount,
   pickBalancedAccount,
 } from "../features/monos/model/monoBalance";
+import {
+  balancedChatIds,
+  balancedChatsSnapshot,
+  saveChatBalanced,
+  subscribeBalancedChats,
+} from "../features/sessions/model/balancedChats";
+import {
+  carrySessionAccount,
+  switchSessionAccount,
+} from "../features/sessions/model/accountSwitch";
 import { MONO_NEW_THREAD } from "../features/monos/model/colleagueInbox";
 import {
   canCarryMonoAccount,
@@ -1341,6 +1352,18 @@ function Workspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [monosSnap],
   );
+  const balancedChatsSnap = useSyncExternalStore(
+    subscribeBalancedChats,
+    balancedChatsSnapshot,
+    () => "[]",
+  );
+  /** Every conversation set to Balanced, a Colleague's or a chat's. */
+  const balancedSessionIds = useMemo(
+    () => new Set([...balancedMonoSessionIds, ...balancedChatIds()]),
+    // `balancedChatIds` reads what `balancedChatsSnap` stands for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [balancedMonoSessionIds, balancedChatsSnap],
+  );
   /** A Mono hides the terminal, so reaching for one leaves it. */
   const leaveCoveringMono = useCallback(() => {
     if (monoViewIdRef.current) closeMonoView();
@@ -2103,6 +2126,7 @@ function Workspace({
         (active.blocks.some((block) => block.role === "user")
           ? DEFAULT_PROVIDER_ACCOUNT_ID
           : undefined),
+      balanced: balancedSessionIds.has(active.id),
     };
   }, [
     active?.id,
@@ -2110,6 +2134,7 @@ function Workspace({
     active?.model,
     active?.blocks,
     active?.providerAccountId,
+    balancedSessionIds,
   ]);
   const activeProviderSignInRequest = useMemo(() => {
     if (
@@ -2761,6 +2786,11 @@ function Workspace({
     [insertBesideActive],
   );
 
+  // The account menus' choice, set once the code that moves accounts below
+  // is defined.
+  const chooseAccountRef = useRef<
+    (sessionId: string, accountId: string) => Promise<boolean>
+  >(async () => false);
   const onSelectProviderAccount = useCallback(
     (provider: ProviderAccountProvider, accountId: string) => {
       const current = sessionsRef.current.find(
@@ -2768,42 +2798,30 @@ function Workspace({
       );
       if (!current || current.harness !== provider) return;
 
-      if (current.blocks.length === 0 && !current.busy) {
-        if (current.providerAccountId === accountId) return;
-        updateSessionState(sessionsRef, setSessions, (sessions) =>
-          sessions.map((session) =>
-            session.id === current.id
-              ? { ...session, providerAccountId: accountId }
-              : session,
+      // The conversation moves to the chosen account, as a Colleague's does.
+      void chooseAccountRef.current(current.id, accountId).then((moved) => {
+        if (moved) return;
+        // One that cannot move yet, as mid-reply, stays pinned to its
+        // account; a clean one opens on the chosen profile.
+        const session = {
+          ...newSession(
+            current.harness,
+            current.cwd,
+            current.model,
+            current.runtimeMode,
+            current.modelSettings,
           ),
-        );
-        return;
-      }
-
-      const currentId =
-        current.providerAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID;
-      if (currentId === accountId) return;
-
-      // Provider thread ids are account-owned. Keep the current conversation
-      // pinned to its account and open a clean one for the selected profile.
-      const session = {
-        ...newSession(
-          current.harness,
-          current.cwd,
-          current.model,
-          current.runtimeMode,
-          current.modelSettings,
-        ),
-        providerAccountId: accountId,
-      };
-      const tab = newTab(session.id);
-      updateSessionState(sessionsRef, setSessions, (sessions) => [
-        ...sessions,
-        session,
-      ]);
-      appendTab(tab, current.cwd);
-      setActiveTabId(tab.id);
-      setComposerFocused(true);
+          providerAccountId: accountId,
+        };
+        const tab = newTab(session.id);
+        updateSessionState(sessionsRef, setSessions, (sessions) => [
+          ...sessions,
+          session,
+        ]);
+        appendTab(tab, current.cwd);
+        setActiveTabId(tab.id);
+        setComposerFocused(true);
+      });
     },
     [active?.id, appendTab],
   );
@@ -5692,7 +5710,11 @@ function Workspace({
             );
           }
         }
-        if (removed) markSessionsReviewed([sessionId]);
+        if (removed) {
+          markSessionsReviewed([sessionId]);
+          // An archived chat keeps Balanced for when it comes back.
+          if (mode !== "archive") saveChatBalanced(sessionId, false);
+        }
         return removed;
       } catch (error) {
         if (origin === "cli") throw error;
@@ -8907,13 +8929,10 @@ function Workspace({
   saveDraftRef.current = onSaveDraft;
   const ensureOpenSessionRef = useRef(ensureOpenSession);
   ensureOpenSessionRef.current = ensureOpenSession;
-  const moveMonoAccountRef = useRef<
+  const moveAccountRef = useRef<
     (sessionId: string, accountId: string) => Promise<boolean>
   >(async () => false);
   const onStopRef = useRef<(sessionId: string) => void>(() => undefined);
-  const chooseMonoAccountRef = useRef<
-    (sessionId: string, accountId: string) => Promise<boolean>
-  >(async () => false);
   // Where the browser app may move each colleague, from this desktop's
   // accounts and the ones its colleagues run on.
   const colleagueAccounts = () => ({
@@ -9023,8 +9042,7 @@ function Workspace({
           },
         });
         if (!session) return false;
-        if (account)
-          return await chooseMonoAccountRef.current(session.id, account);
+        if (account) return await chooseAccountRef.current(session.id, account);
         return await send(session.id);
       },
       colleagueAccounts,
@@ -9513,10 +9531,11 @@ function Workspace({
     [onSubmit, onUsageLimitDismiss],
   );
 
-  // A Claude Mono takes its transcript to the new account and resumes there
-  // with its whole context. Anything that cannot be carried falls back to a
-  // fresh conversation that opens with a recap of this one.
-  const moveMonoAccount = useCallback(
+  // A Claude conversation, a Colleague's or a chat's, takes its transcript
+  // to the new account and resumes there with its whole context. Anything
+  // that cannot be carried falls back to a fresh conversation that opens
+  // with a recap of this one. A host moves its own remote chats.
+  const moveSessionAccount = useCallback(
     async (
       sessionId: string,
       accountId: string,
@@ -9525,9 +9544,10 @@ function Workspace({
       const session = sessionsRef.current.find(
         (entry) => entry.id === sessionId,
       );
+      const mono = isMonoSession(sessionId);
       if (
         !session ||
-        !isMonoSession(sessionId) ||
+        (!mono && isRemoteProjectPath(session.cwd)) ||
         !supportsProviderAccounts(session.harness) ||
         !providerAccountExists(session.harness, accountId)
       )
@@ -9560,7 +9580,7 @@ function Workspace({
         carried &&
         current.providerSessionId === providerSessionId &&
         canCarryMonoAccount(current)
-          ? carryMonoAccount(current, accountId)
+          ? (mono ? carryMonoAccount : carrySessionAccount)(current, accountId)
           : fallback(current, accountId);
       if (next === current) return false;
       if (
@@ -9582,26 +9602,57 @@ function Workspace({
     },
     [],
   );
-  moveMonoAccountRef.current = (sessionId, accountId) =>
-    moveMonoAccount(sessionId, accountId, (session, id) =>
-      session.usageLimit
-        ? switchMonoUsageLimitAccount(session, id)
-        : switchMonoAccount(session, id),
+  // A Colleague a limit stopped picks up again on its new account; a chat
+  // continues as its Resume button would.
+  moveAccountRef.current = async (sessionId, accountId) => {
+    if (isMonoSession(sessionId))
+      return moveSessionAccount(sessionId, accountId, (session, id) =>
+        session.usageLimit
+          ? switchMonoUsageLimitAccount(session, id)
+          : switchMonoAccount(session, id),
+      );
+    const limited = !!sessionsRef.current.find(
+      (entry) => entry.id === sessionId,
+    )?.usageLimit;
+    const moved = await moveSessionAccount(
+      sessionId,
+      accountId,
+      switchSessionAccount,
     );
+    if (
+      moved &&
+      limited &&
+      sessionsRef.current.find((entry) => entry.id === sessionId)?.usageLimit
+    )
+      onUsageLimitResume(sessionId);
+    return moved;
+  };
+
+  /** Turns Balanced on or off, on the Colleague or on the chat. */
+  const saveBalanced = (sessionId: string, balanced: boolean) => {
+    const mono = listMonos().find((entry) => entry.sessionId === sessionId);
+    if (mono) {
+      if (!!mono.balancedAccounts !== balanced)
+        saveMonoBalanced(mono.id, balanced);
+    } else if (balancedChatIds().includes(sessionId) !== balanced)
+      saveChatBalanced(sessionId, balanced);
+  };
 
   const onUsageLimitAccountChange = useCallback(
     (sessionId: string, accountId: string) => {
-      // Picking an account by hand takes the Colleague off Balanced.
-      const mono = listMonos().find((entry) => entry.sessionId === sessionId);
-      if (mono?.balancedAccounts) saveMonoBalanced(mono.id, false);
-      void moveMonoAccount(sessionId, accountId, switchMonoUsageLimitAccount);
+      // Picking an account by hand takes the conversation off Balanced.
+      saveBalanced(sessionId, false);
+      void (isMonoSession(sessionId)
+        ? moveSessionAccount(sessionId, accountId, switchMonoUsageLimitAccount)
+        : moveAccountRef.current(sessionId, accountId));
     },
-    [moveMonoAccount],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [moveSessionAccount],
   );
 
-  // Balanced Colleagues run on whichever account has the most room, read
-  // afresh before choosing.
-  const balanceMono = useCallback(
+  // Balanced conversations run on whichever account has the most room,
+  // read afresh before choosing.
+  const balanceSession = useCallback(
     async (sessionId: string, except?: string): Promise<boolean> => {
       const session = sessionsRef.current.find(
         (entry) => entry.id === sessionId,
@@ -9621,64 +9672,80 @@ function Workspace({
         })),
         { except },
       );
-      return best ? await moveMonoAccountRef.current(sessionId, best) : false;
+      return best ? await moveAccountRef.current(sessionId, best) : false;
     },
     [],
   );
 
-  /** A choice from the Colleague's account menu, here or from the phone:
+  /** A choice from a conversation's account menu, here or from the phone:
    * `auto` turns Balanced on, any account turns it off and moves there. */
-  const chooseMonoAccount = useCallback(
+  const chooseAccount = useCallback(
     async (sessionId: string, accountId: string): Promise<boolean> => {
-      const mono = listMonos().find((entry) => entry.sessionId === sessionId);
       if (accountId === MONO_BALANCED_ACCOUNT) {
-        if (!mono) return false;
-        saveMonoBalanced(mono.id, true);
+        if (!sessionsRef.current.some((entry) => entry.id === sessionId))
+          return false;
+        saveBalanced(sessionId, true);
         // Already on an account with room counts as done.
-        await balanceMono(sessionId);
+        await balanceSession(sessionId);
         return true;
       }
-      if (mono?.balancedAccounts) saveMonoBalanced(mono.id, false);
-      return moveMonoAccountRef.current(sessionId, accountId);
+      saveBalanced(sessionId, false);
+      return moveAccountRef.current(sessionId, accountId);
     },
-    [balanceMono],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [balanceSession],
   );
-  chooseMonoAccountRef.current = chooseMonoAccount;
+  chooseAccountRef.current = chooseAccount;
 
   const onMonoAccountChange = useCallback(
     (sessionId: string, accountId: string) => {
-      void chooseMonoAccount(sessionId, accountId);
+      void chooseAccount(sessionId, accountId);
     },
-    [chooseMonoAccount],
+    [chooseAccount],
   );
   const onMonoBalanced = useCallback(
     (sessionId: string) => {
-      void chooseMonoAccount(sessionId, MONO_BALANCED_ACCOUNT);
+      void chooseAccount(sessionId, MONO_BALANCED_ACCOUNT);
     },
-    [chooseMonoAccount],
+    [chooseAccount],
   );
 
-  // A balanced Colleague a limit stopped moves to the account with the most
-  // room left and carries on there. With none to spare it waits, asking
-  // again every few minutes rather than on every update.
+  // A balanced conversation a limit stopped moves to the account with the
+  // most room left and carries on there. With none to spare it waits, asking
+  // again every few minutes rather than on every update. Between turns, one
+  // whose account ran low, out or was removed moves before its next turn.
   const balanceTries = useRef(new Map<string, number>());
   useEffect(() => {
     const now = Date.now();
-    for (const mono of listMonos()) {
-      if (!mono.balancedAccounts || !mono.sessionId) continue;
-      const session = sessions.find((entry) => entry.id === mono.sessionId);
-      if (!session?.usageLimit || session.busy) continue;
+    for (const session of sessions) {
+      if (!balancedSessionIds.has(session.id) || session.busy) continue;
+      if (!supportsProviderAccounts(session.harness)) continue;
+      const provider = session.harness;
+      const currentAccount =
+        session.providerAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID;
+      const next = session.usageLimit
+        ? undefined
+        : nextBalancedAccount(
+            providerAccounts(provider).map((account) => ({
+              id: account.id,
+              limits: getCachedRateLimits(provider, account.id),
+            })),
+            currentAccount,
+            { now },
+          );
+      if (!session.usageLimit && !next) continue;
       if (now - (balanceTries.current.get(session.id) ?? 0) < 5 * 60_000)
         continue;
       balanceTries.current.set(session.id, now);
-      void balanceMono(
-        session.id,
-        session.providerAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID,
+      void (
+        next
+          ? moveAccountRef.current(session.id, next)
+          : balanceSession(session.id, currentAccount)
       ).then((moved) => {
         if (moved) balanceTries.current.delete(session.id);
       });
     }
-  }, [sessions, monosSnap, balanceMono]);
+  }, [sessions, balancedSessionIds, balanceSession]);
 
   const [usageLimitTick, setUsageLimitTick] = useState(0);
   useEffect(() => {
@@ -12986,6 +13053,9 @@ function Workspace({
     },
     openFile: onOpenFile,
     resume: onUsageLimitResume,
+    resumeAtReset: onUsageLimitResumeAtReset,
+    account: onUsageLimitAccountChange,
+    model: onModelChange,
     create: () => createMono().id,
   });
 
@@ -13265,6 +13335,7 @@ function Workspace({
         model={monoViewSession.model}
         modelSettings={monoViewSession.modelSettings}
         providerAccountId={monoViewSession.providerAccountId}
+        balanced={balancedMonoSessionIds.has(monoViewSession.id)}
         runtimeMode={monoViewSession.runtimeMode}
         busy={!!monoViewSession.busy}
         onModelChange={(harness, model) =>
@@ -13276,6 +13347,7 @@ function Workspace({
         onAccountChange={(accountId) =>
           onMonoAccountChange(monoViewSession.id, accountId)
         }
+        onBalanced={() => onMonoBalanced(monoViewSession.id)}
         onRuntimeModeChange={(mode) =>
           onRuntimeModeChange(monoViewSession.id, mode)
         }
@@ -13953,6 +14025,9 @@ function Workspace({
                   remote={!!active && isRemoteProjectPath(active.cwd)}
                   project={active?.cwd ?? projectCwd}
                   onSelectAccount={onSelectProviderAccount}
+                  onBalanced={() => {
+                    if (active) onMonoBalanced(active.id);
+                  }}
                   onManageAccounts={() =>
                     openSettings("providers", "provider-accounts")
                   }

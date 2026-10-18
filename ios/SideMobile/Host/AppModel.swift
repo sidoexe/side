@@ -29,6 +29,7 @@ final class AppModel {
     private(set) var projects: [HostProject] = []
     private(set) var sessions: [String: [HostSessionSummary]] = [:]
     private(set) var accounts: [HostAccountSummary] = []
+    private var accountsRefreshedAt = Date.distantPast
     /// The desktop's rail, when the host keeps one: its projects and order.
     private(set) var rail: RailState?
     /// Every agent's models, for their display names.
@@ -93,6 +94,8 @@ final class AppModel {
         projects = []
         sessions = [:]
         rail = nil
+        accounts = []
+        accountsRefreshedAt = .distantPast
         catalog = nil
         path = []
     }
@@ -224,6 +227,41 @@ final class AppModel {
     /// The user checked a done session; it leaves Now and its project's count.
     func markChecked(_ summary: HostSessionSummary) async {
         await update(summary, ["reviewed": true])
+    }
+
+    // MARK: Host accounts
+
+    /// Asks the host to read every account's usage afresh, as the desktop
+    /// does when its account menu opens: at most every 20 seconds.
+    func refreshAccounts(force: Bool = false) async {
+        guard let client, force || Date().timeIntervalSince(accountsRefreshedAt) > 20 else { return }
+        accountsRefreshedAt = Date()
+        let method = can("accounts.refresh") ? "accounts.refresh" : "accounts.list"
+        do {
+            accounts = try await client.rpc(method, as: [HostAccountSummary].self)
+        } catch {
+            report(error)
+        }
+    }
+
+    /// Lets the Balanced choice use an account, or stops it.
+    func setBalanced(_ account: HostAccountSummary, _ balanced: Bool) async {
+        await changeAccounts("accounts.balance", ["accountId": account.id, "balanced": balanced])
+    }
+
+    /// Takes an account off the host.
+    func remove(_ account: HostAccountSummary) async {
+        await changeAccounts("accounts.remove", ["accountId": account.id])
+    }
+
+    /// An account call that answers with the accounts after it.
+    private func changeAccounts(_ method: String, _ params: [String: Any]) async {
+        guard let client else { return }
+        do {
+            accounts = try await client.rpc(method, params, as: [HostAccountSummary].self)
+        } catch {
+            report(error)
+        }
     }
 
     func update(_ summary: HostSessionSummary, _ patch: [String: Any]) async {

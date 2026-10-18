@@ -26,7 +26,7 @@ import {
   resolveTabGroupMascot,
 } from "../../features/workspace/model/tabGroups";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
-import { ArrowLeft, Check, ChevronRight, Plus, RefreshCw } from "../../shared/ui/icons";
+import { ArrowLeft, ChevronRight, Plus, RefreshCw } from "../../shared/ui/icons";
 import { Popover, type PopoverDismissReason } from "../../shared/ui/Popover";
 import {
   ProviderSignInPanel,
@@ -35,6 +35,7 @@ import {
 import {
   supportsProviderAccounts,
   type ProviderAccount,
+  type ProviderAccountProvider,
 } from "../../features/providers/model/providerAccounts";
 import {
   accountStatus,
@@ -45,9 +46,12 @@ import {
 import {
   AccountStatusLabel,
   barClass,
-  meterWindows,
-  UsageMeter,
 } from "../../features/providers/ui/ProviderAccountUsage";
+import {
+  BalancedAccountRow,
+  ProviderAccountRow,
+  REMOVED_ACCOUNT_LABEL,
+} from "../../features/providers/ui/ProviderAccountRow";
 import {
   identityKey,
   identityOrganizationTag,
@@ -88,7 +92,9 @@ export function UsageProviderChip({
   project,
   accounts = [],
   accountId,
+  balanced = false,
   onSelectAccount,
+  onBalanced,
   onAddAccount,
   onManageAccounts,
   onConsumeReset,
@@ -102,7 +108,11 @@ export function UsageProviderChip({
   project?: string;
   accounts?: ProviderAccount[];
   accountId?: string;
+  /** The conversation picks its account by the Balanced rule. */
+  balanced?: boolean;
   onSelectAccount?: (accountId: string) => void;
+  /** Offers Balanced among the accounts. */
+  onBalanced?: () => void;
   onAddAccount?: (label: string) => Promise<ProviderAccount>;
   onManageAccounts?: () => void;
   onConsumeReset?: (creditId?: string) => Promise<CodexRateLimitResetOutcome>;
@@ -173,8 +183,10 @@ export function UsageProviderChip({
       ? limits
       : accountUsage.usage[accountUsageKey(account)];
   const activeStatus = accountStatus(limits, now);
+  // Balanced moves on by itself.
   const suggestion =
-    activeStatus.tone === "exhausted" || activeStatus.tone === "low"
+    !balanced &&
+    (activeStatus.tone === "exhausted" || activeStatus.tone === "low")
       ? bestAlternativeAccount(otherAccounts, usageFor, now)
       : null;
   const mascotProject = project ? projectName(project) : providerLabel;
@@ -315,10 +327,12 @@ export function UsageProviderChip({
         >
           {accountView === "accounts" ? (
             <ProviderAccountPicker
+              provider={accountProvider}
               providerLabel={providerLabel}
               accounts={accounts}
               identities={identities}
               accountId={accountId ?? ""}
+              balanced={balanced}
               usageFor={usageFor}
               now={now}
               onBack={() => setAccountView("usage")}
@@ -335,6 +349,14 @@ export function UsageProviderChip({
                 onSelectAccount?.(nextAccountId);
                 setOpen(false);
               }}
+              onBalanced={
+                onBalanced
+                  ? () => {
+                      onBalanced();
+                      setOpen(false);
+                    }
+                  : undefined
+              }
             />
           ) : accountView === "add" ? (
             <AddProviderAccount
@@ -388,7 +410,9 @@ export function UsageProviderChip({
                         onClick={() => setAccountView("accounts")}
                       />
                       <span className="max-w-[60%] shrink-0 truncate">
-                        {activeAccountLabel}
+                        {balanced
+                          ? `Balanced · ${activeAccountLabel}`
+                          : activeAccountLabel}
                       </span>
                       <ProviderAccountSubtitle
                         key={activeAccount && identityKey(activeAccount)}
@@ -518,29 +542,35 @@ function AccountSwitchRow({
 }
 
 function ProviderAccountPicker({
+  provider,
   providerLabel,
   accounts,
   identities,
   accountId,
+  balanced,
   usageFor,
   now,
   onBack,
   onAdd,
   onManage,
   onSelect,
+  onBalanced,
 }: {
+  provider: ProviderAccountProvider | undefined;
   providerLabel: string;
   accounts: ProviderAccount[];
   identities: Record<string, ProviderAccountIdentity | null>;
   accountId: string;
+  balanced: boolean;
   usageFor: (account: ProviderAccount) => ProviderRateLimits | undefined;
   now: number;
   onBack: () => void;
   onAdd: () => void;
   onManage?: () => void;
   onSelect: (accountId: string) => void;
+  onBalanced?: () => void;
 }) {
-  const statusId = useId();
+  const current = accounts.find((account) => account.id === accountId);
   return (
     <div>
       <div className="flex h-7 items-center gap-1">
@@ -555,40 +585,49 @@ function ProviderAccountPicker({
         <h2 className="text-[13px] font-medium">{providerLabel} accounts</h2>
       </div>
       <p className="mt-1 px-1 text-[10px] leading-4 text-content/40">
-        Each conversation stays pinned to the account that started it.
+        Switching takes this conversation to the account you pick.
       </p>
       <div
         className="mt-2 flex flex-col gap-1"
         role="group"
         aria-label={`${providerLabel} accounts`}
       >
+        {onBalanced && accounts.length > 1 ? (
+          <BalancedAccountRow
+            accountCount={accounts.length}
+            checked={balanced}
+            currentLabel={current?.label}
+            onSelect={() => {
+              if (!balanced) onBalanced();
+            }}
+          />
+        ) : null}
+        {provider && !current && accountId ? (
+          <ProviderAccountRow
+            provider={provider}
+            accountId={accountId}
+            label={REMOVED_ACCOUNT_LABEL}
+            limits={undefined}
+            now={now}
+            checked={!balanced}
+            removed
+            onSelect={() => undefined}
+          />
+        ) : null}
         {accounts.map((account) => {
-          const selected = account.id === accountId;
           const identity = identities[identityKey(account)];
           const orgTag = identityOrganizationTag(identity);
-          const usage = usageFor(account);
-          const meters = meterWindows(usage);
-          return (
-            <div
+          return provider ? (
+            <ProviderAccountRow
               key={account.id}
-              className={`pointer-events-none relative flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-[11px] ring-1 ring-inset transition-colors ${
-                selected
-                  ? "bg-accent/10 text-content ring-accent/20"
-                  : "bg-content/[0.035] text-content/70 ring-content/[0.06]"
-              }`}
-            >
-              {/* A sibling target keeps the email button out of the selection button. */}
-              <button
-                type="button"
-                aria-pressed={selected}
-                aria-label={account.label}
-                aria-describedby={`${statusId}-${account.id}`}
-                className="pointer-events-auto absolute inset-0 rounded-lg hover:bg-content/[0.04] focus-visible:outline-2 focus-visible:outline-accent"
-                onClick={() => onSelect(account.id)}
-              />
-              <span className="min-w-0 flex-1 py-0.5">
-                <span className="flex min-w-0 items-baseline gap-1.5">
-                  <span className="shrink-0 truncate">{account.label}</span>
+              provider={provider}
+              accountId={account.id}
+              label={account.label}
+              limits={usageFor(account)}
+              now={now}
+              checked={!balanced && account.id === accountId}
+              subtitle={
+                <>
                   <ProviderAccountSubtitle
                     identity={identity}
                     className="text-[10px] text-content/35"
@@ -598,43 +637,11 @@ function ProviderAccountPicker({
                       {orgTag}
                     </span>
                   ) : null}
-                </span>
-                <span className="mt-1 flex min-w-0 items-center gap-3 text-[10px]">
-                  <span
-                    id={`${statusId}-${account.id}`}
-                    // Without meters, a long "unknown" reason truncates.
-                    className={meters.length > 0 ? "shrink-0" : "min-w-0"}
-                  >
-                    <AccountStatusLabel
-                      status={accountStatus(usage, now)}
-                      className="min-w-0"
-                    />
-                  </span>
-                  {meters.length > 0 ? (
-                    <span className="flex min-w-0 flex-1 gap-2.5">
-                      {meters.map((entry) => (
-                        // Short "5h" / "wk" titles, as on the footer chip.
-                        <UsageMeter
-                          key={entry.title}
-                          title={formatWindowLabel(entry.window.windowMinutes)}
-                          window={entry.window}
-                          now={now}
-                          className="min-w-0 flex-1"
-                        />
-                      ))}
-                    </span>
-                  ) : null}
-                </span>
-              </span>
-              {selected ? (
-                <Check
-                  className="size-3.5 shrink-0 text-accent"
-                  strokeWidth={1.9}
-                  aria-hidden
-                />
-              ) : null}
-            </div>
-          );
+                </>
+              }
+              onSelect={() => onSelect(account.id)}
+            />
+          ) : null;
         })}
       </div>
       <button

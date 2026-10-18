@@ -28,6 +28,7 @@ import {
   type FloatingMonoView,
 } from "../model/floatingMono";
 import { MonoComposer } from "./MonoComposer";
+import { MonoUsageLimitNotice } from "./MonoUsageLimitNotice";
 import { MonoStatusDot } from "./MonoRailMascot";
 import { MonoStatus } from "./MonoStatus";
 import { MONO_PAGE_TURNS } from "../../sessions/data/sessionStore";
@@ -468,23 +469,20 @@ function FloatingConversation({
         </div>
       ) : null}
       {session.usageLimit ? (
-        <div className="shrink-0 px-3 pb-2 text-[12px] text-content/60">
-          <p>The provider’s usage limit was reached.</p>
-          <button
-            type="button"
-            className="mt-1 text-accent hover:underline"
-            onClick={() => void action({ kind: "resume" })}
-          >
-            Try again
-          </button>
-          <span className="mx-2 text-content/25">·</span>
-          <button
-            type="button"
-            className="text-accent hover:underline"
-            onClick={() => void action({ kind: "reveal" })}
-          >
-            Change model in sIDE
-          </button>
+        <div className="shrink-0 px-1">
+          <MonoUsageLimitNotice
+            session={session}
+            onModelChange={(harness, model) =>
+              void action({ kind: "model", harness, model })
+            }
+            onAccountChange={(accountId) =>
+              void action({ kind: "account", accountId })
+            }
+            onResume={() => void action({ kind: "resume" })}
+            onResumeAtReset={(enabled) =>
+              void action({ kind: "resumeAtReset", enabled })
+            }
+          />
         </div>
       ) : null}
       <div className="shrink-0 px-1 pb-1">

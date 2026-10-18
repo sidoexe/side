@@ -182,6 +182,14 @@ describe("remote host API", () => {
     s.engine.employees.close();
   });
 
+  it("advertises removing an account, and refuses it on a host without accounts", async () => {
+    const s = await setup();
+    const capabilities = (await s.call("environment.describe")).value.result.capabilities;
+    expect(capabilities).toEqual(expect.arrayContaining(["accounts", "accounts.remove"]));
+    expect(capabilities).not.toContain("accounts.login.codex");
+    expect((await s.call("accounts.remove", { accountId: "perso-1" })).value.error).toMatch(/not configured/);
+  });
+
   it("lets only one desktop claim an automation's occurrence, and recover only its own runs", async () => {
     const s = await setup();
     s.engine.automations = new HostAutomations(join(s.directory, "automations.db"));

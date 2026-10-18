@@ -65,6 +65,8 @@ export type UsageFooterSession = {
   model?: string;
   authRequired?: boolean;
   providerAccountId?: string;
+  /** It picks its account by the Balanced rule. */
+  balanced?: boolean;
 };
 
 export function UsageFooter({
@@ -79,6 +81,7 @@ export function UsageFooter({
   projectTerminalActive = false,
   projectTerminalOpen = false,
   onSelectAccount,
+  onBalanced,
   onManageAccounts,
   remote = false,
 }: {
@@ -98,6 +101,7 @@ export function UsageFooter({
     provider: ProviderAccountProvider,
     accountId: string,
   ) => void;
+  onBalanced?: (provider: ProviderAccountProvider) => void;
   onManageAccounts?: (provider: ProviderAccountProvider) => void;
 }) {
   const opencode = useCachedRateLimits("opencode");
@@ -135,6 +139,7 @@ export function UsageFooter({
           session={session}
           project={project}
           onSelectAccount={onSelectAccount}
+          onBalanced={onBalanced}
           onManageAccounts={onManageAccounts}
           fallback={
             session ? (
@@ -199,6 +204,7 @@ export function UsageChips({
   session,
   project,
   onSelectAccount,
+  onBalanced,
   onManageAccounts,
   accountPicker = true,
   fallback = null,
@@ -211,6 +217,8 @@ export function UsageChips({
     provider: ProviderAccountProvider,
     accountId: string,
   ) => void;
+  /** Offers Balanced for the session's own provider. */
+  onBalanced?: (provider: ProviderAccountProvider) => void;
   onManageAccounts?: (provider: ProviderAccountProvider) => void;
   accountPicker?: boolean;
   /** Shown when there is no usage to show. */
@@ -414,6 +422,12 @@ export function UsageChips({
         accountId: claudeAccountId,
         onSelectAccount: (accountId: string) =>
           selectAccount("claude", accountId),
+        ...(onBalanced && session?.harness === "claude"
+          ? {
+              balanced: !!session.balanced,
+              onBalanced: () => onBalanced("claude"),
+            }
+          : {}),
         onAddAccount: (label: string) => addAccount("claude", label),
         onManageAccounts: onManageAccounts
           ? () => onManageAccounts("claude")
@@ -426,6 +440,12 @@ export function UsageChips({
         accountId: codexAccountId,
         onSelectAccount: (accountId: string) =>
           selectAccount("codex", accountId),
+        ...(onBalanced && session?.harness === "codex"
+          ? {
+              balanced: !!session.balanced,
+              onBalanced: () => onBalanced("codex"),
+            }
+          : {}),
         onAddAccount: (label: string) => addAccount("codex", label),
         onManageAccounts: onManageAccounts
           ? () => onManageAccounts("codex")

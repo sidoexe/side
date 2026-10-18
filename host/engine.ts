@@ -42,6 +42,7 @@ import {
   DEFAULT_ACCOUNT,
   carryClaudeTranscript,
   claudeConfigDir,
+  type HostAccount,
   type HostAccounts,
 } from "./accounts";
 import type { HostPush } from "./push";
@@ -102,6 +103,11 @@ function accountField(value: unknown): { providerAccountId?: string } {
     throw new Error("Invalid provider account");
   return { providerAccountId: value };
 }
+
+/** How often the host reads its accounts' usage by itself. */
+const USAGE_REFRESH_MS = 5 * 60_000;
+/** What a turn says when its account is gone, as the desktop's footer does. */
+const REMOVED_ACCOUNT = "This conversation uses a removed account; choose another one";
 
 /** Claude's text when a usage window refuses the turn. */
 const LIMIT_TEXT = /hit your (?:[a-z0-9-]+ )?limit|usage limit reached/i;
@@ -374,6 +380,7 @@ export class HostEngine {
    * resumes them itself, so it happens with every desktop closed. */
   private resumeAtReset = new Set<string>();
   private resumeTimer?: ReturnType<typeof setInterval>;
+  private usageTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     readonly store: HostStore,
@@ -406,6 +413,15 @@ export class HostEngine {
     }
     this.resumeTimer = setInterval(() => this.resumeDue(), 30_000);
     this.resumeTimer.unref?.();
+    // The host reads its accounts' usage on its own too, so the Balanced pick
+    // and an expired sign-in are current with no desktop open.
+    if (accounts) {
+      this.usageTimer = setInterval(
+        () => void accounts.refreshUsage().catch(() => undefined),
+        USAGE_REFRESH_MS,
+      );
+      this.usageTimer.unref?.();
+    }
   }
 
   async openProject(path: string) {
@@ -1327,6 +1343,28 @@ export class HostEngine {
     return this.accountSummaries();
   }
 
+  /**
+   * Forgets an account; the summaries after. A conversation still bound to
+   * it says so at its next turn, until another account is chosen.
+   */
+  removeAccount(params: Record<string, unknown>) {
+    if (!this.accounts) throw new Error("Named provider accounts are not configured on this host");
+    const id = String(params.accountId ?? "");
+    for (const sessionId of this.running.keys()) {
+      const value = this.live.get(sessionId)?.value ?? this.store.session(sessionId);
+      if (boundAccount(value) === id)
+        throw new Error("A running conversation uses this account; wait for it or stop it first");
+    }
+    this.accounts.removeAccount(id);
+    return this.accountSummaries();
+  }
+
+  /** A declared account; nothing for the default one or a removed one. */
+  private declared(provider: string, id: string | undefined): HostAccount | undefined {
+    if (!id || id === DEFAULT_ACCOUNT) return undefined;
+    return this.accounts?.config().accounts.find((account) => account.provider === provider && account.id === id);
+  }
+
   /** The summaries after reading every account's usage afresh. */
   async refreshAccountUsage() {
     await this.accounts?.refreshUsage();
@@ -1352,18 +1390,28 @@ export class HostEngine {
     const value = live.value;
     const requested = value.session.providerAccountId;
     if (!requested || requested === DEFAULT_ACCOUNT) return undefined;
-    if (requested !== AUTO_ACCOUNT || !this.accounts) return requested;
     const harness = value.session.harness;
+    if (requested !== AUTO_ACCOUNT || !this.accounts) {
+      if (this.accounts && !this.declared(harness, requested)) throw new Error(REMOVED_ACCOUNT);
+      return requested;
+    }
     const pool = this.accounts.pool(harness);
     const current = value.accountInUse;
-    const blockedUntil = current ? this.accounts.usage()[current]?.blockedUntil : undefined;
-    let chosen =
-      current && pool.some((account) => account.id === current) && !(blockedUntil && blockedUntil > Date.now())
-        ? current
-        : this.accounts.pick(harness)?.account.id;
+    const entry = current ? this.accounts.usage()[current] : undefined;
+    const open =
+      !!current &&
+      pool.some((account) => account.id === current) &&
+      !(entry?.blockedUntil && entry.blockedUntil > Date.now());
+    // It leaves an account whose sign-in failed for a usable one only.
+    let chosen = open && !entry?.error ? current : undefined;
+    if (!chosen) {
+      const picked = this.accounts.pick(harness);
+      chosen = picked && (picked.free || !open) ? picked.account.id : current;
+    }
     // Codex keeps its threads per profile and has no carry-over: an existing
     // Codex conversation stays where it started.
     if (harness !== "claude" && current && value.session.providerSessionId) chosen = current;
+    if (chosen && !this.declared(harness, chosen)) throw new Error(REMOVED_ACCOUNT);
     if (chosen && chosen !== current)
       this.useAccount(id, this.provider(harness), current, chosen);
     return chosen;
@@ -1413,7 +1461,9 @@ export class HostEngine {
     if (after !== before && session.harness === "claude" && session.providerSessionId) {
       const dir = (id: string | undefined) =>
         claudeConfigDir(id && this.accounts ? this.accounts.find("claude", id) : undefined);
-      carryClaudeTranscript(dir(before), dir(after), session.providerSessionId);
+      // A removed account's profile is no longer known: nothing to carry.
+      if (!before || this.declared("claude", before))
+        carryClaudeTranscript(dir(before), dir(after), session.providerSessionId);
       bindProvider(provider, session.id, session.providerSessionId, session.cwd, after);
     }
     return { ...value, accountInUse: after ?? DEFAULT_ACCOUNT };
@@ -1430,9 +1480,10 @@ export class HostEngine {
     if (!live) return;
     const { session } = live.value;
     if (session.providerSessionId && session.harness === "claude" && this.accounts) {
-      const from = fromId ? this.accounts.find("claude", fromId) : undefined;
+      const from = this.declared("claude", fromId);
       const to = this.accounts.find("claude", toId);
-      carryClaudeTranscript(claudeConfigDir(from), claudeConfigDir(to), session.providerSessionId);
+      if (!fromId || fromId === DEFAULT_ACCOUNT || from)
+        carryClaudeTranscript(claudeConfigDir(from), claudeConfigDir(to), session.providerSessionId);
       provider.bind(id, session.providerSessionId, session.cwd, toId);
     }
     live.value = this.save(
@@ -1688,6 +1739,7 @@ export class HostEngine {
   async close(): Promise<void> {
     this.closing = true;
     clearInterval(this.resumeTimer);
+    clearInterval(this.usageTimer);
     for (const timer of this.retryTimers.values()) clearTimeout(timer);
     this.retryTimers.clear();
     await Promise.all(

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -152,6 +152,93 @@ describe("host account sign-in", () => {
     await expect(logins.finish({ loginId: started.loginId, code: "abc" })).rejects.toThrow(
       "This sign-in has ended",
     );
+  });
+});
+
+/** A stand-in for `codex login --device-auth` and the app server that
+ * names the signed-in address. */
+function fakeCodex() {
+  const calls: Call[] = [];
+  const spawn = (_command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => {
+    const child = Object.assign(new EventEmitter(), {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      stdin: new PassThrough(),
+      written: "",
+      kill: () => {
+        child.emit("exit", null);
+        return true;
+      },
+    }) as FakeChild;
+    calls.push({ args, env: options.env, child });
+    if (args[0] === "app-server") {
+      child.stdin.on("data", (chunk: Buffer) => {
+        for (const line of chunk.toString().split("\n").filter(Boolean)) {
+          const message = JSON.parse(line) as { id?: number; method: string };
+          if (message.id === undefined) continue;
+          const result = message.method === "account/read" ? { account: { email: "dev.person@example.com" } } : {};
+          child.stdout.write(`${JSON.stringify({ id: message.id, result })}\n`);
+        }
+      });
+    } else
+      setTimeout(() =>
+        child.stdout.write(
+          "Follow these steps to sign in with ChatGPT using device code authorization:\n\n" +
+            "1. Open this link in your browser and sign in to your account\n   \x1b[94mhttps://auth.openai.com/codex/device\x1b[0m\n\n" +
+            "2. Enter this one-time code \x1b[90m(expires in 15 minutes)\x1b[0m\n   \x1b[94m42RC-O9ZVZ\x1b[0m\n",
+        ),
+      );
+    return child as unknown as ChildProcessWithoutNullStreams;
+  };
+  return { calls, spawn };
+}
+
+describe("host Codex sign-in", () => {
+  it("shows the device code, then declares the account once Codex signs in", async () => {
+    const data = temp();
+    const home = temp();
+    const accounts = new HostAccounts(data);
+    const codex = fakeCodex();
+    const binaries: string[] = [];
+    const logins = new HostAccountLogins(
+      accounts,
+      async (provider) => {
+        binaries.push(provider);
+        return `/bin/${provider}`;
+      },
+      codex.spawn,
+      home,
+    );
+    const started = await logins.start({ provider: "codex" });
+    expect(started).toEqual({
+      loginId: expect.any(String),
+      url: "https://auth.openai.com/codex/device",
+      userCode: "42RC-O9ZVZ",
+      accountId: "codex-1",
+    });
+    expect(codex.calls[0].args).toEqual(["login", "--device-auth"]);
+    expect(codex.calls[0].env.CODEX_HOME).toBe(join(home, ".codex-1"));
+    expect(existsSync(join(home, ".codex-1"))).toBe(true);
+    await expect(logins.finish({ loginId: started.loginId, code: "x" })).rejects.toThrow(/needs no code/);
+
+    const pending = logins.status({ loginId: started.loginId });
+    codex.calls[0].child.emit("exit", 0);
+    await expect(pending).resolves.toEqual({ accountId: "codex-1", label: "dev.person" });
+    expect(binaries).toEqual(["codex", "codex"]);
+    expect(accounts.config().accounts).toEqual([
+      { id: "codex-1", provider: "codex", label: "dev.person", configDir: join(home, ".codex-1") },
+    ]);
+    expect(accounts.config().balance).toEqual(["codex-1"]);
+    await expect(logins.status({ loginId: started.loginId })).rejects.toThrow("This sign-in has ended");
+  });
+
+  it("removes the profile it made when the device sign-in is cancelled", async () => {
+    const home = temp();
+    const codex = fakeCodex();
+    const logins = new HostAccountLogins(new HostAccounts(temp()), async () => "/bin/codex", codex.spawn, home);
+    const started = await logins.start({ provider: "codex" });
+    logins.cancel({ loginId: started.loginId });
+    await vi.waitFor(() => expect(existsSync(join(home, ".codex-1"))).toBe(false));
   });
 });
 

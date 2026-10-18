@@ -75,6 +75,55 @@ describe("host accounts", () => {
     expect(accounts.pick("codex")).toBeUndefined();
   });
 
+  it("never picks an account whose sign-in failed, and tries never-read ones last", async () => {
+    const dir = temp();
+    let now = 1_000_000;
+    writeFileSync(join(dir, "config.json"), JSON.stringify({
+      accounts: [
+        { id: "a", provider: "claude", configDir: "/a" },
+        { id: "b", provider: "claude", configDir: "/b" },
+        { id: "c", provider: "claude", configDir: "/c" },
+      ],
+      balance: ["a", "b", "c"],
+    }));
+    const failing = new Set(["a"]);
+    const accounts = new HostAccounts(dir, () => now, async (account) =>
+      failing.has(account.id)
+        ? { ok: false, error: "Sign-in expired; reconnect this account" }
+        : { ok: true, sevenDay: { used: 40 } },
+    );
+    accounts.recordUsage("a", { sevenDay: { used: 1 } });
+    accounts.recordUsage("b", { sevenDay: { used: 70 } });
+    expect(accounts.pick("claude")?.account.id).toBe("a");
+    // c was never read: it comes after b, however full b is.
+    expect(accounts.pick("claude", ["a"])?.account.id).toBe("b");
+    now += 30_000;
+    await accounts.refreshUsage();
+    expect(accounts.usage().a.error).toMatch(/expired/);
+    expect(accounts.pick("claude")?.account.id).toBe("b");
+    expect(accounts.pick("claude", ["b"])?.account.id).toBe("c");
+    // Nothing usable: the fallback still prefers one that can sign in.
+    accounts.markBlocked("b", now + 60_000);
+    accounts.markBlocked("c", now + 30_000);
+    expect(accounts.pick("claude")).toEqual({ account: expect.objectContaining({ id: "c" }), free: false });
+  });
+
+  it("removes an account from the file, the pool and the readings", () => {
+    const dir = temp();
+    writeFileSync(join(dir, "config.json"), JSON.stringify(config));
+    const accounts = new HostAccounts(dir);
+    accounts.recordUsage("one", { sevenDay: { used: 3 } });
+    accounts.removeAccount("one");
+    expect(accounts.config().accounts.map((account) => account.id)).toEqual(["two", "work"]);
+    expect(accounts.config().balance).toEqual(["two"]);
+    expect(accounts.usage().one).toBeUndefined();
+    const raw = JSON.parse(readFileSync(join(dir, "config.json"), "utf8"));
+    expect(raw.binaries).toEqual(config.binaries);
+    expect(raw.balance).toEqual(["two", "ghost"]);
+    expect(() => accounts.removeAccount("one")).toThrow(/Unknown account/);
+    expect(() => accounts.removeAccount("default")).toThrow(/Unknown account/);
+  });
+
   it("lists a Balanced choice only when two or more accounts are pooled", () => {
     const dir = temp();
     writeFileSync(join(dir, "config.json"), JSON.stringify(config));

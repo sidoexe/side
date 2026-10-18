@@ -1,5 +1,8 @@
 import SwiftUI
 
+/// What Resume sends, as the desktop's `CONTINUE_PROMPT` (inFlight.ts).
+let continuePrompt = "Continue from where you left off."
+
 struct SessionView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -63,6 +66,7 @@ struct SessionView: View {
             }
         }
         .task(id: route) { await poll() }
+        .task { await model.refreshAccounts() }
         .task(id: route.projectId) {
             catalog = try? await model.client?.rpc("models.list", ["projectId": route.projectId], as: HostModelCatalog.self)
         }
@@ -107,7 +111,7 @@ struct SessionView: View {
                         notice("Interrupted")
                     }
                     if let limit = value.meta.usageLimit {
-                        usageLimit(limit, projectId: value.projectId)
+                        usageLimit(limit, value: value)
                     }
                     Color.clear.frame(height: 1).id("end")
                 }
@@ -176,29 +180,72 @@ struct SessionView: View {
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.del.opacity(0.35)))
     }
 
-    private func usageLimit(_ limit: SessionMeta.UsageLimit, projectId: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Usage limit reached" + (limit.resetsAt.map { ", resets \(Date(timeIntervalSince1970: $0 / 1000).formatted(date: .abbreviated, time: .shortened))" } ?? "") + ".")
-            HStack(spacing: 6) {
-                Button("Resume") { run(["type": "send", "text": "Continue."]) }.buttonStyle(ThemeButtonStyle())
-                Button(limit.resumeAtReset == true ? "Resumes at reset" : "Resume at reset") {
-                    Task {
-                        _ = try? await model.client?.rpc("sessions.update", [
-                            "projectId": projectId, "sessionId": route.sessionId, "usageLimit": ["resumeAtReset": true],
-                        ], as: HostClient.Ignored.self)
-                        await refresh()
+    /// As the desktop's `UsageLimitNotice`: Resume once the limit has reset,
+    /// or resume at reset (cancellable) before; an account switch; Dismiss.
+    private func usageLimit(_ limit: SessionMeta.UsageLimit, value: HostSession) -> some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            let waiting = limit.resetsAt.map { $0 > context.date.timeIntervalSince1970 * 1000 } ?? false
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "gauge.with.dots.needle.67percent").foregroundStyle(Theme.amber)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Usage limit reached").foregroundStyle(Theme.text)
+                        if let resetsAt = limit.resetsAt {
+                            Text(waiting ? "Resets \(resetTime(resetsAt))" : "Limit has reset").foregroundStyle(Theme.muted)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    Button {
+                        setUsageLimit(NSNull(), projectId: value.projectId)
+                    } label: {
+                        Image(systemName: "xmark").font(.system(size: 11, weight: .semibold)).frame(width: 24, height: 24)
+                    }
+                    .foregroundStyle(Theme.muted)
+                    .accessibilityLabel("Dismiss usage limit notice")
+                }
+                HStack(spacing: 6) {
+                    if !waiting {
+                        Button("Resume", systemImage: "play.fill") { run(["type": "send", "text": continuePrompt]) }
+                            .buttonStyle(ThemeButtonStyle())
+                    } else if limit.resumeAtReset == true {
+                        Button("Resuming at reset", systemImage: "clock") {
+                            setUsageLimit(["resumeAtReset": false], projectId: value.projectId)
+                        }
+                        .buttonStyle(ThemeButtonStyle())
+                        .accessibilityHint("Cancels the automatic resume")
+                    } else {
+                        Button("Resume at reset", systemImage: "clock") {
+                            setUsageLimit(["resumeAtReset": true], projectId: value.projectId)
+                        }
+                        .buttonStyle(ThemeButtonStyle())
+                    }
+                    AccountChip(harness: value.meta.harness, current: value.meta.providerAccountId) { account in
+                        configure(value, SessionChips.Change(providerAccountId: account))
                     }
                 }
-                .buttonStyle(ThemeButtonStyle())
-                .disabled(limit.resumeAtReset == true)
             }
         }
         .font(.system(size: 13))
-        .foregroundStyle(Theme.delFg)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.del.opacity(0.35)))
+        .background(Theme.amber.opacity(0.06), in: .rect(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.amber.opacity(0.25)))
+    }
+
+    /// `sessions.update` of the usage limit: arms or cancels the resume, or
+    /// clears the notice with `NSNull`.
+    private func setUsageLimit(_ limit: Any, projectId: String) {
+        Task {
+            do {
+                _ = try await model.client?.rpc("sessions.update", [
+                    "projectId": projectId, "sessionId": route.sessionId, "usageLimit": limit,
+                ], as: HostClient.Ignored.self)
+            } catch {
+                model.report(error)
+            }
+            await refresh()
+        }
     }
 
     @ViewBuilder
@@ -345,7 +392,6 @@ struct SessionChips: View {
         let meta = value.meta
         let models = catalog?.models[meta.harness] ?? []
         let model = models.first { $0.matches(meta.model) }
-        let accounts = app.accounts.filter { $0.provider == meta.harness }
         Chip(icon: AnyView(HarnessIcon(harness: meta.harness, size: 13)), label: app.modelName(harness: meta.harness, model: meta.model), disabled: models.isEmpty) {
             ForEach(models) { item in
                 ChoiceButton(label: item.name, selected: item.matches(meta.model)) { onChange(Change(model: item.id)) }
@@ -368,15 +414,7 @@ struct SessionChips: View {
                 ChoiceButton(label: mode.label, selected: mode.id == meta.runtimeMode) { onChange(Change(runtimeMode: mode.id)) }
             }
         }
-        if !accounts.isEmpty {
-            let current = meta.providerAccountId ?? ""
-            Chip(label: accounts.first { $0.id == current }?.label ?? "Default") {
-                ChoiceButton(label: "Default", selected: current.isEmpty) { onChange(Change(providerAccountId: "default")) }
-                ForEach(accounts) { account in
-                    ChoiceButton(label: account.label, selected: account.id == current) { onChange(Change(providerAccountId: account.id)) }
-                }
-            }
-        }
+        AccountChip(harness: meta.harness, current: meta.providerAccountId) { onChange(Change(providerAccountId: $0)) }
     }
 }
 

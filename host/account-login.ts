@@ -1,19 +1,26 @@
 import { spawn as nodeSpawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { accountEnv, type HostAccount, type HostAccounts } from "./accounts";
+import { accountEnv, type AccountProvider, type HostAccount, type HostAccounts } from "./accounts";
+import { codexRequest } from "./account-usage";
 
 /**
  * Signs a host account in from a desktop that may be another computer.
  * `claude auth login` prints a sign-in link and reads the code the browser
  * shows from stdin, so the desktop opens the link where the user sits and
  * sends the code back. The host's own browser is never opened.
+ * `codex login --device-auth` instead prints a link and a code to enter on
+ * that page, and finishes by itself: the desktop shows both and asks how the
+ * sign-in is going until it ends.
  */
 const URL_TIMEOUT_MS = 30_000;
 const LOGIN_TIMEOUT_MS = 10 * 60_000;
 const LINK = /visit:\s*(https:\/\/\S+)/;
+const DEVICE = /(https:\/\/\S+)[\s\S]*?one-time code[^\n]*\n\s*([A-Z0-9]+-[A-Z0-9]+)/;
+/** How long one `accounts.loginStatus` call waits for a device sign-in. */
+const STATUS_WAIT_MS = 10_000;
 const STATUS_TIMEOUT_MS = 15_000;
 /** Profiles made by hand or by an older tool: `~/.claude-1`, `~/.claude-work`. */
 const PROFILE = /^\.claude-[A-Za-z0-9._-]+$/;
@@ -34,7 +41,13 @@ type Login = {
   timer: ReturnType<typeof setTimeout>;
 };
 
-export type AccountLoginStart = { loginId: string; url: string; accountId: string };
+export type AccountLoginStart = {
+  loginId: string;
+  url: string;
+  accountId: string;
+  /** For Codex: the code to enter on the page; no code comes back. */
+  userCode?: string;
+};
 export type AccountLoginDone = { accountId: string; label: string };
 /** A signed-in profile on the host that no account declares yet. */
 export type FoundAccount = { configDir: string; label: string };
@@ -44,26 +57,32 @@ export class HostAccountLogins {
 
   constructor(
     private readonly accounts: HostAccounts,
-    private readonly binary: () => Promise<string>,
+    private readonly binary: (provider: AccountProvider) => Promise<string>,
     private readonly spawn: Spawn = (command, args, options) =>
       nodeSpawn(command, args, { ...options, stdio: "pipe" }),
     private readonly home: string = homedir(),
   ) {}
 
   /** Starts a sign-in: an existing account's again, or a new one's. */
-  async start(params: { accountId?: unknown }): Promise<AccountLoginStart> {
+  async start(params: { accountId?: unknown; provider?: unknown }): Promise<AccountLoginStart> {
+    const provider: AccountProvider = params.provider === "codex" ? "codex" : "claude";
+    const title = TITLE[provider];
     const existing =
       typeof params.accountId === "string" && params.accountId
-        ? this.accounts.find("claude", params.accountId)
+        ? this.accounts.find(provider, params.accountId)
         : undefined;
     if (typeof params.accountId === "string" && params.accountId && !existing)
-      throw new Error("Choose a Claude account of this host");
-    const account = existing ?? this.newAccount();
-    const binary = await this.binary();
+      throw new Error(`Choose a ${title} account of this host`);
+    const account = existing ?? this.newAccount(provider);
+    const binary = await this.binary(provider);
     const env = accountEnv(account);
     const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env.set, BROWSER: "/usr/bin/true" };
     for (const name of env.unset) delete childEnv[name];
-    const child = this.spawn(binary, ["auth", "login"], { env: childEnv });
+    // Codex refuses a CODEX_HOME that does not exist yet.
+    if (provider === "codex") mkdirSync(account.configDir, { recursive: true, mode: 0o700 });
+    const child = this.spawn(binary, provider === "codex" ? ["login", "--device-auth"] : ["auth", "login"], {
+      env: childEnv,
+    });
     const exit = new Promise<number | null>((resolve) => {
       child.once("exit", (code) => resolve(code));
       child.once("error", () => resolve(null));
@@ -78,9 +97,9 @@ export class HostAccountLogins {
       timer: setTimeout(() => this.cancel({ loginId }), LOGIN_TIMEOUT_MS),
     };
     this.logins.set(loginId, login);
-    const url = await new Promise<string>((resolve, reject) => {
+    const offer = await new Promise<{ url: string; userCode?: string }>((resolve, reject) => {
       let settled = false;
-      const timer = setTimeout(() => fail("Claude did not offer a sign-in link"), URL_TIMEOUT_MS);
+      const timer = setTimeout(() => fail(`${title} did not offer a sign-in link`), URL_TIMEOUT_MS);
       const fail = (message: string) => {
         if (settled) return;
         settled = true;
@@ -89,34 +108,58 @@ export class HostAccountLogins {
         reject(new Error(message));
       };
       const read = (chunk: Buffer) => {
-        login.output += chunk.toString();
-        const match = LINK.exec(login.output);
+        login.output += plain(chunk.toString());
+        const match = (provider === "codex" ? DEVICE : LINK).exec(login.output);
         if (match && !settled) {
           settled = true;
           clearTimeout(timer);
-          resolve(match[1]);
+          resolve({ url: match[1], ...(match[2] ? { userCode: match[2] } : {}) });
         }
       };
       child.stdout.on("data", read);
       child.stderr.on("data", read);
-      void exit.then(() => fail(lastLine(login.output) || "Claude sign-in stopped"));
+      void exit.then(() => fail(lastLine(login.output) || `${title} sign-in stopped`));
     });
-    return { loginId, url, accountId: account.id };
+    return { loginId, ...offer, accountId: account.id };
   }
 
   /** Hands Claude the code the browser showed, and waits for the result. */
   async finish(params: { loginId?: unknown; code?: unknown }): Promise<AccountLoginDone> {
-    const login = this.logins.get(String(params.loginId ?? ""));
+    const id = String(params.loginId ?? "");
+    const login = this.logins.get(id);
     if (!login) throw new Error("This sign-in has ended; start it again");
+    if (login.account.provider === "codex") throw new Error("This sign-in needs no code; enter it on the page");
     const code = typeof params.code === "string" ? params.code.trim() : "";
     if (!code || /\s/.test(code)) throw new Error("Paste the code shown after signing in");
     const before = login.output.length;
     login.child.stdin.write(`${code}\n`);
+    return this.complete(id, login, before);
+  }
+
+  /** How a device sign-in is going: waits a little for it to end, and
+   * otherwise says it still is. */
+  async status(params: { loginId?: unknown }): Promise<AccountLoginDone | { pending: true }> {
+    const id = String(params.loginId ?? "");
+    const login = this.logins.get(id);
+    if (!login) throw new Error("This sign-in has ended; start it again");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const ended = await Promise.race([
+      login.exit.then(() => true),
+      new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), STATUS_WAIT_MS))),
+    ]);
+    clearTimeout(timer);
+    return ended ? this.complete(id, login, 0) : { pending: true };
+  }
+
+  /** Once the CLI exits: declares a new account, or says why it failed. */
+  private async complete(id: string, login: Login, before: number): Promise<AccountLoginDone> {
     const status = await login.exit;
-    this.end(String(params.loginId));
+    // Two callers may see the same exit; only the first finishes it.
+    if (this.logins.get(id) !== login) throw new Error("This sign-in has ended; start it again");
+    this.end(id);
     if (status !== 0) {
       if (login.created) this.discard(login.account);
-      throw new Error(lastLine(login.output.slice(before)) || "Claude sign-in failed");
+      throw new Error(lastLine(login.output.slice(before)) || `${TITLE[login.account.provider]} sign-in failed`);
     }
     if (!login.created) return { accountId: login.account.id, label: login.account.label };
     const account = { ...login.account, label: (await this.email(login.account)) ?? login.account.label };
@@ -166,8 +209,8 @@ export class HostAccountLogins {
       });
     if (!candidates.length) return [];
     const [known, statuses] = await Promise.all([
-      Promise.all(declared.map((account) => this.status(account.configDir))),
-      Promise.all(candidates.map((dir) => this.status(dir))),
+      Promise.all(declared.map((account) => this.claudeStatus(account.configDir))),
+      Promise.all(candidates.map((dir) => this.claudeStatus(dir))),
     ]);
     const emails = new Set(known.map((status) => status?.email).filter(Boolean));
     const found: FoundAccount[] = [];
@@ -212,14 +255,15 @@ export class HostAccountLogins {
     ]);
   }
 
-  /** The next free `perso-N`, in `~/.claude-N` like the hand-made ones. */
-  private newAccount(): HostAccount {
+  /** The next free `perso-N`, in `~/.claude-N` like the hand-made ones;
+   * `codex-N` in `~/.codex-N` for Codex. */
+  private newAccount(provider: AccountProvider): HostAccount {
     const taken = this.takenIds();
     for (let n = 1; ; n++) {
-      const id = `perso-${n}`;
-      const configDir = join(this.home, `.claude-${n}`);
+      const id = provider === "codex" ? `codex-${n}` : `perso-${n}`;
+      const configDir = join(this.home, `.${provider}-${n}`);
       if (taken.has(id) || existsSync(configDir)) continue;
-      return { id, provider: "claude", label: id, configDir };
+      return { id, provider, label: id, configDir };
     }
   }
 
@@ -236,18 +280,34 @@ export class HostAccountLogins {
 
   /** The signed-in address's name, which is how accounts are told apart. */
   private async email(account: HostAccount): Promise<string | undefined> {
-    const email = (await this.status(account.configDir))?.email;
+    const email =
+      account.provider === "codex"
+        ? await this.codexEmail(account.configDir)
+        : (await this.claudeStatus(account.configDir))?.email;
     return email ? localPart(email) : undefined;
+  }
+
+  /** The address Codex says a profile is signed in with. */
+  private async codexEmail(configDir: string): Promise<string | undefined> {
+    try {
+      const value = (await codexRequest(await this.binary("codex"), configDir, "account/read", this.spawn)) as {
+        account?: { email?: unknown } | null;
+      };
+      const email = value?.account?.email;
+      return typeof email === "string" && email.includes("@") ? email : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /** `claude auth status` for a profile; nothing when it is signed out or
    * does not answer. */
-  private async status(configDir: string): Promise<{ email: string } | undefined> {
+  private async claudeStatus(configDir: string): Promise<{ email: string } | undefined> {
     try {
       const env = accountEnv({ id: "status", provider: "claude", label: "", configDir });
       const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env.set };
       for (const name of env.unset) delete childEnv[name];
-      const child = this.spawn(await this.binary(), ["auth", "status", "--json"], { env: childEnv });
+      const child = this.spawn(await this.binary("claude"), ["auth", "status", "--json"], { env: childEnv });
       let out = "";
       child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
       const timer = setTimeout(() => child.kill(), STATUS_TIMEOUT_MS);
@@ -264,6 +324,14 @@ export class HostAccountLogins {
       return undefined;
     }
   }
+}
+
+const TITLE: Record<AccountProvider, string> = { claude: "Claude", codex: "Codex" };
+
+/** Terminal colours out, so the link and code read as text. */
+function plain(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
 function lastLine(text: string): string {

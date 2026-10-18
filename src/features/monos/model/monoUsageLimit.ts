@@ -2,6 +2,11 @@ import { CONTINUE_PROMPT } from "../../sessions/model/inFlight";
 import type { Session } from "../../sessions/model/session";
 import { sameProviderAccountId } from "../../providers/model/providerAccounts";
 import { resumeUsageLimitedSession } from "../../sessions/model/usageLimit";
+import {
+  canCarrySessionAccount,
+  carrySessionAccount,
+  switchSessionAccount,
+} from "../../sessions/model/accountSwitch";
 import { enqueueMonoMessage } from "./monoMessaging";
 
 /** Retry the existing outbox in order, or continue the stopped work once. */
@@ -17,41 +22,8 @@ export function resumeMonoUsageLimit(session: Session): Session {
       });
 }
 
-/**
- * Move a Mono to another account. Provider threads are account-owned, so the
- * next turn opens a fresh one and hands the transcript over.
- */
-export function switchMonoAccount(
-  session: Session,
-  accountId: string,
-): Session {
-  if (
-    session.busy ||
-    sameProviderAccountId(session.providerAccountId, accountId)
-  )
-    return session;
-  if (!session.blocks.some((block) => block.role === "user"))
-    return {
-      ...session,
-      providerAccountId: accountId,
-      providerSessionId: undefined,
-    };
-  return {
-    ...session,
-    providerAccountId: accountId,
-    providerSessionId: undefined,
-    pendingSwitch: {
-      ...(session.pendingSwitch ?? {
-        from: session.harness,
-        fromModel: session.model,
-        fromSettings: session.modelSettings,
-        fromProviderSessionId: session.providerSessionId,
-        fromProviderAccountId: session.providerAccountId,
-      }),
-      skipOutgoingRecap: true,
-    },
-  };
-}
+/** Move a Mono to another account, handing its transcript over. */
+export const switchMonoAccount = switchSessionAccount;
 
 /** Account-owned threads need a fresh connection with a transcript handoff. */
 export function switchMonoUsageLimitAccount(
@@ -67,26 +39,13 @@ export function switchMonoUsageLimitAccount(
   return resumeMonoUsageLimit(switchMonoAccount(session, accountId));
 }
 
-/**
- * A Claude Mono whose transcript was copied into the new account resumes
- * its own conversation there, with nothing lost to a recap.
- */
-export function canCarryMonoAccount(session: Session): boolean {
-  return (
-    session.harness === "claude" &&
-    !!session.providerSessionId &&
-    !session.pendingSwitch &&
-    !session.busy
-  );
-}
+/** A Claude Mono resumes its own conversation on the new account. */
+export const canCarryMonoAccount = canCarrySessionAccount;
 
 /** Move a Mono to an account that already holds a copy of its transcript. */
 export function carryMonoAccount(session: Session, accountId: string): Session {
-  if (
-    !canCarryMonoAccount(session) ||
-    sameProviderAccountId(session.providerAccountId, accountId)
-  )
-    return session;
-  const moved = { ...session, providerAccountId: accountId };
-  return moved.usageLimit ? resumeMonoUsageLimit(moved) : moved;
+  const moved = carrySessionAccount(session, accountId);
+  return moved !== session && moved.usageLimit
+    ? resumeMonoUsageLimit(moved)
+    : moved;
 }

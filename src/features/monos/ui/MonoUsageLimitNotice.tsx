@@ -2,7 +2,6 @@ import {
   useId,
   useRef,
   useState,
-  useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { ChevronDown } from "../../../shared/ui/icons";
@@ -16,12 +15,10 @@ import { UsageLimitNotice } from "../../sessions/ui/UsageLimitNotice";
 import { ModelPicker } from "../../sessions/ui/ModelPicker";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import {
-  providerAccounts,
   sameProviderAccountId,
-  subscribeProviderAccounts,
-  supportsProviderAccounts,
   type ProviderAccount,
 } from "../../providers/model/providerAccounts";
+import { useProviderAccounts } from "../../providers/ui/ProviderAccountRow";
 
 export function MonoUsageLimitNotice({
   session,
@@ -36,17 +33,6 @@ export function MonoUsageLimitNotice({
   onResume: () => void;
   onResumeAtReset: (enabled: boolean) => void;
 }) {
-  const snapshot = useSyncExternalStore(
-    subscribeProviderAccounts,
-    () =>
-      supportsProviderAccounts(session.harness)
-        ? JSON.stringify(providerAccounts(session.harness))
-        : "[]",
-    () => "[]",
-  );
-  const accounts = (JSON.parse(snapshot) as ProviderAccount[]).filter(
-    (account) => !sameProviderAccountId(account.id, session.providerAccountId),
-  );
   if (!session.usageLimit) return null;
   return (
     <UsageLimitNotice
@@ -56,37 +42,68 @@ export function MonoUsageLimitNotice({
       onResume={onResume}
       onResumeAtReset={onResumeAtReset}
       modelPicker={
-        <>
-          <ModelPicker
-            harness={session.harness}
-            model={session.model}
-            values={session.modelSettings}
-            project={session.cwd}
-            hideSettings
-            triggerLabel="Choose another model"
-            onChange={onModelChange}
-            onSettingsChange={() => {}}
-          />
-          {onAccountChange && accounts.length ? (
-            <AccountPicker
-              harness={session.harness}
-              accounts={accounts}
-              onSelect={onAccountChange}
-            />
-          ) : null}
-        </>
+        <UsageLimitPickers
+          session={session}
+          onModelChange={onModelChange}
+          onAccountChange={onAccountChange}
+        />
       }
     />
+  );
+}
+
+/**
+ * Another model, or another account of the same provider, to keep a
+ * conversation going after a limit stopped it: a Colleague's or a chat's.
+ * `compact` fits the chat's one-line notice above its composer.
+ */
+export function UsageLimitPickers({
+  session,
+  compact = false,
+  onModelChange,
+  onAccountChange,
+}: {
+  session: Session;
+  compact?: boolean;
+  onModelChange: (harness: HarnessId, model: string) => void;
+  onAccountChange?: (accountId: string) => void;
+}) {
+  const accounts = useProviderAccounts(session.harness).filter(
+    (account) => !sameProviderAccountId(account.id, session.providerAccountId),
+  );
+  return (
+    <>
+      <ModelPicker
+        harness={session.harness}
+        model={session.model}
+        values={session.modelSettings}
+        project={session.cwd}
+        hideSettings
+        triggerLabel={compact ? "Other model" : "Choose another model"}
+        onChange={onModelChange}
+        onSettingsChange={() => {}}
+      />
+      {onAccountChange && accounts.length ? (
+        <AccountPicker
+          harness={session.harness}
+          accounts={accounts}
+          label={compact ? "Other account" : "Choose another account"}
+          onSelect={onAccountChange}
+        />
+      ) : null}
+    </>
   );
 }
 
 function AccountPicker({
   harness,
   accounts,
+  label,
   onSelect,
 }: {
   harness: HarnessId;
   accounts: ProviderAccount[];
+  label: string;
   onSelect: (accountId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -128,7 +145,7 @@ function AccountPicker({
       <button
         ref={button}
         type="button"
-        aria-label="Choose another account"
+        aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
         data-mono-account-picker
@@ -142,7 +159,7 @@ function AccountPicker({
         }}
         className="flex h-6.5 shrink-0 items-center gap-1 rounded-md bg-selection px-1.5 text-[11px] text-content hover:bg-selection-hover"
       >
-        <span>Choose another account</span>
+        <span>{label}</span>
         <ChevronDown
           className={`size-3 shrink-0 text-content/50 ${open ? "rotate-180" : ""}`}
           strokeWidth={1.75}
@@ -158,7 +175,7 @@ function AccountPicker({
           onDismiss={(reason) => dismiss(reason === "escape")}
           ignore="[data-mono-account-picker]"
           role="menu"
-          aria-label="Choose another account"
+          aria-label={label}
           aria-activedescendant={`${menuId}-${active}`}
           tabIndex={-1}
           onKeyDown={onKeyDown}

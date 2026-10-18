@@ -23,10 +23,12 @@ let root: Root;
 let footer: HTMLDivElement;
 let requests: { method: string; params: Record<string, unknown> }[];
 let codeResult: () => unknown;
+let loginStatus: () => unknown;
 
 beforeEach(() => {
   requests = [];
   codeResult = () => ({ accountId: "perso-3", label: "new.person" });
+  loginStatus = () => ({ accountId: "codex-1", label: "dev.person" });
   vi.mocked(invoke).mockReset();
   vi.mocked(invoke).mockImplementation(async (_command, input) => {
     const { method, params } = input as { method: string; params: Record<string, unknown> };
@@ -53,6 +55,8 @@ beforeEach(() => {
     if (method === "accounts.list") return [];
     if (method === "accounts.found") return [{ configDir: "~/.claude-work", label: "work.person" }];
     if (method === "accounts.import") return { accountId: "perso-3", label: "work.person" };
+    if (method === "accounts.remove") return [{ id: "perso-1", provider: "claude", label: "6ido.exe" }];
+    if (method === "accounts.loginStatus") return loginStatus();
     return {};
   });
   footer = document.createElement("div");
@@ -265,4 +269,61 @@ it("says to update a host too old to refresh usage", async () => {
   await openMenu();
   expect(document.body.textContent).toContain("Update host to refresh");
   expect(document.querySelector('button[aria-label="Refresh usage"]')).toBeNull();
+});
+
+it("removes a host account after asking, only where the host can", async () => {
+  await render();
+  await openMenu();
+  expect(document.querySelector('button[aria-label="Remove benchoubane.sid"]')).toBeNull();
+  await act(async () => root.render(createElement("div")));
+  await render({ canRemove: true });
+  await openMenu();
+  const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+  const remove = () =>
+    document.querySelector<HTMLButtonElement>('button[aria-label="Remove benchoubane.sid"]')!;
+  await act(async () => remove().click());
+  expect(requests.some((request) => request.method === "accounts.remove")).toBe(false);
+  await act(async () => remove().click());
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(requests.at(-1)).toEqual({ method: "accounts.remove", params: { accountId: "perso-2" } });
+  confirm.mockRestore();
+});
+
+it("names an account the host no longer has", async () => {
+  await render({ value: "perso-9" });
+  expect(footer.querySelector("button")?.getAttribute("aria-label")).toBe("Host account: Removed account");
+});
+
+it("signs a Codex account in with the code the host shows", async () => {
+  let pending = true;
+  loginStatus = () => (pending ? { pending: true } : { accountId: "codex-1", label: "dev.person" });
+  vi.mocked(invoke).mockImplementation(async (_command, input) => {
+    const { method, params } = input as { method: string; params: Record<string, unknown> };
+    requests.push({ method, params });
+    if (method === "accounts.login")
+      return { loginId: "login-2", url: "https://auth.openai.com/codex/device", userCode: "42RC-O9ZVZ", accountId: "codex-1" };
+    if (method === "accounts.loginStatus") return loginStatus();
+    return [];
+  });
+  await render({
+    harness: "codex",
+    canSignInCodex: true,
+    value: undefined,
+    accounts: [{ id: "work", provider: "codex", label: "Work" }],
+  });
+  await openMenu();
+  await act(async () => item("Add account").click());
+  expect(requests.find((request) => request.method === "accounts.login")).toEqual({
+    method: "accounts.login",
+    params: { accountId: undefined, provider: "codex" },
+  });
+  expect(openUrl).toHaveBeenCalledWith("https://auth.openai.com/codex/device");
+  expect(document.querySelector('[aria-label="Sign-in code"]')?.textContent).toBe("42RC-O9ZVZ");
+  // The next question, a moment later, hears that it is done.
+  await act(async () => {
+    pending = false;
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+  });
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(requests.some((request) => request.method === "accounts.loginCancel")).toBe(false);
 });

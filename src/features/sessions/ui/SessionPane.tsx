@@ -76,7 +76,10 @@ import { UsageChips } from "../../../app/shell/UsageFooter";
 import { MonoAccountPicker } from "../../monos/ui/MonoAccountPicker";
 import { supportsProviderAccounts } from "../../providers/model/providerAccounts";
 import type { RateLimitProvider } from "../../providers/model/rateLimits";
-import { MonoUsageLimitNotice } from "../../monos/ui/MonoUsageLimitNotice";
+import {
+  MonoUsageLimitNotice,
+  UsageLimitPickers,
+} from "../../monos/ui/MonoUsageLimitNotice";
 import { QuestionForm } from "./QuestionForm";
 import {
   monoMessageDeliveries,
@@ -796,6 +799,23 @@ const LocalSessionPane = memo(function LocalSessionPane({
         onUsageLimitResumeAtReset(session.id, enabled)
       }
       onUsageLimitDismiss={() => onUsageLimitDismiss(session.id)}
+      usageLimitPickers={
+        session.usageLimit ? (
+          <UsageLimitPickers
+            session={session}
+            compact
+            onModelChange={(harness, model) =>
+              onModelChange(session.id, harness, model)
+            }
+            onAccountChange={
+              onUsageLimitAccountChange
+                ? (accountId) =>
+                    onUsageLimitAccountChange(session.id, accountId)
+                : undefined
+            }
+          />
+        ) : undefined
+      }
       onOpenFile={onOpenFile}
       busy={!!session.busy}
       editLastTurnSupported={editLastTurnSupported}

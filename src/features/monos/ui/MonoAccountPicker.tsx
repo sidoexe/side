@@ -13,16 +13,19 @@ import {
   subscribeRateLimits,
 } from "../../providers/model/rateLimitsCache";
 import {
-  providerAccounts,
   sameProviderAccountId,
   type ProviderAccountProvider,
 } from "../../providers/model/providerAccounts";
-import { barClass, UsageMeter } from "../../providers/ui/ProviderAccountUsage";
-import { needsProviderLogin } from "../../providers/model/providerSignIn";
-import { SignInAgainButton } from "../../providers/ui/SignInAgainButton";
+import { barClass } from "../../providers/ui/ProviderAccountUsage";
+import {
+  BalancedAccountRow,
+  ProviderAccountRow,
+  REMOVED_ACCOUNT_LABEL,
+  useProviderAccounts,
+} from "../../providers/ui/ProviderAccountRow";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
-import { Check, Plus, RefreshCw } from "../../../shared/ui/icons";
+import { Plus, RefreshCw } from "../../../shared/ui/icons";
 import { Popover, type PopoverDismissReason } from "../../../shared/ui/Popover";
 
 const MENU_ITEM =
@@ -50,50 +53,6 @@ function readAt(
   if (minutes < 1) return "updated just now";
   if (minutes < 60) return `updated ${minutes} min ago`;
   return `updated ${formatResetDuration(now - at)} ago`;
-}
-
-function AccountUsage({
-  limits,
-  now,
-}: {
-  limits: ProviderRateLimits;
-  now: number;
-}) {
-  const session = live(limits.session, now);
-  const weekly = live(limits.weekly, now);
-  return (
-    <>
-      {session || weekly ? (
-        <div className="flex gap-3">
-          {session ? (
-            <UsageMeter
-              title="5h"
-              window={session}
-              now={now}
-              className="w-[7.5rem]"
-            />
-          ) : null}
-          {weekly ? (
-            <UsageMeter
-              title="Weekly"
-              window={weekly}
-              now={now}
-              className="w-[7.5rem]"
-            />
-          ) : null}
-        </div>
-      ) : limits.error ? null : (
-        <p className="text-[10px] leading-3 text-content/40">
-          No usage read yet
-        </p>
-      )}
-      {limits.error ? (
-        <p className="text-[10px] leading-3 text-red-600 dark:text-red-300">
-          {limits.error}
-        </p>
-      ) : null}
-    </>
-  );
 }
 
 /**
@@ -126,10 +85,11 @@ export function MonoAccountPicker({
   const showRemaining = useShowRemainingUsage();
   // Any account's new reading redraws the menu.
   useSyncExternalStore(subscribeRateLimits, getAllRateLimits, getAllRateLimits);
-  const accounts = providerAccounts(provider);
-  const current =
-    accounts.find((account) => sameProviderAccountId(account.id, value)) ??
-    accounts[0];
+  const accounts = useProviderAccounts(provider);
+  const current = accounts.find((account) =>
+    sameProviderAccountId(account.id, value),
+  );
+  const currentLabel = current?.label ?? REMOVED_ACCOUNT_LABEL;
   const limitsOf = (id: string) => getCachedRateLimits(provider, id);
   const active = current ? limitsOf(current.id) : undefined;
 
@@ -167,7 +127,7 @@ export function MonoAccountPicker({
         ref={trigger}
         type="button"
         className="inline-flex h-6 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 text-[11px] text-content/55 transition-[background-color,color,transform] duration-150 ease-out hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-accent active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50"
-        aria-label={`Account: ${balanced ? "Balanced" : (current?.label ?? "Default")}`}
+        aria-label={`Account: ${balanced ? "Balanced" : currentLabel}`}
         aria-expanded={open}
         aria-haspopup="menu"
         title="Account this Colleague runs on"
@@ -180,7 +140,7 @@ export function MonoAccountPicker({
       >
         <HarnessIcon harness={provider} className="size-3 shrink-0" />
         <span className="max-w-28 truncate text-content/45">
-          {balanced ? "Balanced" : (current?.label ?? "Default")}
+          {balanced ? "Balanced" : currentLabel}
         </span>
         {session || weekly ? (
           <>
@@ -214,7 +174,7 @@ export function MonoAccountPicker({
           onDismiss={dismiss}
           role="menu"
           aria-label="Colleague accounts"
-          className="w-[18.5rem] p-1"
+          className="w-[20rem] p-1"
         >
           <div className="flex h-7 items-center gap-2 pl-2 pr-0.5 text-[11px] text-content/40">
             <span className="min-w-0 flex-1 truncate">
@@ -244,78 +204,52 @@ export function MonoAccountPicker({
               />
             </button>
           </div>
-          {accounts.length > 1 ? (
-            <button
-              type="button"
-              role="menuitemradio"
-              aria-checked={balanced}
-              className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] leading-none text-content hover:bg-content/10"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                setOpen(false);
-                if (!balanced) onBalanced();
-              }}
-            >
-              <span className="grid size-3 shrink-0 place-items-center pt-px">
-                {balanced ? (
-                  <Check className="size-3" strokeWidth={2} aria-hidden />
-                ) : null}
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                <span>Balanced</span>
-                <span className="text-[10px] leading-[13px] text-content/40">
-                  Between all {accounts.length} accounts · runs on the most
-                  weekly room, moves on at a limit with its conversation
-                  {balanced && current ? (
-                    <>
-                      {" · now on "}
-                      <span className="text-content/60">{current.label}</span>
-                    </>
-                  ) : null}
-                </span>
-              </span>
-            </button>
-          ) : null}
-          {accounts.map((account) => {
-            const checked = !balanced && account.id === current?.id;
-            const expired = needsProviderLogin(limitsOf(account.id));
-            return (
-              <div key={account.id} className="relative">
-                <button
-                  type="button"
+          <div className="flex flex-col gap-1">
+            {accounts.length > 1 ? (
+              <BalancedAccountRow
+                role="menuitemradio"
+                accountCount={accounts.length}
+                checked={balanced}
+                currentLabel={current?.label}
+                onSelect={() => {
+                  setOpen(false);
+                  if (!balanced) onBalanced();
+                }}
+              />
+            ) : null}
+            {!current && value ? (
+              <ProviderAccountRow
+                role="menuitemradio"
+                provider={provider}
+                accountId={value}
+                label={REMOVED_ACCOUNT_LABEL}
+                limits={undefined}
+                now={now}
+                checked={!balanced}
+                removed
+                onSelect={() => undefined}
+              />
+            ) : null}
+            {accounts.map((account) => {
+              const checked = !balanced && account.id === current?.id;
+              return (
+                <ProviderAccountRow
+                  key={account.id}
                   role="menuitemradio"
-                  aria-checked={checked}
-                  className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] leading-none text-content hover:bg-content/10"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => {
+                  provider={provider}
+                  accountId={account.id}
+                  label={account.label}
+                  limits={limitsOf(account.id)}
+                  now={now}
+                  checked={checked}
+                  onSelect={() => {
                     setOpen(false);
                     if (!checked) onChange(account.id);
                   }}
-                >
-                  <span className="grid size-3 shrink-0 place-items-center pt-px">
-                    {checked ? (
-                      <Check className="size-3" strokeWidth={2} aria-hidden />
-                    ) : null}
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                    <span className={`truncate ${expired ? "pr-28" : ""}`}>
-                      {account.label}
-                    </span>
-                    <AccountUsage limits={limitsOf(account.id)} now={now} />
-                  </span>
-                </button>
-                {/* Beside the row, not in it: a button cannot hold another. */}
-                {expired ? (
-                  <SignInAgainButton
-                    provider={provider}
-                    accountId={account.id}
-                    label={account.label}
-                    className="absolute right-1.5 top-1"
-                  />
-                ) : null}
-              </div>
-            );
-          })}
+                />
+              );
+            })}
+          </div>
           {onManageAccounts ? (
             <>
               <div role="separator" className="my-1 h-px bg-content/10" />

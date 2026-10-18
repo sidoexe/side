@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { pickBalancedAccount, type AccountRoom } from "./monoBalance";
+import {
+  nextBalancedAccount,
+  pickBalancedAccount,
+  type AccountRoom,
+} from "./monoBalance";
 
 const window = (usedPercent: number, resetsAt: number | null = null) => ({
   usedPercent,
@@ -15,7 +19,7 @@ const account = (id: string, session?: number, weekly?: number, error?: string):
   },
 });
 
-describe("balanced Colleague accounts", () => {
+describe("balanced accounts", () => {
   it("takes the most weekly room, then the most 5-hour room", () => {
     expect(
       pickBalancedAccount([account("a", 10, 60), account("b", 50, 20), account("c", 5, 20)]),
@@ -47,5 +51,30 @@ describe("balanced Colleague accounts", () => {
       ),
     ).toBe("reset");
     expect(pickBalancedAccount([account("a", 100, 0), account("b", 0, 100)])).toBeUndefined();
+  });
+
+  it("keeps an account near its 5-hour limit for last", () => {
+    expect(pickBalancedAccount([account("hot", 95, 10), account("cool", 20, 50)])).toBe("cool");
+    expect(pickBalancedAccount([account("hot", 95, 10), account("full", 100, 0)])).toBe("hot");
+  });
+});
+
+describe("balanced conversation before a turn", () => {
+  it("stays on a usable account under the 5-hour guard", () => {
+    expect(nextBalancedAccount([account("a", 40, 60), account("b", 10, 20)], "a")).toBeUndefined();
+    expect(nextBalancedAccount([account("a", 40, 60), account("unknown")], "unknown")).toBeUndefined();
+  });
+
+  it("leaves a full, unreadable, removed or hot account for the best one", () => {
+    const others = [account("b", 10, 20), account("c", 5, 50)];
+    expect(nextBalancedAccount([account("a", 100, 10), ...others], "a")).toBe("b");
+    expect(nextBalancedAccount([account("a", 0, 0, "Sign-in expired"), ...others], "a")).toBe("b");
+    expect(nextBalancedAccount(others, "removed")).toBe("b");
+    expect(nextBalancedAccount([account("a", 92, 10), ...others], "a")).toBe("b");
+  });
+
+  it("stays when nothing better is free", () => {
+    expect(nextBalancedAccount([account("a", 92, 10), account("b", 95, 0)], "a")).toBeUndefined();
+    expect(nextBalancedAccount([account("a", 100, 10), account("b", 100, 0)], "a")).toBeUndefined();
   });
 });

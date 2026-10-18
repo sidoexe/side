@@ -1541,9 +1541,11 @@ function ConnectedRemoteSession({
           machineId={machine.id}
           harness={configuration.harness}
           canSignIn={!!descriptor?.capabilities.includes("accounts.login")}
+          canSignInCodex={!!descriptor?.capabilities.includes("accounts.login.codex")}
           canImport={!!descriptor?.capabilities.includes("accounts.import")}
           canRefresh={!!descriptor?.capabilities.includes("accounts.refresh")}
           canBalance={!!descriptor?.capabilities.includes("accounts.balance")}
+          canRemove={!!descriptor?.capabilities.includes("accounts.remove")}
           accounts={accountsFor(hostAccounts, configuration.harness)}
           value={configuration.account}
           disabled={!online || busy}

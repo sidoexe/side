@@ -56,32 +56,52 @@ function render(props: Partial<Parameters<typeof MonoAccountPicker>[0]> = {}) {
   return calls;
 }
 
-const button = (label: RegExp) =>
-  [...document.querySelectorAll("button")].find((entry) => label.test(entry.textContent ?? ""))!;
+const option = (label: string) =>
+  document.querySelector<HTMLButtonElement>(`[role=menuitemradio][aria-label='${label}']`)!;
 
-it("lists every account with its windows and errors, and Balanced above them", async () => {
+it("lists every account with its status and windows, and Balanced above them", async () => {
   const calls = render();
   await act(async () => document.querySelector<HTMLButtonElement>("[aria-haspopup=menu]")!.click());
   const menu = document.querySelector("[role=menu]")!;
   expect(menu.textContent).toContain("Balanced");
-  expect(menu.textContent).toContain("Weekly");
+  expect(menu.textContent).toContain("Running low");
+  expect(menu.textContent).toContain("wk");
   expect(menu.textContent).toContain("Sign-in expired");
   // The expired account can sign in again from its row.
   expect(document.querySelector("[aria-label='Sign work in again']")).not.toBeNull();
   expect(document.querySelector("[aria-label='Sign Default in again']")).toBeNull();
 
-  await act(async () => button(/^work/).click());
+  await act(async () => option("work").click());
   expect(calls.change).toHaveBeenCalledWith("account-work");
 });
 
 it("turns Balanced on, and names the account it is on while balanced", async () => {
   const calls = render();
   await act(async () => document.querySelector<HTMLButtonElement>("[aria-haspopup=menu]")!.click());
-  await act(async () => button(/^Balanced/).click());
+  await act(async () => option("Balanced").click());
   expect(calls.balanced).toHaveBeenCalled();
 
   render({ balanced: true });
   expect(document.querySelector("[aria-haspopup=menu]")!.getAttribute("aria-label")).toBe(
     "Account: Balanced",
   );
+});
+
+it("names a removed account instead of falling back to the first one", async () => {
+  render({ value: "account-gone" });
+  const trigger = document.querySelector<HTMLButtonElement>("[aria-haspopup=menu]")!;
+  expect(trigger.getAttribute("aria-label")).toBe("Account: Removed account");
+  await act(async () => trigger.click());
+  expect(option("Removed account").disabled).toBe(true);
+  expect(option("Removed account").getAttribute("aria-checked")).toBe("true");
+  expect(option("Default account").getAttribute("aria-checked")).toBe("false");
+});
+
+it("lists an account added while it is open", async () => {
+  render();
+  await act(async () => document.querySelector<HTMLButtonElement>("[aria-haspopup=menu]")!.click());
+  await act(async () =>
+    saveProviderAccount({ id: "account-new", provider: "claude", label: "new" }),
+  );
+  expect(option("new")).not.toBeNull();
 });

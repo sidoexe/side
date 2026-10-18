@@ -25,6 +25,7 @@ import {
 } from "../src/integrations/harness/core/child";
 import { HostChildBackend } from "./child-backend";
 import { HostAccounts } from "./accounts";
+import { readAccountUsage } from "./account-usage";
 import { HostStore } from "./store";
 import { acquireHostOwner } from "./owner";
 import { HostEngine } from "./engine";
@@ -250,8 +251,10 @@ Connect another computer using an SSH forward to the loopback port.`);
     throw new Error("Unknown command; run with --help");
   }
   const releaseOwner = await acquireHostOwner(directory);
-  const accounts = new HostAccounts(directory);
-  const backend = new HostChildBackend({}, accounts);
+  const accounts: HostAccounts = new HostAccounts(directory, Date.now, (account) =>
+    readAccountUsage(account, () => backend.resolve("codex")),
+  );
+  const backend: HostChildBackend = new HostChildBackend({}, accounts);
   let cleanup = () => {
     rmSync(statePath, { force: true });
     store.close();
@@ -272,7 +275,7 @@ Connect another computer using an SSH forward to the loopback port.`);
     const engine = new HostEngine(store, hostProviders, accounts);
     engine.checkpoints = new HostCheckpoints(join(directory, "checkpoints"));
     engine.employees = new HostEmployees(join(directory, "employees"));
-    engine.accountLogins = new HostAccountLogins(accounts, () => backend.resolve("claude"));
+    engine.accountLogins = new HostAccountLogins(accounts, (provider) => backend.resolve(provider));
     engine.automations = new HostAutomations(join(directory, "automations.db"));
     const app = new HostAppBridge(join(directory, "app-access.json"), (id) => engine.isRunning(id));
     engine.app = app;

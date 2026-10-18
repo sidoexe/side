@@ -1,5 +1,9 @@
 import type { ApprovalDecision } from "../../../integrations/harness";
-import type { Attachment, Session } from "../../sessions/model/session";
+import type {
+  Attachment,
+  HarnessId,
+  Session,
+} from "../../sessions/model/session";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import { displayAttachments } from "../../sessions/model/attachments";
 import { listMonos, monoLook, monoState, type MonoAvatar, type MonoStatus } from "./mono";
@@ -33,7 +37,10 @@ export type FloatingMonoAction =
   | { kind: "reveal" }
   | { kind: "openFile"; path: string }
   | { kind: "openArtifact"; id: string }
-  | { kind: "resume" };
+  | { kind: "resume" }
+  | { kind: "resumeAtReset"; enabled: boolean }
+  | { kind: "account"; accountId: string }
+  | { kind: "model"; harness: HarnessId; model: string };
 export type FloatingMonoRequest = {
   id: number;
   monoId: string;
@@ -125,6 +132,10 @@ export type FloatingMonoHost = {
   openFile(path: string): void | Promise<void>;
   openArtifact?(monoId: string, id: string): void | Promise<void>;
   resume(sessionId: string): void;
+  resumeAtReset?(sessionId: string, enabled: boolean): void;
+  /** Move it to another account at a usage limit. */
+  account?(sessionId: string, accountId: string): void;
+  model?(sessionId: string, harness: HarnessId, model: string): void;
   /** Add a Mono and show it in place of the chat that asked. */
   create?(fromMonoId: string): Promise<void>;
 };
@@ -172,6 +183,18 @@ export async function deliverFloatingMonoRequest(
       break;
     case "resume":
       host.resume(session.id);
+      break;
+    case "resumeAtReset":
+      if (!host.resumeAtReset) throw new Error("Resume at reset is unavailable.");
+      host.resumeAtReset(session.id, action.enabled);
+      break;
+    case "account":
+      if (!host.account) throw new Error("Accounts are unavailable here.");
+      host.account(session.id, action.accountId);
+      break;
+    case "model":
+      if (!host.model) throw new Error("Models are unavailable here.");
+      host.model(session.id, action.harness, action.model);
       break;
     case "create":
       if (!host.create) throw new Error("New Colleagues are unavailable here.");

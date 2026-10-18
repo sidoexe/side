@@ -46,6 +46,20 @@ describe("floating Employee delivery", () => {
     );
     expect(runtime.openArtifact).toHaveBeenCalledWith("mono", "doc-report");
   });
+  it("routes a usage limit's account, model and resume-at-reset choices", async () => {
+    const runtime = host();
+    runtime.account = vi.fn();
+    runtime.model = vi.fn();
+    runtime.resumeAtReset = vi.fn();
+    const deliver = (action: Parameters<typeof deliverFloatingMonoRequest>[0]["action"]) =>
+      deliverFloatingMonoRequest({ id: 1, monoId: "mono", action }, runtime, async () => true);
+    await deliver({ kind: "account", accountId: "account-work" });
+    await deliver({ kind: "model", harness: "claude", model: "opus" });
+    await deliver({ kind: "resumeAtReset", enabled: true });
+    expect(runtime.account).toHaveBeenCalledWith(session.id, "account-work");
+    expect(runtime.model).toHaveBeenCalledWith(session.id, "claude", "opus");
+    expect(runtime.resumeAtReset).toHaveBeenCalledWith(session.id, true);
+  });
   it("uses the existing session for chat and approvals", async () => {
     const runtime = host();
     const accept = vi.fn().mockResolvedValue(true);

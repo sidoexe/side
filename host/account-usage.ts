@@ -1,8 +1,9 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn as nodeSpawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AccountWindow, HostAccount } from "./accounts";
+import { parseCodexRateLimits } from "../src/features/providers/model/rateLimits";
+import { accountEnv, type AccountWindow, type HostAccount } from "./accounts";
 
 /**
  * Reads a Claude account's 5h and weekly usage from Anthropic, with the
@@ -108,5 +109,113 @@ export async function readClaudeUsage(
     return { ok: true, fiveHour: window(body.five_hour), sevenDay: window(body.seven_day) };
   } catch {
     return { ok: false, error: "Usage unavailable" };
+  }
+}
+
+/** Any account's usage: Claude's from Anthropic, Codex's from its own CLI. */
+export function readAccountUsage(
+  account: HostAccount,
+  codexBinary: () => Promise<string> = async () => "codex",
+): Promise<UsageReading> {
+  return account.provider === "codex"
+    ? codexBinary().then(
+        (binary) => readCodexUsage(account, binary),
+        () => ({ ok: false as const, error: "Codex CLI not found" }),
+      )
+    : readClaudeUsage(account);
+}
+
+export type CodexSpawn = (
+  command: string,
+  args: string[],
+  options: { env: NodeJS.ProcessEnv },
+) => ChildProcessWithoutNullStreams;
+
+const CODEX_TIMEOUT_MS = 20_000;
+const spawnCodex: CodexSpawn = (command, args, options) => nodeSpawn(command, args, { ...options, stdio: "pipe" });
+
+/**
+ * Asks a Codex profile's app server one question, the way the desktop reads
+ * Codex usage: Codex itself holds the sign-in and renews it, so nothing here
+ * touches its tokens.
+ */
+export function codexRequest(
+  binary: string,
+  configDir: string,
+  method: string,
+  spawn: CodexSpawn = spawnCodex,
+): Promise<unknown> {
+  const env = accountEnv({ id: "usage", provider: "codex", label: "", configDir });
+  const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env.set };
+  for (const name of env.unset) delete childEnv[name];
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let buffer = "";
+    const child = spawn(binary, ["app-server"], { env: childEnv });
+    const done = (error: Error | undefined, value?: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.kill();
+      if (error) reject(error);
+      else resolve(value);
+    };
+    const timer = setTimeout(() => done(new Error("Codex did not answer")), CODEX_TIMEOUT_MS);
+    const send = (message: object) => child.stdin.write(`${JSON.stringify(message)}\n`);
+    child.stdin.on("error", () => undefined);
+    child.stdout.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString();
+      for (let newline = buffer.indexOf("\n"); newline >= 0; newline = buffer.indexOf("\n")) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        let message: { id?: unknown; method?: unknown; result?: unknown; error?: { message?: unknown } };
+        try {
+          message = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        // Its own requests (approvals and the like) get an empty answer.
+        if (typeof message.method === "string") {
+          if (message.id !== undefined) send({ id: message.id, result: {} });
+        } else if (message.error)
+          done(new Error(String(message.error.message ?? "Codex refused the request")));
+        else if (message.id === 1) {
+          send({ method: "initialized" });
+          send({ id: 2, method, params: {} });
+        } else if (message.id === 2) done(undefined, message.result);
+      }
+    });
+    child.once("error", (error) => done(error));
+    child.once("exit", () => done(new Error("Codex stopped before answering")));
+    send({
+      id: 1,
+      method: "initialize",
+      params: {
+        clientInfo: { name: "monocode", title: "sIDE", version: "0.1.0" },
+        capabilities: { experimentalApi: true },
+      },
+    });
+  });
+}
+
+/** A Codex account's 5h and weekly usage. A monthly plan has neither. */
+export async function readCodexUsage(
+  account: Pick<HostAccount, "configDir">,
+  binary: string,
+  spawn?: CodexSpawn,
+): Promise<UsageReading> {
+  try {
+    const limits = parseCodexRateLimits(
+      await codexRequest(binary, account.configDir, "account/rateLimits/read", spawn),
+    );
+    const window = (value: typeof limits.session): AccountWindow | undefined =>
+      value ? { used: value.usedPercent, ...(value.resetsAt ? { resetsAt: value.resetsAt } : {}) } : undefined;
+    return { ok: true, fiveHour: window(limits.session), sevenDay: window(limits.weekly) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/not signed in|authentication required|not authenticated/i.test(message))
+      return { ok: false, error: "Not signed in" };
+    if (/ENOENT/.test(message)) return { ok: false, error: "Codex CLI not found" };
+    return { ok: false, error: message.slice(0, 240) || "Usage unavailable" };
   }
 }

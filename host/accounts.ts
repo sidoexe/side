@@ -1,7 +1,8 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readClaudeUsage, type UsageReading } from "./account-usage";
+import { rankBalancedAccounts } from "../src/features/providers/model/balancedAccount";
+import { readAccountUsage, type UsageReading } from "./account-usage";
 
 /**
  * Named provider accounts on a host. Each is a CLI profile directory
@@ -62,8 +63,6 @@ export type HostAccountSummary = {
 
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
 const PROVIDERS = new Set<AccountProvider>(["claude", "codex"]);
-/** An account whose 5h window is this full is used only when all others are. */
-const FIVE_HOUR_GUARD = 90;
 /** A refresh asked for sooner than this after the last reading reuses it. */
 const REFRESH_MIN_MS = 20_000;
 /** When Claude gives no reset time, try a limited account again after this. */
@@ -116,7 +115,8 @@ export class HostAccounts {
   constructor(
     dataDir: string,
     private readonly now: () => number = Date.now,
-    private readonly readUsage: (account: HostAccount) => Promise<UsageReading> = readClaudeUsage,
+    private readonly readUsage: (account: HostAccount) => Promise<UsageReading> = (account) =>
+      readAccountUsage(account),
   ) {
     this.configPath = join(dataDir, "config.json");
     this.usagePath = join(dataDir, "account-usage.json");
@@ -152,6 +152,27 @@ export class HostAccounts {
       const balance = (Array.isArray(raw.balance) ? raw.balance : []).filter((entry) => entry !== id);
       return { ...raw, balance: balanced ? [...balance, id] : balance };
     });
+  }
+
+  /**
+   * Forgets an account: out of the file and the balanced pool, its readings
+   * dropped. Its profile folder stays on disk, so a Claude one is offered for
+   * import again.
+   */
+  removeAccount(id: string): void {
+    if (!this.config().accounts.some((account) => account.id === id))
+      throw new Error(`Unknown account "${id}" on this host`);
+    this.edit((raw) => ({
+      ...raw,
+      accounts: (Array.isArray(raw.accounts) ? raw.accounts : []).filter(
+        (entry: unknown) => !(entry && typeof entry === "object" && (entry as { id?: unknown }).id === id),
+      ),
+      balance: (Array.isArray(raw.balance) ? raw.balance : []).filter((entry) => entry !== id),
+    }));
+    const all = this.usage();
+    if (!(id in all)) return;
+    delete all[id];
+    this.saveUsage(all);
   }
 
   /** Rewrites the config file, keeping everything else as written. */
@@ -220,6 +241,10 @@ export class HostAccounts {
   private writeUsage(id: string, update: (current: AccountUsage) => AccountUsage): void {
     const all = this.usage();
     all[id] = update(all[id] ?? {});
+    this.saveUsage(all);
+  }
+
+  private saveUsage(all: Record<string, AccountUsage>): void {
     const tmp = `${this.usagePath}.tmp`;
     try {
       writeFileSync(tmp, `${JSON.stringify(all)}\n`, { mode: 0o600 });
@@ -239,15 +264,14 @@ export class HostAccounts {
   }
 
   /**
-   * Reads every Claude account's usage from Anthropic, instead of waiting for
-   * the next turn to report it. A reading below both limits frees an account
+   * Reads every account's usage, Claude's from Anthropic and Codex's from its
+   * CLI, instead of waiting for the next turn to report it. A reading below both limits frees an account
    * marked limited; one that fails keeps the last levels and says why.
    */
   async refreshUsage(): Promise<void> {
     const usage = this.usage();
     const due = this.config().accounts.filter(
       (account) =>
-        account.provider === "claude" &&
         !(usage[account.id]?.updatedAt && this.now() - usage[account.id].updatedAt! < REFRESH_MIN_MS),
     );
     const readings = await Promise.all(due.map((account) => this.readUsage(account)));
@@ -274,11 +298,11 @@ export class HostAccounts {
   }
 
   /**
-   * The balanced pick. The weekly window decides and the 5h window only guards:
-   * ranking on the worse of the two ranks on the 5h in practice, which resets
-   * every five hours, so a weekly gap between accounts is never repaid.
-   * `free` is false when every account is limited; `account` is then the one
-   * that frees up first.
+   * The balanced pick, by the rule the desktop follows too: the weekly window
+   * decides and the 5h window only guards, an account whose sign-in failed is
+   * never taken and one never read comes last.
+   * `free` is false when no account is usable; `account` is then the one
+   * that frees up first, one that can still sign in if any.
    */
   pick(provider: string, exclude: readonly string[] = []): { account: HostAccount; free: boolean } | undefined {
     const pool = this.pool(provider);
@@ -286,25 +310,26 @@ export class HostAccounts {
     const usage = this.usage();
     const now = this.now();
     const live = (window?: AccountWindow) =>
-      window && (!window.resetsAt || window.resetsAt > now) ? window.used : 0;
-    const ranked = pool.map((account) => {
+      window && (!window.resetsAt || window.resetsAt > now) ? window.used : undefined;
+    const candidates = pool.map((account) => {
       const entry = usage[account.id] ?? {};
       return {
         account,
-        week: live(entry.sevenDay),
-        five: live(entry.fiveHour),
-        blockedUntil: entry.blockedUntil && entry.blockedUntil > now ? entry.blockedUntil : 0,
-        excluded: exclude.includes(account.id),
+        id: account.id,
+        fiveHour: live(entry.fiveHour),
+        weekly: live(entry.sevenDay),
+        read: !!entry.updatedAt,
+        error: !!entry.error,
+        blockedUntil: entry.blockedUntil,
       };
     });
-    const open = ranked.filter((entry) => !entry.blockedUntil && !entry.excluded);
-    const order = (a: (typeof ranked)[number], b: (typeof ranked)[number]) =>
-      a.week - b.week || a.five - b.five;
-    const cool = open.filter((entry) => entry.five < FIVE_HOUR_GUARD).sort(order);
-    const hot = open.filter((entry) => entry.five >= FIVE_HOUR_GUARD).sort(order);
-    const best = cool[0] ?? hot[0];
-    if (best) return { account: best.account, free: true };
-    const soonest = [...ranked].sort((a, b) => (a.blockedUntil || Infinity) - (b.blockedUntil || Infinity))[0];
+    const best = rankBalancedAccounts(candidates, { now, exclude })[0];
+    if (best) return { account: pool.find((account) => account.id === best)!, free: true };
+    const until = (entry: (typeof candidates)[number]) =>
+      entry.blockedUntil && entry.blockedUntil > now ? entry.blockedUntil : Number.MAX_SAFE_INTEGER;
+    const soonest = [...candidates].sort(
+      (a, b) => Number(a.error) - Number(b.error) || until(a) - until(b),
+    )[0];
     return { account: soonest.account, free: false };
   }
 }
