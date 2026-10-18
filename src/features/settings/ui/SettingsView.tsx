@@ -222,7 +222,9 @@ import {
 } from "../../sessions/model/projectProviders";
 import {
   newProviderAccount,
+  providerAccountBalanced,
   providerAccounts,
+  setProviderAccountBalanced,
   PROVIDER_ACCOUNT_PROVIDERS,
   removeProviderAccount,
   renameProviderAccount,
@@ -3499,7 +3501,7 @@ function ProviderAccountsSettings() {
     <Group
       id="provider-accounts"
       title="Accounts"
-      description="Create isolated sign-ins for providers that support account profiles. Account switching stays available from the usage control in the footer."
+      description="Create isolated sign-ins for providers that support account profiles. Account switching stays available from the usage control in the footer. Balanced spreads conversations over the accounts marked Balanced."
       action={<AccountUsageRefresh usage={usage} />}
     >
       {PROVIDER_ACCOUNT_PROVIDERS.map((provider) => {
@@ -3546,6 +3548,7 @@ function ProviderAccountsSettings() {
                 const identity = identities[identityKey(account)];
                 const orgTag = identityOrganizationTag(identity);
                 const limits = usage.usage[accountUsageKey(account)];
+                const inBalanced = providerAccountBalanced(provider, account.id);
                 return editing ? (
                   <ProviderAccountEditor
                     key={account.id}
@@ -3600,6 +3603,33 @@ function ProviderAccountsSettings() {
                     ) : (
                       <AccountUsageMeters limits={limits} now={usage.now} />
                     )}
+                    {accounts.length > 1 ? (
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={inBalanced}
+                        aria-label={`Use ${account.label} in Balanced`}
+                        title={
+                          inBalanced
+                            ? "In the Balanced rotation · click to take it out"
+                            : "Not in the Balanced rotation · click to add it"
+                        }
+                        onClick={() =>
+                          setProviderAccountBalanced(
+                            provider,
+                            account.id,
+                            !inBalanced,
+                          )
+                        }
+                        className={`h-5 shrink-0 rounded-md border px-1.5 text-[10px] leading-none transition-colors ${
+                          inBalanced
+                            ? "border-transparent bg-content/12 text-content/75 hover:bg-content/18"
+                            : "border-dashed border-content/20 text-content/35 hover:border-content/35 hover:text-content/60"
+                        }`}
+                      >
+                        Balanced
+                      </button>
+                    ) : null}
                     <div className="flex w-24 shrink-0 items-center justify-end gap-1">
                       {account.isDefault ? (
                         <span className="mr-1 text-[10px] font-medium uppercase tracking-wide text-content/30">

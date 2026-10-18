@@ -51,6 +51,7 @@ import {
   BalancedAccountRow,
   ProviderAccountRow,
   REMOVED_ACCOUNT_LABEL,
+  useBalancedAccountIds,
 } from "../../features/providers/ui/ProviderAccountRow";
 import {
   identityKey,
@@ -571,6 +572,10 @@ function ProviderAccountPicker({
   onBalanced?: () => void;
 }) {
   const current = accounts.find((account) => account.id === accountId);
+  const pool = useBalancedAccountIds(provider ?? "claude");
+  const poolLabels = accounts
+    .filter((account) => pool.has(account.id))
+    .map((account) => account.label);
   return (
     <div>
       <div className="flex h-7 items-center gap-1">
@@ -592,9 +597,9 @@ function ProviderAccountPicker({
         role="group"
         aria-label={`${providerLabel} accounts`}
       >
-        {onBalanced && accounts.length > 1 ? (
+        {onBalanced && (poolLabels.length > 1 || balanced) ? (
           <BalancedAccountRow
-            accountCount={accounts.length}
+            pool={poolLabels}
             checked={balanced}
             currentLabel={current?.label}
             onSelect={() => {
@@ -626,6 +631,11 @@ function ProviderAccountPicker({
               limits={usageFor(account)}
               now={now}
               checked={!balanced && account.id === accountId}
+              balanced={
+                onBalanced && accounts.length > 1
+                  ? pool.has(account.id)
+                  : undefined
+              }
               subtitle={
                 <>
                   <ProviderAccountSubtitle

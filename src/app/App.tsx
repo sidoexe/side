@@ -455,7 +455,9 @@ import {
 import { createSessionRemover } from "../features/sessions/model/sessionRemoval";
 import { shouldGenerateSessionTitle } from "../features/sessions/model/sessionTitle";
 import {
+  balancedProviderAccounts,
   DEFAULT_PROVIDER_ACCOUNT_ID,
+  providerAccountBalanced,
   providerAccountExists,
   providerAccounts,
   sameProviderAccountId,
@@ -8949,6 +8951,7 @@ function Workspace({
           label,
           ...(usage ? { usage } : {}),
           ...(limits.error ? { error: limits.error } : {}),
+          balanced: providerAccountBalanced(provider, id),
         };
       }),
     ),
@@ -9659,7 +9662,7 @@ function Workspace({
       );
       if (!session || !supportsProviderAccounts(session.harness)) return false;
       const provider = session.harness;
-      const accounts = providerAccounts(provider);
+      const accounts = balancedProviderAccounts(provider);
       await Promise.all(
         accounts.map((account) =>
           loadRateLimits(provider, account.id, true).catch(() => undefined),
@@ -9726,7 +9729,7 @@ function Workspace({
       const next = session.usageLimit
         ? undefined
         : nextBalancedAccount(
-            providerAccounts(provider).map((account) => ({
+            balancedProviderAccounts(provider).map((account) => ({
               id: account.id,
               limits: getCachedRateLimits(provider, account.id),
             })),

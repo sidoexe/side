@@ -3,6 +3,8 @@ import type { HarnessId } from "../../sessions/model/session";
 
 const ACCOUNTS_KEY = "monocode.providerAccounts.v1";
 const SELECTIONS_KEY = "monocode.providerAccountSelections.v1";
+/** Accounts taken out of Balanced; every other one is in, as on a host. */
+const OUT_OF_BALANCED_KEY = "monocode.providerAccountsOutOfBalanced.v1";
 const CHANGE_EVENT = "monocode-provider-accounts-changed";
 
 export const DEFAULT_PROVIDER_ACCOUNT_ID = "default";
@@ -157,6 +159,46 @@ export function renameProviderAccount(
   return renamed;
 }
 
+type StoredOutOfBalanced = Partial<Record<ProviderAccountProvider, string[]>>;
+
+function outOfBalanced(provider: ProviderAccountProvider): string[] {
+  const stored = readRecord<StoredOutOfBalanced>(OUT_OF_BALANCED_KEY)[provider];
+  return Array.isArray(stored)
+    ? stored.filter((id): id is string => typeof id === "string")
+    : [];
+}
+
+/** Whether Balanced may use this account. New accounts are in. */
+export function providerAccountBalanced(
+  provider: ProviderAccountProvider,
+  accountId: string,
+): boolean {
+  return !outOfBalanced(provider).includes(accountId);
+}
+
+/** The accounts Balanced spreads conversations over. */
+export function balancedProviderAccounts(
+  provider: ProviderAccountProvider,
+): ProviderAccount[] {
+  const out = outOfBalanced(provider);
+  return providerAccounts(provider).filter(
+    (account) => !out.includes(account.id),
+  );
+}
+
+/** Puts an account in Balanced or takes it out. */
+export function setProviderAccountBalanced(
+  provider: ProviderAccountProvider,
+  accountId: string,
+  balanced: boolean,
+): void {
+  const stored = readRecord<StoredOutOfBalanced>(OUT_OF_BALANCED_KEY);
+  const out = outOfBalanced(provider).filter((id) => id !== accountId);
+  stored[provider] = balanced ? out : [...out, accountId];
+  writeJson(OUT_OF_BALANCED_KEY, stored);
+  announceChange();
+}
+
 /** Remove account metadata after native credential cleanup has succeeded. */
 export function removeProviderAccount(
   provider: ProviderAccountProvider,
@@ -182,6 +224,10 @@ export function removeProviderAccount(
     else selections[key] = nextSelection;
   }
   writeJson(SELECTIONS_KEY, selections);
+
+  const outOfPool = readRecord<StoredOutOfBalanced>(OUT_OF_BALANCED_KEY);
+  outOfPool[provider] = outOfBalanced(provider).filter((id) => id !== accountId);
+  writeJson(OUT_OF_BALANCED_KEY, outOfPool);
   announceChange();
   return true;
 }
@@ -248,7 +294,12 @@ export function providerAccountLabel(
 export function subscribeProviderAccounts(listener: () => void): () => void {
   const local = () => listener();
   const storage = (event: StorageEvent) => {
-    if (event.key === ACCOUNTS_KEY || event.key === SELECTIONS_KEY) listener();
+    if (
+      event.key === ACCOUNTS_KEY ||
+      event.key === SELECTIONS_KEY ||
+      event.key === OUT_OF_BALANCED_KEY
+    )
+      listener();
   };
   window.addEventListener(CHANGE_EVENT, local);
   window.addEventListener("storage", storage);

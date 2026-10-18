@@ -19,6 +19,7 @@ import {
 import { barClass } from "../../providers/ui/ProviderAccountUsage";
 import {
   BalancedAccountRow,
+  useBalancedAccountIds,
   ProviderAccountRow,
   REMOVED_ACCOUNT_LABEL,
   useProviderAccounts,
@@ -90,6 +91,10 @@ export function MonoAccountPicker({
     sameProviderAccountId(account.id, value),
   );
   const currentLabel = current?.label ?? REMOVED_ACCOUNT_LABEL;
+  const pool = useBalancedAccountIds(provider);
+  const poolLabels = accounts
+    .filter((account) => pool.has(account.id))
+    .map((account) => account.label);
   const limitsOf = (id: string) => getCachedRateLimits(provider, id);
   const active = current ? limitsOf(current.id) : undefined;
 
@@ -205,10 +210,10 @@ export function MonoAccountPicker({
             </button>
           </div>
           <div className="flex flex-col gap-1">
-            {accounts.length > 1 ? (
+            {poolLabels.length > 1 || balanced ? (
               <BalancedAccountRow
                 role="menuitemradio"
-                accountCount={accounts.length}
+                pool={poolLabels}
                 checked={balanced}
                 currentLabel={current?.label}
                 onSelect={() => {
@@ -242,6 +247,9 @@ export function MonoAccountPicker({
                   limits={limitsOf(account.id)}
                   now={now}
                   checked={checked}
+                  balanced={
+                    accounts.length > 1 ? pool.has(account.id) : undefined
+                  }
                   onSelect={() => {
                     setOpen(false);
                     if (!checked) onChange(account.id);

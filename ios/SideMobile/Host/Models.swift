@@ -414,6 +414,8 @@ struct ColleagueAccounts: Decodable, Equatable {
         let usage: Usage?
         /// Why its usage could not be read, such as an expired sign-in.
         let error: String?
+        /// Balanced may use it; nil from desktops that use every account.
+        let balanced: Bool?
     }
     struct Current: Decodable, Equatable {
         let provider: String

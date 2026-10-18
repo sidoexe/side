@@ -113,6 +113,16 @@ struct UsageSheet: View {
 
     private var account: ColleagueAccounts.Account? { accounts.first { $0.id == current } }
 
+    /// "A and B": the accounts Balanced spreads over, as the desktop names them.
+    private var pool: String {
+        let provider = account?.provider
+        let names = accounts
+            .filter { $0.provider == provider && $0.balanced != false }
+            .map(\.label)
+        guard names.count > 1 else { return names.first ?? "" }
+        return names.dropLast().joined(separator: ", ") + " and " + names.last!
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
@@ -210,7 +220,7 @@ struct UsageSheet: View {
                     Text("Balanced").foregroundStyle(Theme.text)
                     Text(balanced
                         ? "On \(account?.label ?? current) now · moves on at a limit with its conversation"
-                        : "Runs on the most weekly room, moves on at a limit with its conversation")
+                        : "Between \(pool) · runs on the most weekly room, moves on at a limit with its conversation")
                         .font(Theme.meta)
                         .foregroundStyle(Theme.faint)
                 }

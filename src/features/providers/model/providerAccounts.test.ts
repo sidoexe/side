@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  balancedProviderAccounts,
   DEFAULT_PROVIDER_ACCOUNT_ID,
   newProviderAccount,
   providerAccountLabel,
@@ -11,6 +12,7 @@ import {
   saveProviderAccount,
   selectedProviderAccountId,
   selectProviderAccount,
+  setProviderAccountBalanced,
   supportsAccountProfiles,
 } from "./providerAccounts";
 
@@ -216,5 +218,34 @@ describe("provider accounts", () => {
     removeProviderAccount("claude", "account-work");
 
     expect(providerAccounts("claude")[0]?.label).toBe("Primary");
+  });
+});
+
+describe("the Balanced pool", () => {
+  it("holds every account until one is taken out, as on a host", () => {
+    const work = newProviderAccount("claude", "Work");
+    saveProviderAccount(work);
+    expect(balancedProviderAccounts("claude").map((a) => a.id)).toEqual([
+      DEFAULT_PROVIDER_ACCOUNT_ID,
+      work.id,
+    ]);
+    setProviderAccountBalanced("claude", DEFAULT_PROVIDER_ACCOUNT_ID, false);
+    expect(balancedProviderAccounts("claude").map((a) => a.id)).toEqual([
+      work.id,
+    ]);
+    expect(balancedProviderAccounts("codex")).toHaveLength(1);
+    setProviderAccountBalanced("claude", DEFAULT_PROVIDER_ACCOUNT_ID, true);
+    expect(balancedProviderAccounts("claude")).toHaveLength(2);
+  });
+
+  it("forgets a removed account", () => {
+    const work = newProviderAccount("claude", "Work");
+    saveProviderAccount(work);
+    setProviderAccountBalanced("claude", work.id, false);
+    removeProviderAccount("claude", work.id);
+    saveProviderAccount(work);
+    expect(balancedProviderAccounts("claude").map((a) => a.id)).toContain(
+      work.id,
+    );
   });
 });

@@ -32,6 +32,7 @@ import {
 } from "../../providers/model/rateLimitsCache";
 import {
   BalancedAccountRow,
+  useBalancedAccountIds,
   ProviderAccountRow,
   REMOVED_ACCOUNT_LABEL,
   useProviderAccounts,
@@ -514,6 +515,10 @@ function AccountPicker({
     sameProviderAccountId(account.id, accountId),
   );
   const currentLabel = current?.label ?? REMOVED_ACCOUNT_LABEL;
+  const pool = useBalancedAccountIds(provider);
+  const poolLabels = accounts
+    .filter((account) => pool.has(account.id))
+    .map((account) => account.label);
   // Balanced first, then each account.
   const options = [
     ...(onBalanced ? ["balanced"] : []),
@@ -603,7 +608,7 @@ function AccountPicker({
             <BalancedAccountRow
               id={`${listId}-0`}
               role="option"
-              accountCount={accounts.length}
+              pool={poolLabels}
               checked={balanced}
               currentLabel={current?.label}
               highlighted={active === 0}
@@ -637,6 +642,11 @@ function AccountPicker({
                 limits={getCachedRateLimits(provider, account.id)}
                 now={now}
                 checked={account.id === selected}
+                balanced={
+                  onBalanced && accounts.length > 1
+                    ? pool.has(account.id)
+                    : undefined
+                }
                 highlighted={index === active}
                 onSelect={() => pick(account.id)}
                 onHighlight={() => setActive(index)}

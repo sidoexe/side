@@ -1,7 +1,9 @@
 import { useMemo, useSyncExternalStore, type ReactNode } from "react";
 import type { HarnessId } from "../../sessions/model/session";
 import {
+  balancedProviderAccounts,
   providerAccounts,
+  setProviderAccountBalanced,
   subscribeProviderAccounts,
   supportsProviderAccounts,
   type ProviderAccount,
@@ -35,6 +37,31 @@ export function useProviderAccounts(harness: HarnessId): ProviderAccount[] {
     () => "[]",
   );
   return useMemo(() => JSON.parse(snapshot) as ProviderAccount[], [snapshot]);
+}
+
+/** The ids of the accounts Balanced may use, redrawn when that changes. */
+export function useBalancedAccountIds(harness: HarnessId): ReadonlySet<string> {
+  const snapshot = useSyncExternalStore(
+    subscribeProviderAccounts,
+    () =>
+      supportsProviderAccounts(harness)
+        ? balancedProviderAccounts(harness)
+            .map((account) => account.id)
+            .join("\0")
+        : "",
+    () => "",
+  );
+  return useMemo(
+    () => new Set(snapshot ? snapshot.split("\0") : []),
+    [snapshot],
+  );
+}
+
+/** "A", "A and B", "A, B and C". */
+export function balancedPoolLabel(labels: readonly string[]): string {
+  return labels.length < 2
+    ? (labels[0] ?? "")
+    : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
 }
 
 const ROW =
@@ -106,6 +133,7 @@ export function ProviderAccountRow({
   removed = false,
   highlighted = false,
   subtitle,
+  balanced,
   role,
   id,
   onSelect,
@@ -122,6 +150,8 @@ export function ProviderAccountRow({
   highlighted?: boolean;
   /** Beside the name, as its plan and email. */
   subtitle?: ReactNode;
+  /** Whether Balanced may use it; shown as a toggle when set. */
+  balanced?: boolean;
   /** Unset for a plain button group. */
   role?: "menuitemradio" | "option";
   id?: string;
@@ -181,6 +211,30 @@ export function ProviderAccountRow({
           ) : null}
         </span>
       </span>
+      {balanced !== undefined && !removed ? (
+        <button
+          type="button"
+          role="menuitemcheckbox"
+          aria-checked={balanced}
+          aria-label={`Use ${label} in Balanced`}
+          title={
+            balanced
+              ? "In the Balanced rotation · click to take it out"
+              : "Not in the Balanced rotation · click to add it"
+          }
+          className={`pointer-events-auto relative h-5 shrink-0 rounded-md border px-1.5 text-[10px] leading-none transition-colors ${
+            balanced
+              ? "border-transparent bg-content/12 text-content/75 hover:bg-content/18"
+              : "border-dashed border-content/20 text-content/35 hover:border-content/35 hover:text-content/60"
+          }`}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() =>
+            setProviderAccountBalanced(provider, accountId, !balanced)
+          }
+        >
+          Balanced
+        </button>
+      ) : null}
       {expired ? (
         <SignInAgainButton
           provider={provider}
@@ -206,7 +260,7 @@ export function ProviderAccountRow({
  * with the most room and moves on, with its conversation, at a limit.
  */
 export function BalancedAccountRow({
-  accountCount,
+  pool,
   checked,
   currentLabel,
   highlighted = false,
@@ -215,7 +269,8 @@ export function BalancedAccountRow({
   onSelect,
   onHighlight,
 }: {
-  accountCount: number;
+  /** The names of the accounts it spreads conversations over. */
+  pool: readonly string[];
   checked: boolean;
   /** The account it runs on now, shown while Balanced is on. */
   currentLabel?: string;
@@ -238,8 +293,10 @@ export function BalancedAccountRow({
       <span className="flex min-w-0 flex-1 flex-col gap-1 py-0.5">
         <span>Balanced</span>
         <span className="text-[10px] leading-[13px] text-content/40">
-          Between all {accountCount} accounts · runs on the most weekly room,
-          moves on at a limit with its conversation
+          Between{" "}
+          <span className="text-content/60">{balancedPoolLabel(pool)}</span>
+          {" · "}runs on the most weekly room, moves on at a limit with its
+          conversation
           {checked && currentLabel ? (
             <>
               {" · now on "}

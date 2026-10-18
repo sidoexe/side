@@ -59,6 +59,8 @@ export type ColleagueAccounts = {
     usage?: ColleagueUsage;
     /** Why its usage could not be read, such as an expired sign-in. */
     error?: string;
+    /** Balanced may use it. */
+    balanced?: boolean;
   }[];
   current: Record<string, { provider: string; account: string; balanced?: boolean }>;
   status: Record<string, MonoState>;
