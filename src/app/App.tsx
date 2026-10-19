@@ -2320,6 +2320,26 @@ function Workspace({
   ]);
   // Rebuilt for every streamed batch; identity only moves when a row does.
   const liveAgents = useStableValue(liveAgentRows);
+  // A colleague's own chat while it works: the board lists it under Working,
+  // where the rail shows it as the colleague.
+  const colleagueChatRows = useMemo(() => {
+    if (!liveAgentsEnabled || !monosEnabled) return [];
+    const monos = listMonos().flatMap((mono) =>
+      mono.sessionId ? [{ mono, sessionId: mono.sessionId }] : [],
+    );
+    const bySession = new Map(monos.map((entry) => [entry.sessionId, entry]));
+    return liveAgentsFromSessions(
+      promptableSessions.filter((session) => bySession.has(session.id)),
+    ).flatMap((row) => {
+      const entry = bySession.get(row.id);
+      if (!entry || row.needsApproval || row.done) return [];
+      const { name } = monoLook(entry.mono);
+      return [{ ...row, colleague: { id: entry.mono.id, name } }];
+    });
+    // The roster is read through its snapshot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveAgentsEnabled, monosEnabled, promptableSessions, monosSnap]);
+  const colleagueChats = useStableValue(colleagueChatRows);
   const recentPaths = useMemo(
     () => recents.map((item) => item.path),
     [recents],
@@ -11942,6 +11962,8 @@ function Workspace({
       setAutomationsViewOpen(false);
       setBoardViewOpen(false);
       setWebViewOpen(false);
+      const chatOf = listMonos().find((mono) => mono.sessionId === sessionId);
+      if (chatOf) return void onOpenMono(chatOf.id);
       // A colleague's session this window does not hold, such as a habit's
       // run, opens over that colleague, as from its strip.
       const held = sessionsRef.current.find((s) => s.id === sessionId);
@@ -11952,7 +11974,7 @@ function Workspace({
       if (monoId) return void onOpenColleagueWork(monoId, sessionId);
       onOpenApprovalSession(sessionId);
     },
-    [onOpenApprovalSession, onOpenColleagueWork],
+    [onOpenApprovalSession, onOpenColleagueWork, onOpenMono],
   );
   // A host's session opens in place of the board, as a local one does.
   const onSelectBoardRemoteSession = useCallback(
@@ -11967,6 +11989,7 @@ function Workspace({
     recentPaths,
     onSelectLiveAgent,
     onSelectBoardRemoteSession,
+    colleagueChats,
   );
 
   const nextTitleTabs: TitleTab[] = deckProjectTabs.map((tab) =>

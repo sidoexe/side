@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Board's Working column shows every running session.** A session running on a host and a Colleague's own chat while it works were missing from it; the first opens from the board as a host session does, the second opens that Colleague.
 - **Projects given to a Colleague on another desktop or on the host now stay given.** A desktop read the host's copy of each Colleague as changed by itself, because the host returns it with its fields in another order, so it put its own copy back every 15 seconds and undid edits made anywhere else.
 - **"Claude usage request failed (429)"** no longer appears on the phone or the desktop. When Anthropic limits how often usage is read, the desktop and a host keep the last reading, with its bars, and wait five minutes before asking again, instead of showing an error and asking again at once. Such a refusal no longer takes an account out of Balanced. Balanced and the account menus reuse a reading under a minute old instead of each reading every account; **Refresh** still reads at once.
 - The phone app finds its own updates: **Check for updates** reads the latest GitHub release, where every release now attaches the IPA's build number, instead of a `/ipa` address no host served, and says whether it is up to date. A newer build shows the update banner. The header shows the app's own version instead of the host's, which updates on its own and was easy to take for the app's; the menu shows both.

@@ -470,18 +470,44 @@ export function remoteReviewAgents(
     }));
 }
 
-/** Review rows for every remote project in `paths`, from the cached lists. */
-export function cachedRemoteReviewAgents(
+/** Working rows for a host's sessions that still run. */
+export function remoteWorkingAgents(
+  project: string,
+  sessions: readonly HostSessionSummary[],
+): LiveAgent[] {
+  return sessions
+    .filter(
+      (session) =>
+        !session.archived &&
+        session.status === "running" &&
+        !session.needsInput,
+    )
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map((session) => ({
+      id: session.id,
+      cwd: project,
+      title: session.title,
+      harness: session.harness,
+      activity: "Working",
+      needsApproval: false,
+      done: false,
+    }));
+}
+
+/** Review and Working rows for every remote project in `paths`, from the
+ * cached lists. */
+export function cachedRemoteBoardAgents(
   paths: readonly string[],
 ): { project: string; agent: LiveAgent }[] {
   return paths
     .filter((path) => !!remoteProjectFor(path))
-    .flatMap((project) =>
-      remoteReviewAgents(project, cachedSessions(project)).map((agent) => ({
-        project,
-        agent,
-      })),
-    );
+    .flatMap((project) => {
+      const sessions = cachedSessions(project);
+      return [
+        ...remoteReviewAgents(project, sessions),
+        ...remoteWorkingAgents(project, sessions),
+      ].map((agent) => ({ project, agent }));
+    });
 }
 
 /**

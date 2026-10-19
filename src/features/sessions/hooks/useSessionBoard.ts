@@ -1,6 +1,6 @@
 import { useMemo, useSyncExternalStore } from "react";
 import {
-  cachedRemoteReviewAgents,
+  cachedRemoteBoardAgents,
   markRemoteSessionReviewed,
   remoteSessionFor,
   useRemoteProjectsStatus,
@@ -29,35 +29,41 @@ export type SessionBoard = {
   onMarkChecked: (agent: LiveAgent) => void;
 };
 
+function isWorking(agent: LiveAgent): boolean {
+  return !agent.needsApproval && !agent.done;
+}
+
 /**
  * Every session in three columns, as the rail's To review, Working and
- * Checked list them. A host runs its own sessions, so its finished and
- * waiting ones come from the list it reports rather than from this desktop.
+ * Checked list them. A host runs its own sessions, so its running, finished
+ * and waiting ones come from the list it reports rather than from this desktop.
  */
 export function useSessionBoard(
   liveAgents: LiveAgent[],
   projectPaths: readonly string[],
   onSelectAgent?: (sessionId: string) => void,
   onSelectRemoteSession?: (project: string, sessionId: string) => void,
+  /** Working rows only the board lists, such as a colleague's own chat. */
+  extraWorking: readonly LiveAgent[] = [],
 ): SessionBoard {
   const enabled = useSyncExternalStore(
     subscribeLiveAgentsEnabled,
     loadLiveAgentsEnabled,
   );
   const remoteStatus = useRemoteProjectsStatus(projectPaths);
-  const remoteReview = useMemo(() => {
+  const remoteRows = useMemo(() => {
     if (!enabled || !onSelectRemoteSession) return [];
     const open = new Set(
       liveAgents.flatMap((agent) => remoteSessionFor(agent.id) ?? []),
     );
-    return cachedRemoteReviewAgents([...projectPaths]).filter(
+    return cachedRemoteBoardAgents([...projectPaths]).filter(
       ({ agent }) => !open.has(agent.id),
     );
     // `remoteStatus` changes whenever a host list does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, onSelectRemoteSession, liveAgents, projectPaths, remoteStatus]);
   const remoteProjects = new Map(
-    remoteReview.map(({ project, agent }) => [agent.id, project]),
+    remoteRows.map(({ project, agent }) => [agent.id, project]),
   );
   const storedChecks = useSyncExternalStore(
     subscribeCheckedSessions,
@@ -67,9 +73,13 @@ export function useSessionBoard(
     enabled,
     review: [
       ...liveAgents.filter((agent) => agent.needsApproval || agent.done),
-      ...remoteReview.map(({ agent }) => agent),
+      ...remoteRows.flatMap(({ agent }) => (isWorking(agent) ? [] : agent)),
     ],
-    working: liveAgents.filter((agent) => !agent.needsApproval && !agent.done),
+    working: [
+      ...liveAgents,
+      ...extraWorking,
+      ...remoteRows.map(({ agent }) => agent),
+    ].filter(isWorking),
     // One that works or waits again leaves the list until it is checked again.
     checked: enabled
       ? storedChecks.filter(

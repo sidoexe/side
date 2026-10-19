@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { remoteProjectStatus, remoteReviewAgents } from "./connections";
+import {
+  remoteProjectStatus,
+  remoteReviewAgents,
+  remoteWorkingAgents,
+} from "./connections";
 import type { HostSessionSummary } from "./protocol";
 
 const summary = (patch: Partial<HostSessionSummary>): HostSessionSummary =>
@@ -71,5 +75,25 @@ describe("remote review rows", () => {
     expect(rows.map((row) => row.id)).toEqual(["ask", "failed", "done"]);
     expect(rows[0]).toMatchObject({ activity: "Needs input", failed: false });
     expect(rows[1]).toMatchObject({ activity: "Failed", done: true, failed: true });
+  });
+});
+
+describe("remote working rows", () => {
+  it("lists running sessions, newest first, leaving archived and waiting ones out", () => {
+    const rows = remoteWorkingAgents("remote://box/app", [
+      summary({ id: "old", status: "running", updatedAt: 1 }),
+      summary({ id: "new", status: "running", toReview: true, updatedAt: 2 }),
+      summary({ id: "ask", status: "running", needsInput: true }),
+      summary({ id: "gone", status: "running", archived: true }),
+      summary({ id: "idle", toReview: true }),
+    ]);
+
+    expect(rows.map((row) => row.id)).toEqual(["new", "old"]);
+    expect(rows[0]).toMatchObject({
+      cwd: "remote://box/app",
+      activity: "Working",
+      needsApproval: false,
+      done: false,
+    });
   });
 });
