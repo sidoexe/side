@@ -26,9 +26,15 @@ import {
   type MouseEvent,
 } from "react";
 import {
+  markSessionsReviewed,
   sessionsToReview,
   subscribeSessionsToReview,
 } from "../../features/sessions/model/sessionReview";
+import {
+  checkedSessions,
+  noteSessionsChecked,
+  subscribeCheckedSessions,
+} from "../../features/sessions/model/sessionChecked";
 import { useDragResize } from "../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
 import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
@@ -98,6 +104,7 @@ import { Popover } from "../../shared/ui/Popover";
 import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/connections";
 import {
   cachedRemoteReviewAgents,
+  markRemoteSessionReviewed,
   remoteSessionFor,
   useRemoteMachineOnline,
   useRemoteMachines,
@@ -437,9 +444,27 @@ export function ProjectRail({
     // Opening one is not checking it, as with a local session.
     onSelectRemoteSession?.(project, sessionId);
   };
+  const onMarkReviewAgentChecked = (agent: LiveAgent) => {
+    const project = remoteReviewProjects.get(agent.id);
+    // A host keeps its own sessions; only this desktop's are listed as checked.
+    if (project) return void markRemoteSessionReviewed(project, agent.id);
+    markSessionsReviewed([agent.id]);
+    const { id, cwd, title, harness } = agent;
+    noteSessionsChecked([{ id, cwd, title, harness }]);
+  };
   const workingAgents = liveAgents.filter(
     (agent) => !agent.needsApproval && !agent.done,
   );
+  const storedChecks = useSyncExternalStore(
+    subscribeCheckedSessions,
+    checkedSessions,
+  );
+  // One that works or waits again leaves the list until it is checked again.
+  const checkedAgents = liveAgentsEnabled
+    ? storedChecks.filter(
+        (entry) => !liveAgents.some((agent) => agent.id === entry.id),
+      )
+    : [];
   return (
     <nav
       ref={resize.setPaneRef}
@@ -624,8 +649,10 @@ export function ProjectRail({
               />
               <ReviewAgentsSection
                 agents={reviewAgents}
+                checked={checkedAgents}
                 activeSessionId={activeSessionId}
                 onSelect={onSelectReviewAgent}
+                onMarkChecked={onMarkReviewAgentChecked}
                 groupLabels={groupLabels}
                 groupColors={groupColors}
                 groupCustomColors={groupCustomColors}

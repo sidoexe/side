@@ -64,6 +64,7 @@ import { copyText } from "../../platform/tauri/clipboard";
 import { resolveModel } from "../../features/sessions/model/models";
 import type { OpenFileFn } from "../../features/search/model/search";
 import { sessionDisplayTitle } from "../../features/sessions/model/session";
+import { noteSessionsChecked } from "../../features/sessions/model/sessionChecked";
 import { ParticleText } from "../../shared/ui/ParticleText";
 import { nextUnseenFinishedSessions } from "../../features/sessions/model/sessionDone";
 import {
@@ -562,7 +563,23 @@ function SidebarComponent({
           sessionIds.map((id) => markRemoteSessionReviewed(cwd, id)),
         );
       }
-    : (sessionIds: readonly string[]) => markSessionsReviewed(sessionIds);
+    : (sessionIds: readonly string[]) => {
+        markSessionsReviewed(sessionIds);
+        noteSessionsChecked(
+          listedSessions.flatMap((session) =>
+            sessionIds.includes(session.id)
+              ? [
+                  {
+                    id: session.id,
+                    cwd: session.cwd,
+                    title: sessionDisplayTitle(session.title, session.harness),
+                    harness: session.harness,
+                  },
+                ]
+              : [],
+          ),
+        );
+      };
   const onSetSessionLinkedWorkItem = remoteProject
     ? (sessionId: string, item: LinkedWorkItem | undefined) => {
         void remoteChange(sessionId, { linkedWorkItem: item ?? null });

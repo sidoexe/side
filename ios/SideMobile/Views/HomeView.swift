@@ -9,29 +9,36 @@ struct RootView: View {
             if model.connection == nil {
                 ConnectView()
             } else {
-                NavigationStack(path: $model.path) {
-                    HomeView()
-                        .navigationDestination(for: Route.self) { route in
-                            switch route {
-                            case .session(let session): SessionView(route: session)
-                            case .newSession(let projectId): NewSessionView(projectId: projectId)
-                            case .colleagues: ColleaguesView()
-                            case .colleague(let id): ColleagueView(id: id)
-                            case .browse: FolderBrowserView()
-                            case .webApp(let app): WebAppView(app: app)
-                            }
+                TabView(selection: $model.tab) {
+                    Tab("Now", systemImage: "tray", value: HomeTab.now) {
+                        TabStack(tab: .now) { NowView() }
+                    }
+                    .badge(model.toReview.count)
+                    Tab("Projects", systemImage: "folder", value: HomeTab.projects) {
+                        TabStack(tab: .projects) { ProjectsView() }
+                    }
+                    if model.can("employees") {
+                        Tab("Colleagues", systemImage: "person.2", value: HomeTab.colleagues) {
+                            TabStack(tab: .colleagues) { ColleaguesView() }
                         }
+                        .badge(model.colleaguesWaiting)
+                    }
                 }
             }
         }
         .background(Theme.bg)
-        // Here rather than on the sidebar: a session opened from a
-        // notification needs the host's projects and model names too.
+        // Here rather than on a tab: a session opened from a notification
+        // needs the host's projects and model names too.
         .task(id: model.connection?.endpoint) {
             while !Task.isCancelled, model.connection != nil {
                 await model.refresh()
                 try? await Task.sleep(for: .seconds(5))
             }
+        }
+        .alert("Check for updates", isPresented: Binding(get: { model.updateCheck != nil }, set: { if !$0 { model.updateCheck = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.updateCheck ?? "")
         }
         .alert("Host", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK", role: .cancel) {}
@@ -41,31 +48,140 @@ struct RootView: View {
     }
 }
 
-/// The desktop's sidebar, full screen: what needs you now, then every
-/// project of the rail with its sessions.
-struct HomeView: View {
+/// One tab's own stack, so switching tabs keeps where each one was.
+struct TabStack<Root: View>: View {
     @Environment(AppModel.self) private var model
-    @AppStorage("home.showArchived") private var showArchived = false
-    @State private var filter = ""
-    @State private var webApps: [HostWebApp] = []
-    @State private var expanded: Set<String> = []
-    @State private var renaming: HostSessionSummary?
-    @State private var deleting: HostSessionSummary?
+    let tab: HomeTab
+    @ViewBuilder let root: Root
 
-    private var query: String { filter.trimmingCharacters(in: .whitespaces).lowercased() }
+    var body: some View {
+        NavigationStack(path: Binding(get: { model.paths[tab] ?? [] }, set: { model.paths[tab] = $0 })) {
+            root
+                .navigationDestination(for: Route.self) { route in
+                    switch route {
+                    case .session(let session): SessionView(route: session)
+                    case .newSession(let projectId): NewSessionView(projectId: projectId)
+                    case .colleague(let id): ColleagueView(id: id)
+                    case .browse: FolderBrowserView()
+                    case .webApp(let app): WebAppView(app: app)
+                    }
+                }
+        }
+        .toolbarBackground(Theme.sidebar, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
+    }
+}
+
+/// What needs you, across every project: to review, working, checked.
+struct NowView: View {
+    @Environment(AppModel.self) private var model
+    @State private var checkedOpen = false
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                if let update = model.update { UpdateBanner(update: update) }
-                search
-                links
-                if query.isEmpty, !model.inbox.isEmpty {
-                    SectionLabel(text: "Now")
-                    // Also listed under their project: their own identity here.
-                    ForEach(model.inbox, id: \.nowId) { row($0, showProject: true) }
+                if let update = model.update { UpdateBanner(update: update).padding(.top, 4) }
+                if !model.toReview.isEmpty {
+                    SectionLabel(text: "To review")
+                    ForEach(model.toReview) { reviewRow($0) }
                 }
-                SectionLabel(text: "Projects")
+                if !model.working.isEmpty {
+                    SectionLabel(text: "Working")
+                    ForEach(model.working) { SessionLink(session: $0, showProject: true) }
+                }
+                if model.host != nil, model.toReview.isEmpty, model.working.isEmpty {
+                    VStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle").font(.system(size: 28)).foregroundStyle(Theme.faint)
+                        Text("Nothing waits on you").font(Theme.body).foregroundStyle(Theme.muted)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 48)
+                }
+                checkedList
+            }
+            .padding(.bottom, 24)
+        }
+        .background(Theme.sidebar.ignoresSafeArea())
+        .refreshable { await model.refresh() }
+        .toolbarBackground(Theme.sidebar, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) { HostHeader() }.flat()
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 18) {
+                    NewSessionButton()
+                    HomeMenu()
+                }
+                .foregroundStyle(Theme.text)
+            }.flat()
+        }
+    }
+
+    /// A To review row, with Checked one tap away on a done one.
+    private func reviewRow(_ session: HostSessionSummary) -> some View {
+        HStack(spacing: 0) {
+            SessionLink(session: session, showProject: true)
+            if session.done {
+                Button {
+                    Task { await model.markChecked(session) }
+                } label: {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Theme.addFg)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Mark checked")
+                .padding(.trailing, 6)
+            }
+        }
+    }
+
+    /// What was checked on this phone, folded until asked for.
+    @ViewBuilder private var checkedList: some View {
+        let checked = model.checked
+        if !checked.isEmpty {
+            Button {
+                checkedOpen.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Text("CHECKED")
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(0.6)
+                    Text("\(checked.count)").font(Theme.monoSmall)
+                    Spacer(minLength: 0)
+                    Image(systemName: checkedOpen ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(Theme.faint)
+                .padding(.horizontal, 16)
+                .padding(.top, 18)
+                .padding(.bottom, 6)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Checked, \(checked.count)")
+            if checkedOpen {
+                ForEach(checked) { SessionLink(session: $0, showProject: true).opacity(0.6) }
+            }
+        }
+    }
+}
+
+/// Every project of the rail, folded to its counts until opened.
+struct ProjectsView: View {
+    @Environment(AppModel.self) private var model
+    @AppStorage("home.showArchived") private var showArchived = false
+    /// The projects opened, by id, one per line.
+    @AppStorage("projects.open") private var openIds = ""
+    @State private var filter = ""
+
+    private var query: String { filter.trimmingCharacters(in: .whitespaces).lowercased() }
+    private var opened: Set<String> { Set(openIds.split(separator: "\n").map(String.init)) }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                search
                 ForEach(model.visibleProjects) { project($0) }
                 if model.host != nil && model.projects.isEmpty {
                     Text("No projects yet. Open a folder of the host with the folder button.")
@@ -73,76 +189,26 @@ struct HomeView: View {
                         .foregroundStyle(Theme.muted)
                         .padding(16)
                 }
-                UsageView(accounts: model.accounts)
             }
             .padding(.bottom, 24)
         }
         .scrollDismissesKeyboard(.interactively)
         .background(Theme.sidebar.ignoresSafeArea())
         .refreshable { await model.refresh() }
+        .navigationTitle("Projects")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Theme.sidebar, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) { header }.flat()
             ToolbarItem(placement: .topBarTrailing) {
-              HStack(spacing: 18) {
-                if model.can("projects.browse") {
-                    NavigationLink(value: Route.browse) { Image(systemName: "folder.badge.plus") }
+                HStack(spacing: 18) {
+                    if model.can("projects.browse") {
+                        NavigationLink(value: Route.browse) { Image(systemName: "folder.badge.plus") }
+                    }
+                    NewSessionButton()
+                    HomeMenu()
                 }
-                if let project = recentProject {
-                    NavigationLink(value: Route.newSession(projectId: project.id)) { Image(systemName: "square.and.pencil") }
-                }
-                menu
-              }
-              .foregroundStyle(Theme.text)
+                .foregroundStyle(Theme.text)
             }.flat()
-        }
-        .alert("Check for updates", isPresented: Binding(get: { model.updateCheck != nil }, set: { if !$0 { model.updateCheck = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(model.updateCheck ?? "")
-        }
-        .alert("Rename session", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            RenameField(initial: renaming?.displayName ?? "") { title in
-                if let session = renaming { Task { await model.update(session, ["title": title]) } }
-            }
-        }
-        .confirmationDialog(
-            "Delete \"\(deleting?.displayName ?? "")\"? Its transcript is removed from the host.",
-            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let session = deleting { Task { await model.delete(session) } }
-            }
-        }
-    }
-
-    private var header: some View {
-        HStack(spacing: 8) {
-            Image("side-logo").resizable().frame(width: 20, height: 20).clipShape(.rect(cornerRadius: 5))
-            Text(model.host?.name ?? "sIDE").font(.system(size: 15, weight: .semibold)).lineLimit(1)
-            // The app's own version, short enough to stay beside the
-            // toolbar's buttons; the host's is in the menu.
-            Text(AppUpdate.installedVersion)
-                .font(Theme.monoSmall)
-                .foregroundStyle(model.update == nil ? Theme.faint : Theme.accent)
-        }
-        .fixedSize()
-    }
-
-    private var menu: some View {
-        Menu {
-            Toggle("Show archived", isOn: $showArchived)
-            Section("App \(AppUpdate.installedVersion)" + (model.host?.version.map { " · host \($0)" } ?? "")) {
-                Button("Check for updates", systemImage: "arrow.down.circle") { Task { await model.checkForUpdate(force: true) } }
-            }
-            if let endpoint = model.connection?.endpoint {
-                Section(endpoint.host() ?? endpoint.absoluteString) {
-                    Button("Sign out", role: .destructive) { Task { await model.signOut() } }
-                }
-            }
-        } label: {
-            Image(systemName: "ellipsis")
         }
     }
 
@@ -160,45 +226,13 @@ struct HomeView: View {
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.stroke))
         .padding(.horizontal, 12)
         .padding(.top, 4)
+        .padding(.bottom, 4)
     }
 
-    @ViewBuilder
-    private var links: some View {
-        // The desktop's web apps, such as a review page, signed in as there.
-        if model.can("webApps"), query.isEmpty {
-            VStack(spacing: 0) { ForEach(webApps) { app in
-                NavigationLink(value: Route.webApp(app)) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "globe").font(.system(size: 13)).frame(width: 16)
-                        Text(app.name).font(Theme.body).lineLimit(1)
-                        Spacer()
-                        Text(URL(string: app.url)?.host() ?? "").font(Theme.meta).foregroundStyle(Theme.faint).lineLimit(1)
-                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.faint)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 11)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-            } }
-            // On the stack, which is there with no app yet, so it asks once.
-            .task { webApps = (try? await model.client?.rpc("webApps.get", as: HostWebApps.self).apps) ?? webApps }
-        }
-        if model.can("employees"), query.isEmpty {
-            NavigationLink(value: Route.colleagues) {
-                HStack(spacing: 10) {
-                    Image(systemName: "person.2").font(.system(size: 13)).frame(width: 16)
-                    Text("Colleagues").font(Theme.body)
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.faint)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 11)
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 8)
-        }
+    private func toggle(_ id: String) {
+        var ids = opened
+        if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
+        openIds = ids.sorted().joined(separator: "\n")
     }
 
     private func sessions(of project: HostProject) -> [HostSessionSummary] {
@@ -212,15 +246,30 @@ struct HomeView: View {
     private func project(_ project: HostProject) -> some View {
         let list = sessions(of: project)
         if query.isEmpty || !list.isEmpty {
+            let open = opened.contains(project.id) || !query.isEmpty
             HStack(spacing: 8) {
-                MascotView(seed: folderName(project.cwd), active: list.contains { $0.running })
-                Text(project.name.uppercased())
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(0.66)
-                    .foregroundStyle(Theme.muted)
-                    .lineLimit(1)
-                ProjectStatusCounts(sessions: model.sessions[project.id] ?? [])
-                Spacer()
+                Button {
+                    toggle(project.id)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: open ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.faint)
+                            .frame(width: 10)
+                        MascotView(seed: folderName(project.cwd), active: list.contains { $0.running })
+                        Text(project.name.uppercased())
+                            .font(.system(size: 11, weight: .semibold))
+                            .tracking(0.66)
+                            .foregroundStyle(Theme.muted)
+                            .lineLimit(1)
+                        ProjectStatusCounts(sessions: model.sessions[project.id] ?? [])
+                        Spacer(minLength: 0)
+                    }
+                    .frame(minHeight: 36)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(project.name), \(open ? "open" : "folded")")
                 Menu {
                     NavigationLink(value: Route.newSession(projectId: project.id)) { Label("New session", systemImage: "plus") }
                     Text(tilde(project.cwd))
@@ -238,26 +287,26 @@ struct HomeView: View {
             }
             .padding(.leading, 16)
             .padding(.trailing, 8)
-            .padding(.top, 12)
-            .padding(.bottom, 2)
-            let all = expanded.contains(project.id) || !query.isEmpty
-            ForEach(all ? list : Array(list.prefix(5))) { row($0, showProject: false) }
-            if list.count > 5, query.isEmpty {
-                Button(all ? "Show less" : "Show \(list.count - 5) more") {
-                    if all { expanded.remove(project.id) } else { expanded.insert(project.id) }
+            .padding(.top, 4)
+            if open {
+                ForEach(list) { SessionLink(session: $0, showProject: false) }
+                if list.isEmpty {
+                    Text("No sessions").font(Theme.meta).foregroundStyle(Theme.faint).padding(.horizontal, 16).padding(.vertical, 4)
                 }
-                .font(Theme.meta)
-                .foregroundStyle(Theme.muted)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
-            }
-            if list.isEmpty {
-                Text("No sessions").font(Theme.meta).foregroundStyle(Theme.faint).padding(.horizontal, 16).padding(.vertical, 4)
             }
         }
     }
+}
 
-    private func row(_ session: HostSessionSummary, showProject: Bool) -> some View {
+/// A session row that opens it, with its actions on a long press.
+struct SessionLink: View {
+    @Environment(AppModel.self) private var model
+    let session: HostSessionSummary
+    let showProject: Bool
+    @State private var renaming = false
+    @State private var deleting = false
+
+    var body: some View {
         NavigationLink(value: Route.session(SessionRoute(projectId: session.projectId, sessionId: session.id))) {
             SessionRow(session: session, project: showProject ? model.project(session.projectId) : nil)
         }
@@ -267,18 +316,102 @@ struct HomeView: View {
                 Button("Mark checked", systemImage: "checkmark.circle") { Task { await model.markChecked(session) } }
             }
             Button(session.pinned == true ? "Unpin" : "Pin", systemImage: "pin") { Task { await model.update(session, ["pinned": session.pinned != true]) } }
-            Button("Rename", systemImage: "pencil") { renaming = session }
+            Button("Rename", systemImage: "pencil") { renaming = true }
             Button(session.archived == true ? "Unarchive" : "Archive", systemImage: "archivebox") {
                 Task { await model.update(session, ["archived": session.archived != true]) }
             }
-            Button("Delete", systemImage: "trash", role: .destructive) { deleting = session }
+            Button("Delete", systemImage: "trash", role: .destructive) { deleting = true }
+        }
+        .alert("Rename session", isPresented: $renaming) {
+            RenameField(initial: session.displayName) { title in
+                Task { await model.update(session, ["title": title]) }
+            }
+        }
+        .confirmationDialog(
+            "Delete \"\(session.displayName)\"? Its transcript is removed from the host.",
+            isPresented: $deleting,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { Task { await model.delete(session) } }
+        }
+    }
+}
+
+/// The host's name beside the app's logo and version.
+struct HostHeader: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image("side-logo").resizable().frame(width: 20, height: 20).clipShape(.rect(cornerRadius: 5))
+            Text(model.host?.name ?? "sIDE").font(.system(size: 15, weight: .semibold)).lineLimit(1)
+            // The app's own version, short enough to stay beside the
+            // toolbar's buttons; the host's is in the menu.
+            Text(AppUpdate.installedVersion)
+                .font(Theme.monoSmall)
+                .foregroundStyle(model.update == nil ? Theme.faint : Theme.accent)
+        }
+        .fixedSize()
+    }
+}
+
+/// A new session in the project worked in last.
+struct NewSessionButton: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let project = recentProject {
+            NavigationLink(value: Route.newSession(projectId: project.id)) { Image(systemName: "square.and.pencil") }
         }
     }
 
-    /// The project worked in last, which a new session starts in by default.
     private var recentProject: HostProject? {
         let latest = model.sessions.values.joined().max { $0.updatedAt < $1.updatedAt }
         return model.visibleProjects.first { $0.id == latest?.projectId } ?? model.visibleProjects.first
+    }
+}
+
+/// Everything that is not a session: web apps, usage, updates, the host.
+struct HomeMenu: View {
+    @Environment(AppModel.self) private var model
+    @AppStorage("home.showArchived") private var showArchived = false
+    @State private var usage = false
+
+    var body: some View {
+        Menu {
+            // The desktop's web apps, such as a review page, signed in as there.
+            if let apps = model.webApps, !apps.isEmpty {
+                Section("Web apps") {
+                    ForEach(apps) { app in
+                        Button(app.name, systemImage: "globe") { model.path.append(.webApp(app)) }
+                    }
+                }
+            }
+            Section {
+                Button("Usage & accounts", systemImage: "gauge.with.dots.needle.50percent") { usage = true }
+                Toggle("Show archived", isOn: $showArchived)
+            }
+            Section("App \(AppUpdate.installedVersion)" + (model.host?.version.map { " · host \($0)" } ?? "")) {
+                Button("Check for updates", systemImage: "arrow.down.circle") { Task { await model.checkForUpdate(force: true) } }
+            }
+            if let endpoint = model.connection?.endpoint {
+                Section(endpoint.host() ?? endpoint.absoluteString) {
+                    Button("Sign out", role: .destructive) { Task { await model.signOut() } }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+        }
+        .sheet(isPresented: $usage) {
+            NavigationStack {
+                ScrollView { UsageView(accounts: model.accounts).padding(.bottom, 24) }
+                    .background(Theme.sidebar.ignoresSafeArea())
+                    .navigationTitle("Usage")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { usage = false } } }
+            }
+            .presentationDetents([.medium, .large])
+        }
     }
 }
 
@@ -314,6 +447,8 @@ struct SessionRow: View {
                     Pill(text: "Needs you")
                 } else if session.running {
                     Pill(text: "Working", color: Theme.link)
+                } else if session.failedTurn {
+                    Pill(text: "Failed", color: Theme.delFg)
                 } else if session.done {
                     Pill(text: "Done", color: Theme.addFg)
                 } else if session.interrupted {
@@ -461,10 +596,6 @@ struct RenameField: View {
             if !title.isEmpty { onSave(title) }
         }
     }
-}
-
-private extension HostSessionSummary {
-    var nowId: String { "now-\(id)" }
 }
 
 /// A newer build of this app is published next to the host. LiveContainer

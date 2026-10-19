@@ -19,6 +19,8 @@ export type LiveAgent = {
   durationMs?: number;
   needsApproval: boolean;
   done: boolean;
+  /** Done because its turn ended on an error. */
+  failed?: boolean;
 };
 
 /** Inbox discussions and orchestration workers have their own panels and
@@ -94,13 +96,17 @@ function toLiveAgent(session: Session, unseenFinished: boolean): LiveAgent {
   );
   const pendingQuestion = session.pendingQuestion;
   const done = unseenFinished && !isInFlightSession(session);
+  const failed =
+    done && session.blocks[session.blocks.length - 1]?.notice === "error";
   const activityBlock = pending ?? lastActivityBlock(session.blocks);
   return {
     id: session.id,
     cwd: session.cwd,
     title: sessionDisplayTitle(session.title, session.harness),
     harness: session.harness,
-    activity: done
+    activity: failed
+      ? "Failed"
+      : done
       ? "Done"
       : pendingQuestion
         ? pendingQuestion.title ||
@@ -111,12 +117,15 @@ function toLiveAgent(session: Session, unseenFinished: boolean): LiveAgent {
     durationMs: done ? turnDurationMs(session.blocks) : undefined,
     needsApproval: Boolean(pending) || Boolean(pendingQuestion),
     done,
+    failed,
   };
 }
 
 function compareLiveAgents(a: LiveAgent, b: LiveAgent): number {
   if (a.needsApproval !== b.needsApproval) return a.needsApproval ? -1 : 1;
   if (a.done !== b.done) return a.done ? 1 : -1;
+  // A failed turn needs the user more than one that finished.
+  if (Boolean(a.failed) !== Boolean(b.failed)) return a.failed ? -1 : 1;
   return (
     (a.startedAt ?? Number.MAX_SAFE_INTEGER) -
     (b.startedAt ?? Number.MAX_SAFE_INTEGER)

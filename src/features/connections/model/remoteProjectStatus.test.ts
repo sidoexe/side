@@ -60,4 +60,16 @@ describe("remote review rows", () => {
     });
     expect(rows[1]).toMatchObject({ activity: "Done", done: true });
   });
+
+  it("puts a failed turn after those asking for input and before finished ones", () => {
+    const rows = remoteReviewAgents("remote://box/app", [
+      summary({ id: "done", toReview: true, updatedAt: 3 }),
+      summary({ id: "failed", toReview: true, failed: true, updatedAt: 1 }),
+      summary({ id: "ask", needsInput: true, failed: true, updatedAt: 2 }),
+    ]);
+
+    expect(rows.map((row) => row.id)).toEqual(["ask", "failed", "done"]);
+    expect(rows[0]).toMatchObject({ activity: "Needs input", failed: false });
+    expect(rows[1]).toMatchObject({ activity: "Failed", done: true, failed: true });
+  });
 });

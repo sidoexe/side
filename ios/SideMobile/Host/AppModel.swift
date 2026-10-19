@@ -6,11 +6,15 @@ struct SessionRoute: Hashable {
     let sessionId: String
 }
 
-/// Every screen pushed over the sidebar.
+/// The tabs of the home screen, each with its own stack.
+enum HomeTab: Hashable {
+    case now, projects, colleagues
+}
+
+/// Every screen pushed over a tab.
 enum Route: Hashable {
     case session(SessionRoute)
     case newSession(projectId: String)
-    case colleagues
     case colleague(String)
     case browse
     case webApp(HostWebApp)
@@ -34,8 +38,20 @@ final class AppModel {
     private(set) var rail: RailState?
     /// Every agent's models, for their display names.
     private(set) var catalog: HostModelCatalog?
+    /// What this phone marked checked, last checked first.
+    private(set) var checks: [CheckedSession] = CheckedSession.load()
+    /// Each colleague's sessions, for the Colleagues tab's badge.
+    private(set) var colleagueWork: [String: [ColleagueAccounts.WorkItem]] = [:]
+    /// The desktop's web apps, read once per host.
+    private(set) var webApps: [HostWebApp]?
     var error: String?
-    var path: [Route] = []
+    var tab = HomeTab.now
+    var paths: [HomeTab: [Route]] = [:]
+    /// The stack of the tab on screen.
+    var path: [Route] {
+        get { paths[tab] ?? [] }
+        set { paths[tab] = newValue }
+    }
     /// A newer build: from the latest GitHub release, or one published next
     /// to the host (`build-ipa.sh --publish`).
     private(set) var update: AppUpdate?
@@ -60,8 +76,9 @@ final class AppModel {
         // SIDE_ROUTE=colleagues | colleague:<id> | new:<projectId> | session:<projectId>:<sessionId>
         if let route = ProcessInfo.processInfo.environment["SIDE_ROUTE"]?.split(separator: ":").map(String.init) {
             switch route.first {
-            case "colleagues": path = [.colleagues]
-            case "colleague" where route.count == 2: path = [.colleagues, .colleague(route[1])]
+            case "projects": tab = .projects
+            case "colleagues": tab = .colleagues
+            case "colleague" where route.count == 2: tab = .colleagues; path = [.colleague(route[1])]
             case "new" where route.count == 2: path = [.newSession(projectId: route[1])]
             case "session" where route.count == 3: path = [.session(SessionRoute(projectId: route[1], sessionId: route[2]))]
             case "browse": path = [.browse]
@@ -100,7 +117,10 @@ final class AppModel {
         accounts = []
         accountsRefreshedAt = .distantPast
         catalog = nil
-        path = []
+        colleagueWork = [:]
+        webApps = nil
+        paths = [:]
+        tab = .now
     }
 
     func report(_ error: Error) {
@@ -134,6 +154,13 @@ final class AppModel {
             accounts = (try? await client.rpc("accounts.list", as: [HostAccountSummary].self)) ?? accounts
             await checkForUpdate()
             if can("projects.rail") { rail = try? await client.rpc("projects.rail", as: RailState.self) }
+            if can("employees.accounts"),
+               let work = (try? await client.rpc("employees.accounts", as: ColleagueAccounts?.self))??.work {
+                colleagueWork = work
+            }
+            if webApps == nil, can("webApps") {
+                webApps = (try? await client.rpc("webApps.get", as: HostWebApps.self))?.apps
+            }
         } catch {
             report(error)
         }
@@ -153,9 +180,9 @@ final class AppModel {
         return projects.filter { !(rail?.archived.contains($0.cwd) ?? false) }
     }
 
-    /// Sessions waiting on the user, for the badge.
-    var attention: Int {
-        sessions.values.joined().filter { $0.needsInput == true && $0.archived != true }.count
+    /// Colleague sessions waiting on the user, for the Colleagues tab's badge.
+    var colleaguesWaiting: Int {
+        colleagueWork.values.joined().filter { $0.state == "input" }.count
     }
 
     /// "Claude Opus 5" rather than "opus".
@@ -201,7 +228,7 @@ final class AppModel {
         guard let client else { return }
         do {
             _ = try await client.rpc("sessions.delete", ["projectId": summary.projectId, "sessionId": summary.id], as: HostClient.Ignored.self)
-            path.removeAll { $0.sessionId == summary.id }
+            for tab in paths.keys { paths[tab]?.removeAll { $0.sessionId == summary.id } }
             await refresh()
         } catch {
             report(error)
@@ -216,19 +243,37 @@ final class AppModel {
         projects.first { $0.id == id }
     }
 
-    /// What needs the user: questions first, then done sessions to check,
-    /// then running ones, each by recency.
-    var inbox: [HostSessionSummary] {
+    /// What waits on the user, as the desktop's To review: questions first,
+    /// then turns that failed, then done ones to check, each by recency.
+    var toReview: [HostSessionSummary] {
         func rank(_ session: HostSessionSummary) -> Int {
-            session.needsInput == true ? 0 : session.done ? 1 : 2
+            session.needsInput == true ? 0 : session.failedTurn ? 1 : 2
         }
         return sessions.values.joined()
-            .filter { $0.archived != true && !$0.draftOnly && ($0.needsInput == true || $0.running || $0.done) }
+            .filter { $0.archived != true && !$0.draftOnly && ($0.needsInput == true || $0.done) }
             .sorted { (rank($0), -$0.updatedAt) < (rank($1), -$1.updatedAt) }
     }
 
-    /// The user checked a done session; it leaves Now and its project's count.
+    /// Sessions still working, newest first.
+    var working: [HostSessionSummary] {
+        sessions.values.joined()
+            .filter { $0.archived != true && $0.running && $0.needsInput != true }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// Sessions checked on this phone, last checked first. One that works,
+    /// waits or is done again leaves the list until it is checked again.
+    var checked: [HostSessionSummary] {
+        let all = Dictionary(sessions.values.joined().map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return checks
+            .compactMap { all[$0.id] }
+            .filter { $0.archived != true && !$0.running && $0.needsInput != true && !$0.done }
+    }
+
+    /// The user checked a done session; it leaves To review and its project's count.
     func markChecked(_ summary: HostSessionSummary) async {
+        checks = Array(([CheckedSession(id: summary.id)] + checks.filter { $0.id != summary.id }).prefix(50))
+        CheckedSession.save(checks)
         await update(summary, ["reviewed": true])
     }
 
@@ -343,6 +388,7 @@ final class AppModel {
 
     /// A tapped notification opens its session.
     func open(projectId: String, sessionId: String) {
+        tab = .now
         path = [.session(SessionRoute(projectId: projectId, sessionId: sessionId))]
     }
 }
@@ -370,5 +416,21 @@ struct AppUpdate: Equatable {
         components.host = "install"
         components.queryItems = [URLQueryItem(name: "url", value: ipa.absoluteString)]
         return components.url!
+    }
+}
+
+/// A session this phone marked checked.
+struct CheckedSession: Codable, Hashable {
+    let id: String
+
+    private static let key = "home.checked"
+
+    static func load() -> [CheckedSession] {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return [] }
+        return (try? JSONDecoder().decode([CheckedSession].self, from: data)) ?? []
+    }
+
+    static func save(_ checks: [CheckedSession]) {
+        if let data = try? JSONEncoder().encode(checks) { UserDefaults.standard.set(data, forKey: key) }
     }
 }

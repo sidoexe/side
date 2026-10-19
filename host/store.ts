@@ -373,6 +373,7 @@ export function summary(value: HostSession): HostSessionSummary {
     toReview: value.toReview,
     linkedWorkItem: value.session.linkedWorkItem,
     needsInput: sessionNeedsInput(value.session),
+    failed: value.session.blocks.at(-1)?.notice === "error" || undefined,
     draft: value.session.blocks.some((block) => block.role === "user" && block.draft),
   };
 }

@@ -138,11 +138,14 @@ export function LiveAgentCard({
   groupColors,
   groupCustomColors,
   groupMascots,
+  onMarkChecked,
 }: {
   agent: LiveAgent;
   now: number;
   selected: boolean;
   onSelect?: (sessionId: string) => void;
+  /** Offered on done rows, as on a project's session list. */
+  onMarkChecked?: (agent: LiveAgent) => void;
   groupLabels: Record<string, string>;
   groupColors: Record<string, number>;
   groupCustomColors: Record<string, string>;
@@ -161,15 +164,19 @@ export function LiveAgentCard({
       : "";
   const activity = agent.needsApproval
     ? "Need approval"
-    : agent.done
-      ? "Done"
-      : agent.activity;
+    : agent.failed
+      ? "Failed"
+      : agent.done
+        ? "Done"
+        : agent.activity;
   const live = !agent.needsApproval && !agent.done;
   const title = [agent.title, project, activity, elapsed]
     .filter(Boolean)
     .join("\n");
 
-  return (
+  const checkable = agent.done && !agent.needsApproval && onMarkChecked;
+
+  const card = (
     <button
       type="button"
       title={title}
@@ -205,12 +212,14 @@ export function LiveAgentCard({
         className={`mt-1 flex min-w-0 items-center gap-1.5 pl-4 text-[11px] leading-tight ${
           agent.needsApproval
             ? "text-amber-400"
-            : agent.done
+            : agent.failed
+              ? "text-red-400"
+              : agent.done
               ? "text-emerald-400"
               : "text-content/50"
         }`}
       >
-        {agent.needsApproval ? (
+        {agent.needsApproval || agent.failed ? (
           <CircleAlert className="size-3 shrink-0" strokeWidth={1.75} />
         ) : agent.done ? (
           <Check className="size-3 shrink-0" strokeWidth={2.25} />
@@ -227,5 +236,22 @@ export function LiveAgentCard({
         ) : null}
       </span>
     </button>
+  );
+  if (!checkable) return card;
+  return (
+    <div className="group/review relative">
+      {card}
+      <button
+        type="button"
+        title="Mark checked"
+        aria-label={`Mark ${agent.title} checked`}
+        data-live-agent-check={agent.id}
+        onClick={() => onMarkChecked(agent)}
+        className="absolute right-1.5 top-[23px] flex h-[18px] items-center gap-1 rounded bg-background-base px-1.5 text-[11px] text-content/60 opacity-0 hover:text-content focus-visible:opacity-100 group-hover/review:opacity-100"
+      >
+        <Check className="size-3" strokeWidth={2.25} />
+        Checked
+      </button>
+    </div>
   );
 }

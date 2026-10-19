@@ -53,6 +53,33 @@ describe("liveAgentsFromSessions", () => {
     expect(agents[1].done).toBe(true);
   });
 
+  it("marks a turn that ended on an error failed, after waiting ones and before done ones", () => {
+    const done = chat("/repo", { id: "done" });
+    const failed = chat("/repo", {
+      id: "failed",
+      blocks: [
+        { id: "u1", role: "user", text: "hello", startedAt: 1_000 },
+        { id: "e1", role: "system", text: "Provider crashed", notice: "error" },
+      ],
+    });
+    const waiting = chat("/repo", {
+      id: "waiting",
+      blocks: [{
+        id: "approval",
+        role: "approval",
+        text: "Run a command",
+        approval: { requestId: 1 },
+      }],
+    });
+    const agents = liveAgentsFromSessions(
+      [done, failed, waiting],
+      new Set([done.id, failed.id]),
+    );
+    expect(agents.map((agent) => agent.id)).toEqual(["waiting", "failed", "done"]);
+    expect(agents[1]).toMatchObject({ done: true, failed: true, activity: "Failed" });
+    expect(agents[2]).toMatchObject({ done: true, failed: false, activity: "Done" });
+  });
+
   it("keeps internal workers in their lead's agent panel", () => {
     const lead = chat("/repo", { id: "lead", busy: true });
     const worker = chat("/repo", { id: "worker", busy: true, orchestrationLeadId: "lead" });
@@ -81,6 +108,7 @@ describe("liveAgentsFromSessions", () => {
         durationMs: undefined,
         needsApproval: false,
         done: false,
+        failed: false,
       },
     ]);
   });
@@ -179,6 +207,7 @@ describe("liveAgentsFromSessions", () => {
         durationMs: 12_000,
         needsApproval: false,
         done: true,
+        failed: false,
       },
     ]);
   });

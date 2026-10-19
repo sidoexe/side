@@ -100,6 +100,8 @@ export type HostSessionSummary = Omit<
   createdAt?: number;
   linkedWorkItem?: LinkedWorkItem;
   needsInput?: boolean;
+  /** Its last turn ended on an error. */
+  failed?: boolean;
   branch?: string;
   worktreeCwd?: string;
   repo?: string;

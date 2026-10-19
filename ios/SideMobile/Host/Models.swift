@@ -39,11 +39,15 @@ struct HostSessionSummary: Decodable, Identifiable, Hashable {
     let worktreeCwd: String?
     /// Its last turn finished and nobody has checked it yet.
     let toReview: Bool?
+    /// Its last turn ended on an error. Older hosts never say so.
+    let failed: Bool?
 
     var running: Bool { status == "running" }
     var interrupted: Bool { status == "interrupted" }
     /// Finished and waiting to be checked: it stays until marked so.
     var done: Bool { toReview == true && !running && needsInput != true }
+    /// Done because its turn ended on an error.
+    var failedTurn: Bool { done && failed == true }
     /// Only a saved draft: kept off lists. A draft never hides a session that
     /// works, waits on the user or is done, as on desktop.
     var draftOnly: Bool { draft == true && !running && needsInput != true && !done }

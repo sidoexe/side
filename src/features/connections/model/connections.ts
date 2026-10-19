@@ -451,6 +451,7 @@ export function remoteReviewAgents(
     .sort(
       (a, b) =>
         Number(!!b.needsInput) - Number(!!a.needsInput) ||
+        Number(!!b.failed) - Number(!!a.failed) ||
         b.updatedAt - a.updatedAt,
     )
     .map((session) => ({
@@ -458,9 +459,14 @@ export function remoteReviewAgents(
       cwd: project,
       title: session.title,
       harness: session.harness,
-      activity: session.needsInput ? "Needs input" : "Done",
+      activity: session.needsInput
+        ? "Needs input"
+        : session.failed
+          ? "Failed"
+          : "Done",
       needsApproval: !!session.needsInput,
       done: !session.needsInput,
+      failed: !session.needsInput && !!session.failed,
     }));
 }
 

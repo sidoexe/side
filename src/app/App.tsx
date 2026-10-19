@@ -549,6 +549,7 @@ import {
 } from "../features/sessions/ui/TranscriptPool";
 import { syncDockBadge } from "../features/notifications/model/dockBadge";
 import { liveAgentsFromSessions } from "../features/sessions/model/liveAgents";
+import { forgetCheckedSessions } from "../features/sessions/model/sessionChecked";
 import { useStoredDoneAgents } from "../features/sessions/hooks/useStoredDoneAgents";
 import { hiddenApprovalNotices } from "../features/notifications/model/approvalToast";
 import { useSessionReminders } from "../features/notifications/hooks/useSessionReminders";
@@ -5731,6 +5732,7 @@ function Workspace({
         }
         if (removed) {
           markSessionsReviewed([sessionId]);
+          forgetCheckedSessions([sessionId]);
           // An archived chat keeps Balanced for when it comes back.
           if (mode !== "archive") saveChatBalanced(sessionId, false);
         }
