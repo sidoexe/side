@@ -2,39 +2,27 @@ import SwiftUI
 
 typealias WorkItem = ColleagueAccounts.WorkItem
 
-/// When this phone last showed each colleague: what ended before then is
-/// not news here, whatever the desktop has shown.
-enum ColleagueSeen {
-    private static func key(_ id: String) -> String { "colleagueSeen.\(id)" }
-    static func at(_ id: String) -> Double { UserDefaults.standard.double(forKey: key(id)) }
-    static func mark(_ id: String) {
-        UserDefaults.standard.set(Date().timeIntervalSince1970 * 1000, forKey: key(id))
-    }
-}
-
-/// As `pinnedColleagueWork`: waiting on you, then running, then ended since
-/// the last visit, newest first.
-func pinnedWork(_ items: [WorkItem], seenAt: Double) -> [WorkItem] {
+/// As `pinnedColleagueWork`: waiting on you, then running, then waiting to
+/// be checked, newest first.
+func pinnedWork(_ items: [WorkItem], keep: (WorkItem) -> Bool) -> [WorkItem] {
     func rank(_ item: WorkItem) -> Int { item.state == "input" ? 0 : item.state == "working" ? 1 : 2 }
     func recency(_ item: WorkItem) -> Double { item.settledAt ?? item.at }
     return items
-        .filter { $0.active || ($0.settledAt ?? 0) > seenAt }
+        .filter(keep)
         .sorted { a, b in rank(a) != rank(b) ? rank(a) < rank(b) : recency(a) > recency(b) }
 }
 
-/// "1 needs input · 2 working · 3 done since last visit".
-func workLine(_ items: [WorkItem], seenAt: Double) -> String {
-    func count(_ state: String, since: Bool = false) -> Int {
-        items.filter { $0.state == state && (!since || ($0.settledAt ?? 0) > seenAt) }.count
-    }
-    let ended = [("done", count("done", since: true)), ("failed", count("failed", since: true)), ("stopped", count("stopped", since: true))]
+/// "1 needs input · 2 working · To review: 3 done", over the pinned items.
+func workLine(_ pinned: [WorkItem]) -> String {
+    func count(_ state: String) -> Int { pinned.filter { $0.state == state }.count }
+    let settled = [("done", count("done")), ("failed", count("failed")), ("stopped", count("stopped"))]
         .filter { $0.1 > 0 }
         .map { "\($0.1) \($0.0)" }
     var parts = [
         count("input") > 0 ? "\(count("input")) needs input" : nil,
         count("working") > 0 ? "\(count("working")) working" : nil,
     ].compactMap { $0 }
-    if !ended.isEmpty { parts.append(ended.joined(separator: " · ") + " since last visit") }
+    if !settled.isEmpty { parts.append("To review: " + settled.joined(separator: " · ")) }
     return parts.joined(separator: " · ")
 }
 
@@ -52,6 +40,8 @@ struct WorkRow: View {
     @Environment(AppModel.self) private var model
     let item: WorkItem
     var now = Date()
+    /// On Now, among every session: say which colleague started it.
+    var showColleague = false
 
     var body: some View {
         if let route {
@@ -83,7 +73,7 @@ struct WorkRow: View {
                 Text(displayTitle(item.title, harness: item.harness))
                     .font(.system(size: 14))
                     .lineLimit(1)
-                Text("\(note) · \(folderName(item.cwd))")
+                Text(([note, folderName(item.cwd)] + (showColleague ? model.colleague(of: item.sessionId).map { ["by \($0.displayName)"] } ?? [] : [])).joined(separator: " · "))
                     .font(Theme.meta)
                     .foregroundStyle(item.state == "input" ? Theme.amber : Theme.muted)
                     .lineLimit(1)
@@ -108,18 +98,18 @@ struct WorkRow: View {
     }
 }
 
-/// Above a colleague's chat: its sessions running or waiting, and the ones
-/// that ended since the last visit, however far the chat scrolls.
+/// Above a colleague's chat: its part of Now, the sessions running, waiting
+/// or waiting to be checked, however far the chat scrolls.
 struct ColleagueWorkCard: View {
+    @Environment(AppModel.self) private var model
     let items: [WorkItem]
-    let seenAt: Double
     @State private var open = true
     @State private var all = false
 
     private static let rows = 3
 
     var body: some View {
-        let pinned = pinnedWork(items, seenAt: seenAt)
+        let pinned = pinnedWork(items, keep: model.onNow)
         if !pinned.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
                 Button {
@@ -129,7 +119,7 @@ struct ColleagueWorkCard: View {
                         Circle()
                             .fill(pinned.contains { $0.state == "input" } ? Theme.amber : pinned.contains { $0.state == "working" } ? Theme.link : Theme.faint)
                             .frame(width: 6, height: 6)
-                        Text(workLine(items, seenAt: seenAt))
+                        Text(workLine(pinned))
                             .font(Theme.meta)
                             .foregroundStyle(Theme.muted)
                             .lineLimit(1)
@@ -156,50 +146,6 @@ struct ColleagueWorkCard: View {
                 }
             }
             .card(padding: 10, radius: 10)
-        }
-    }
-}
-
-/// Every colleague's work at once: the ones with a session waiting on you
-/// first. Shown at the top of the colleagues list.
-struct ColleagueBoard: View {
-    let roster: [Mono]
-    let work: [String: [WorkItem]]
-
-    var body: some View {
-        let groups = roster.compactMap { mono -> (Mono, [WorkItem])? in
-            let pinned = pinnedWork(work[mono.id] ?? [], seenAt: ColleagueSeen.at(mono.id))
-            return pinned.isEmpty ? nil : (mono, pinned)
-        }
-        .sorted { a, b in
-            let wa = a.1.contains { $0.state == "input" }, wb = b.1.contains { $0.state == "input" }
-            return wa != wb ? wa : a.1.filter(\.active).count > b.1.filter(\.active).count
-        }
-        if !groups.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Work").font(Theme.meta).foregroundStyle(Theme.muted)
-                TimelineView(.periodic(from: .now, by: 60)) { context in
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(groups, id: \.0.id) { mono, items in
-                            VStack(alignment: .leading, spacing: 0) {
-                                NavigationLink(value: Route.colleague(mono.id)) {
-                                    HStack(spacing: 6) {
-                                        MonoAvatar(mono: mono, size: 14)
-                                        Text(mono.displayName).font(.system(size: 13, weight: .semibold))
-                                        Spacer(minLength: 0)
-                                    }
-                                    .contentShape(.rect)
-                                }
-                                .buttonStyle(.plain)
-                                ForEach(items) { WorkRow(item: $0, now: context.date) }
-                            }
-                        }
-                    }
-                }
-            }
-            .card(padding: 12, radius: 10)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
         }
     }
 }

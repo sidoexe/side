@@ -124,6 +124,8 @@ export type EmployeeWorkItem = {
   activity?: string;
   at: number;
   settledAt?: number;
+  /** Settled and not yet checked on the desktop. */
+  toReview?: true;
 };
 
 const WORK_STATES = new Set(["working", "input", "done", "failed", "stopped"]);
@@ -160,6 +162,7 @@ function sanitizeWork(value: unknown): Record<string, EmployeeWorkItem[]> {
             ...(activity ? { activity } : {}),
             at,
             ...(settledAt !== undefined ? { settledAt } : {}),
+            ...(item.toReview === true ? { toReview: true as const } : {}),
           },
         ];
       });

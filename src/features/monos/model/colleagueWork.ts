@@ -1,11 +1,15 @@
 import { useSyncExternalStore } from "react";
-import type { MonoSpawnedSession } from "../../sessions/model/session";
+import type { LiveAgent } from "../../sessions/model/liveAgents";
+import {
+  sessionDisplayTitle,
+  type MonoSpawnedSession,
+} from "../../sessions/model/session";
 import type { LaunchedSessionState } from "./monoSpawnedSessions";
 
 /**
  * The sessions each colleague started, kept apart from its chats so they can
  * be followed without scrolling back: what still runs, what waits on the
- * user, and what settled since the user last looked at the colleague. A
+ * user, and what settled and waits to be checked, as on To review. A
  * session that needs input is answered in that session; the colleague's own
  * chat never takes it over.
  */
@@ -33,7 +37,10 @@ export type ColleagueLaunch = {
   habit?: boolean;
 };
 
-type Entry = { seenAt?: number; items: ColleagueWorkItem[] };
+type Entry = { items: ColleagueWorkItem[] };
+
+/** Sessions waiting to be checked, as `sessionsToReview` keeps them. */
+export type ToReview = { has(sessionId: string): boolean };
 type Store = Record<string, Entry>;
 
 /** What one pass knows of a launch that is open in this window. */
@@ -167,15 +174,6 @@ export function recordColleagueWork(
   write({ ...store, [monoId]: { ...entry, items } });
 }
 
-/** The user looked at the colleague: what settled until now is no longer news. */
-export function markColleagueSeen(monoId: string, now = Date.now()): void {
-  const store = read();
-  write({
-    ...store,
-    [monoId]: { items: store[monoId]?.items ?? [], seenAt: now },
-  });
-}
-
 export function forgetColleagueWork(monoId: string): void {
   const store = read();
   if (!(monoId in store)) return;
@@ -220,30 +218,29 @@ export function colleagueWorkStore(): Readonly<Store> {
 export type ColleagueWorkSummary = {
   input: number;
   working: number;
-  /** Settled since the last visit, by how. */
+  /** Settled and waiting to be checked, by how. */
   done: number;
   failed: number;
   stopped: number;
 };
 
-function settledSince(item: ColleagueWorkItem, seenAt?: number): boolean {
+function settledToReview(item: ColleagueWorkItem, toReview: ToReview): boolean {
   return (
     !isActiveWork(item.state) &&
     item.state !== "draft" &&
-    !!item.settledAt &&
-    item.settledAt > (seenAt ?? 0)
+    toReview.has(item.sessionId)
   );
 }
 
 export function colleagueWorkSummary(
   items: readonly ColleagueWorkItem[],
-  seenAt?: number,
+  toReview: ToReview,
 ): ColleagueWorkSummary {
   const summary = { input: 0, working: 0, done: 0, failed: 0, stopped: 0 };
   for (const item of items) {
     if (item.state === "input") summary.input++;
     else if (item.state === "working") summary.working++;
-    else if (settledSince(item, seenAt)) {
+    else if (settledToReview(item, toReview)) {
       if (item.state === "failed") summary.failed++;
       else if (item.state === "stopped") summary.stopped++;
       else summary.done++;
@@ -252,18 +249,14 @@ export function colleagueWorkSummary(
   return summary;
 }
 
-/**
- * What to keep in sight: sessions waiting on the user, then the ones
- * running, then the ones that settled since the last visit, newest first.
- */
-export function pinnedColleagueWork(
+function byUrgency(
   items: readonly ColleagueWorkItem[],
-  seenAt?: number,
+  keep: (item: ColleagueWorkItem) => boolean,
 ): ColleagueWorkItem[] {
   const rank = (item: ColleagueWorkItem) =>
     item.state === "input" ? 0 : item.state === "working" ? 1 : 2;
   return items
-    .filter((item) => isActiveWork(item.state) || settledSince(item, seenAt))
+    .filter((item) => isActiveWork(item.state) || keep(item))
     .sort(
       (a, b) =>
         rank(a) - rank(b) ||
@@ -271,14 +264,70 @@ export function pinnedColleagueWork(
     );
 }
 
-/** "Since your last visit: 3 done · 1 failed", or nothing when none settled. */
-export function sinceLastVisitLine(summary: ColleagueWorkSummary): string {
+/**
+ * What to keep in sight: sessions waiting on the user, then the ones
+ * running, then the ones that settled and wait to be checked, newest first.
+ */
+export function pinnedColleagueWork(
+  items: readonly ColleagueWorkItem[],
+  toReview: ToReview,
+): ColleagueWorkItem[] {
+  return byUrgency(items, (item) => settledToReview(item, toReview));
+}
+
+/** "To review: 3 done · 1 failed", or nothing when none waits to be checked. */
+export function toReviewLine(summary: ColleagueWorkSummary): string {
   const parts = [
     summary.done ? `${summary.done} done` : "",
     summary.failed ? `${summary.failed} failed` : "",
     summary.stopped ? `${summary.stopped} stopped` : "",
   ].filter(Boolean);
-  return parts.length ? `Since your last visit: ${parts.join(" · ")}` : "";
+  return parts.length ? `To review: ${parts.join(" · ")}` : "";
+}
+
+/** Session id → the colleague that started it. */
+export function colleagueOfSession(
+  store: Readonly<Store>,
+): Map<string, string> {
+  return new Map(
+    Object.entries(store).flatMap(([monoId, entry]) =>
+      entry.items.map((item): [string, string] => [item.sessionId, monoId]),
+    ),
+  );
+}
+
+/**
+ * To review and Working rows for colleague sessions running where this
+ * window does not list them, such as a habit's run or one open in another
+ * window. The ones that settled reach To review as any session does.
+ */
+export function colleagueLiveAgents(
+  store: Readonly<Store>,
+  colleagues: readonly { id: string; name: string }[],
+  listedIds: ReadonlySet<string>,
+): LiveAgent[] {
+  return colleagues.flatMap(({ id, name }) =>
+    (store[id]?.items ?? [])
+      .filter(
+        (item) => isActiveWork(item.state) && !listedIds.has(item.sessionId),
+      )
+      .map(
+        (item): LiveAgent => ({
+          id: item.sessionId,
+          cwd: item.cwd,
+          title: item.habit
+            ? item.title
+            : sessionDisplayTitle(item.title, item.harness),
+          harness: item.harness,
+          activity:
+            item.activity ??
+            (item.state === "input" ? "Needs input" : "Working"),
+          needsApproval: item.state === "input",
+          done: false,
+          colleague: { id, name },
+        }),
+      ),
+  );
 }
 
 /** "1 needs input · 2 working", or nothing when none runs. */
@@ -301,23 +350,26 @@ export type PublishedWorkItem = {
   activity?: string;
   at: number;
   settledAt?: number;
+  /** Settled and not yet checked on this desktop. */
+  toReview?: true;
 };
 
 const PUBLISHED_MAX = 12;
 
 /**
- * The phone keeps its own last visit, so it gets the running ones and the
- * most recent settled ones, not only what is news on this desktop.
+ * The phone keeps its own checks, so it gets the running ones and the most
+ * recent settled ones, each saying whether it still waits to be checked here.
  */
 export function publishedColleagueWork(
   store: Readonly<Store>,
   monoIds: readonly string[],
+  toReview: ToReview,
 ): Record<string, PublishedWorkItem[]> {
   return Object.fromEntries(
     monoIds.flatMap((id) => {
       const items = store[id]?.items ?? [];
       if (!items.length) return [];
-      const shown = pinnedColleagueWork(items, -1)
+      const shown = byUrgency(items, (item) => !!item.settledAt)
         .filter((item) => item.state !== "draft")
         .slice(0, PUBLISHED_MAX)
         .map((item) => ({
@@ -329,6 +381,9 @@ export function publishedColleagueWork(
           ...(item.activity ? { activity: item.activity.slice(0, 120) } : {}),
           at: item.at,
           ...(item.settledAt ? { settledAt: item.settledAt } : {}),
+          ...(settledToReview(item, toReview)
+            ? { toReview: true as const }
+            : {}),
         }));
       return shown.length ? [[id, shown]] : [];
     }),

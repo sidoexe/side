@@ -31,6 +31,7 @@ import {
   Settings,
   StickyNote,
   Zap,
+  DashboardSquare,
   Globe,
 } from "../../shared/ui/icons";
 import {
@@ -334,12 +335,14 @@ type Props = {
   onOpenInboxItem?: (item: LinkedWorkItem, sessionId: string) => void;
   onOpenNotes?: () => void;
   onOpenAutomations?: () => void;
+  onOpenBoard?: () => void;
   onOpenWeb?: () => void;
   onGoToFile?: () => void;
   searchActive?: boolean;
   inboxActive?: boolean;
   notesActive?: boolean;
   automationsActive?: boolean;
+  boardActive?: boolean;
   webActive?: boolean;
   notesEnabled?: boolean;
   onToggleProjectRail?: () => void;
@@ -432,12 +435,14 @@ function SidebarComponent({
   onOpenInboxItem,
   onOpenNotes,
   onOpenAutomations,
+  onOpenBoard,
   onOpenWeb,
   onGoToFile,
   searchActive = false,
   inboxActive = false,
   notesActive = false,
   automationsActive = false,
+  boardActive = false,
   webActive = false,
   notesEnabled = true,
   onToggleProjectRail,
@@ -881,6 +886,7 @@ function SidebarComponent({
     inboxActive ||
     notesActive ||
     automationsActive ||
+    boardActive ||
     webActive ||
     settingsOpen;
   // A remembered Mono sits underneath these views; select it only while visible.
@@ -1876,11 +1882,13 @@ function SidebarComponent({
               onOpenNotificationSettings={onOpenNotificationSettings}
               onOpenNotes={notesEnabled ? onOpenNotes : undefined}
               onOpenAutomations={onOpenAutomations}
+              onOpenBoard={onOpenBoard}
               onOpenWeb={onOpenWeb}
               searchActive={searchActive}
               inboxActive={inboxActive}
               notesActive={notesActive}
               automationsActive={automationsActive}
+              boardActive={boardActive}
               webActive={webActive}
               inboxUnseen={inboxUnseen}
             />
@@ -2406,8 +2414,10 @@ function SidebarComponent({
           onOpenNotes={notesEnabled ? onOpenNotes : undefined}
           notesActive={notesActive}
           onOpenAutomations={onOpenAutomations}
+          onOpenBoard={onOpenBoard}
           onOpenWeb={onOpenWeb}
           automationsActive={automationsActive}
+          boardActive={boardActive}
           webActive={webActive}
           onOpenSettings={onOpenSettings}
           onTogglePanel={onToggleProjectRail}
@@ -2441,8 +2451,10 @@ function SidebarComponent({
           onOpenNotes={onOpenNotes}
           notesActive={notesActive}
           onOpenAutomations={onOpenAutomations}
+          onOpenBoard={onOpenBoard}
           onOpenWeb={onOpenWeb}
           automationsActive={automationsActive}
+          boardActive={boardActive}
           webActive={webActive}
           onTogglePanel={onToggleProjectRail}
           onSelectProject={onSelectProject}
@@ -2521,11 +2533,13 @@ function SidebarProjectPicker({
   onOpenNotificationSettings,
   onOpenNotes,
   onOpenAutomations,
+  onOpenBoard,
   onOpenWeb,
   searchActive = false,
   inboxActive = false,
   notesActive = false,
   automationsActive = false,
+  boardActive = false,
   webActive = false,
   inboxUnseen = false,
 }: {
@@ -2541,11 +2555,13 @@ function SidebarProjectPicker({
   onOpenNotificationSettings?: (projectPath?: string) => void;
   onOpenNotes?: () => void;
   onOpenAutomations?: () => void;
+  onOpenBoard?: () => void;
   onOpenWeb?: () => void;
   searchActive?: boolean;
   inboxActive?: boolean;
   notesActive?: boolean;
   automationsActive?: boolean;
+  boardActive?: boolean;
   webActive?: boolean;
   inboxUnseen?: boolean;
 }) {
@@ -2621,6 +2637,11 @@ function SidebarProjectPicker({
             <Zap className="size-3.5" strokeWidth={1.75} />
           </IconButton>
         ) : null}
+        {onOpenBoard ? (
+          <IconButton label="Board" active={boardActive} onClick={onOpenBoard}>
+            <DashboardSquare className="size-3.5" strokeWidth={1.75} />
+          </IconButton>
+        ) : null}
         {onOpenWeb ? (
           <IconButton label="Web" active={webActive} onClick={onOpenWeb}>
             <Globe className="size-3.5" strokeWidth={1.75} />
@@ -2667,8 +2688,10 @@ function CompactProjectRail({
   onOpenNotes,
   notesActive,
   onOpenAutomations,
+  onOpenBoard,
   onOpenWeb,
   automationsActive,
+  boardActive,
   webActive,
   onOpenSettings,
   onTogglePanel,
@@ -2702,8 +2725,10 @@ function CompactProjectRail({
   onOpenNotes?: () => void;
   notesActive: boolean;
   onOpenAutomations?: () => void;
+  onOpenBoard?: () => void;
   onOpenWeb?: () => void;
   automationsActive: boolean;
+  boardActive: boolean;
   webActive: boolean;
   onOpenSettings?: () => void;
   onTogglePanel?: () => void;
@@ -2746,6 +2771,7 @@ function CompactProjectRail({
     !inboxActive &&
     !notesActive &&
     !automationsActive &&
+    !boardActive &&
     !webActive &&
     !monoViewActive;
   const openWorkspaceTab = (nextTab: SidebarTab) => {
@@ -2899,6 +2925,14 @@ function CompactProjectRail({
           active={automationsActive}
           onClick={action(automationsActive, onOpenAutomations)}
         />
+        {onOpenBoard ? (
+          <CompactRailAction
+            label="Board"
+            icon={DashboardSquare}
+            active={boardActive}
+            onClick={action(boardActive, onOpenBoard)}
+          />
+        ) : null}
         {onOpenWeb ? (
           <CompactRailAction
             label="Web"

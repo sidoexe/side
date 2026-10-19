@@ -40,8 +40,10 @@ final class AppModel {
     private(set) var catalog: HostModelCatalog?
     /// What this phone marked checked, last checked first.
     private(set) var checks: [CheckedSession] = CheckedSession.load()
-    /// Each colleague's sessions, for the Colleagues tab's badge.
+    /// Each colleague's sessions, which join the rest on Now.
     private(set) var colleagueWork: [String: [ColleagueAccounts.WorkItem]] = [:]
+    /// The colleagues, to name the one that started a session.
+    private(set) var colleagues: [Mono] = []
     /// The desktop's web apps, read once per host.
     private(set) var webApps: [HostWebApp]?
     var error: String?
@@ -118,6 +120,7 @@ final class AppModel {
         accountsRefreshedAt = .distantPast
         catalog = nil
         colleagueWork = [:]
+        colleagues = []
         webApps = nil
         paths = [:]
         tab = .now
@@ -158,6 +161,9 @@ final class AppModel {
                let work = (try? await client.rpc("employees.accounts", as: ColleagueAccounts?.self))??.work {
                 colleagueWork = work
             }
+            if can("employees"), let roster = try? await client.rpc("employees.roster", as: MonoRoster.self).roster {
+                colleagues = roster
+            }
             if webApps == nil, can("webApps") {
                 webApps = (try? await client.rpc("webApps.get", as: HostWebApps.self))?.apps
             }
@@ -180,10 +186,40 @@ final class AppModel {
         return projects.filter { !(rail?.archived.contains($0.cwd) ?? false) }
     }
 
-    /// Colleague sessions waiting on the user, for the Colleagues tab's badge.
-    var colleaguesWaiting: Int {
-        colleagueWork.values.joined().filter { $0.state == "input" }.count
+    /// The colleague that started a session, as the desktop tracks it.
+    func colleague(of sessionId: String) -> Mono? {
+        guard let monoId = colleagueWork.first(where: { $0.value.contains { $0.sessionId == sessionId } })?.key else { return nil }
+        return colleagues.first { $0.id == monoId }
     }
+
+    /// A colleague's session as Now lists it: running or waiting, or settled
+    /// and not checked on the desktop nor here.
+    func onNow(_ item: WorkItem) -> Bool {
+        item.active || (item.toReview == true && !checks.contains { $0.id == item.sessionId })
+    }
+
+    /// Colleague sessions the host does not list, since they run on the
+    /// desktop: what waits on the user or to be checked, then what works.
+    private var desktopColleagueWork: [WorkItem] {
+        let listed = Set(sessions.values.joined().map(\.id))
+        return colleagueWork.values.joined().filter { !listed.contains($0.sessionId) && onNow($0) }
+    }
+
+    /// Their part of To review: questions first, then failed, then done.
+    var colleagueToReview: [WorkItem] {
+        func rank(_ item: WorkItem) -> Int { item.state == "input" ? 0 : item.state == "failed" ? 1 : 2 }
+        return desktopColleagueWork
+            .filter { $0.state != "working" }
+            .sorted { (rank($0), -($0.settledAt ?? $0.at)) < (rank($1), -($1.settledAt ?? $1.at)) }
+    }
+
+    /// Their part of Working, newest first.
+    var colleagueWorking: [WorkItem] {
+        desktopColleagueWork.filter { $0.state == "working" }.sorted { $0.at > $1.at }
+    }
+
+    /// Everything waiting on the user, for the Now tab's badge.
+    var waitingCount: Int { toReview.count + colleagueToReview.count }
 
     /// "Claude Opus 5" rather than "opus".
     func modelName(harness: String, model: String?) -> String {
@@ -268,6 +304,13 @@ final class AppModel {
         return checks
             .compactMap { all[$0.id] }
             .filter { $0.archived != true && !$0.running && $0.needsInput != true && !$0.done }
+    }
+
+    /// The user checked a colleague's session the desktop runs. The desktop
+    /// keeps its own checks; this one only leaves this phone's lists.
+    func markChecked(_ item: WorkItem) {
+        checks = Array(([CheckedSession(id: item.sessionId)] + checks.filter { $0.id != item.sessionId }).prefix(50))
+        CheckedSession.save(checks)
     }
 
     /// The user checked a done session; it leaves To review and its project's count.

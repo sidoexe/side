@@ -14,6 +14,7 @@ import {
   Search,
   Settings,
   Zap,
+  DashboardSquare,
 } from "../../shared/ui/icons";
 import {
   createContext,
@@ -26,15 +27,9 @@ import {
   type MouseEvent,
 } from "react";
 import {
-  markSessionsReviewed,
   sessionsToReview,
   subscribeSessionsToReview,
 } from "../../features/sessions/model/sessionReview";
-import {
-  checkedSessions,
-  noteSessionsChecked,
-  subscribeCheckedSessions,
-} from "../../features/sessions/model/sessionChecked";
 import { useDragResize } from "../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
 import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
@@ -103,19 +98,13 @@ import { GithubStarPrompt } from "./GithubStarPrompt";
 import { Popover } from "../../shared/ui/Popover";
 import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/connections";
 import {
-  cachedRemoteReviewAgents,
-  markRemoteSessionReviewed,
-  remoteSessionFor,
   useRemoteMachineOnline,
   useRemoteMachines,
   useRemoteProjectsStatus,
 } from "../../features/connections/model/connections";
-import {
-  loadLiveAgentsEnabled,
-  subscribeLiveAgentsEnabled,
-} from "../../features/settings/model/settings";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { useProjectMenu } from "./useProjectMenu";
+import { useSessionBoard } from "../../features/sessions/hooks/useSessionBoard";
 import { MonoRailSection, type MonoRailProps } from "./MonoRailSection";
 import { WebAppsRailSection } from "./WebAppsRailSection";
 
@@ -140,8 +129,10 @@ type Props = {
   onOpenNotes?: () => void;
   notesActive?: boolean;
   onOpenAutomations?: () => void;
+  onOpenBoard?: () => void;
   onOpenWeb?: () => void;
   automationsActive?: boolean;
+  boardActive?: boolean;
   webActive?: boolean;
   onTogglePanel?: () => void;
   onSelectProject: (path: string) => void;
@@ -184,8 +175,10 @@ export function ProjectRail({
   onOpenNotes,
   notesActive = false,
   onOpenAutomations,
+  onOpenBoard,
   onOpenWeb,
   automationsActive = false,
+  boardActive = false,
   webActive = false,
   onTogglePanel,
   onSelectProject,
@@ -304,9 +297,11 @@ export function ProjectRail({
     subscribeSessionsToReview,
     sessionsToReview,
   );
-  const remoteStatus = useRemoteProjectsStatus(
-    useMemo(() => recents.map((item) => item.path), [recents]),
+  const projectPaths = useMemo(
+    () => recents.map((item) => item.path),
+    [recents],
   );
+  const remoteStatus = useRemoteProjectsStatus(projectPaths);
   const projectStatus = useMemo(() => {
     const counts = new Map<string, ProjectStatusCounts>();
     const entry = (path: string) => {
@@ -395,6 +390,7 @@ export function ProjectRail({
     inboxActive ||
     notesActive ||
     automationsActive ||
+    boardActive ||
     webActive ||
     !!monos?.activeId;
   const pinnedIds = sections.pinned.map((item) => item.path);
@@ -409,62 +405,12 @@ export function ProjectRail({
   );
   // Finished agents and those waiting on the user sit under the projects;
   // the bottom card keeps only the ones still working.
-  // A host runs its own sessions, so its finished and waiting ones come
-  // from the list it reports rather than from this desktop.
-  const liveAgentsEnabled = useSyncExternalStore(
-    subscribeLiveAgentsEnabled,
-    loadLiveAgentsEnabled,
-  );
-  const remoteReview = useMemo(() => {
-    if (!liveAgentsEnabled || !onSelectRemoteSession) return [];
-    const open = new Set(
-      liveAgents.flatMap((agent) => remoteSessionFor(agent.id) ?? []),
-    );
-    return cachedRemoteReviewAgents(recents.map((item) => item.path)).filter(
-      ({ agent }) => !open.has(agent.id),
-    );
-    // `remoteStatus` changes whenever a host list does.
-  }, [
-    liveAgentsEnabled,
-    onSelectRemoteSession,
+  const board = useSessionBoard(
     liveAgents,
-    recents,
-    remoteStatus,
-  ]);
-  const remoteReviewProjects = new Map(
-    remoteReview.map(({ project, agent }) => [agent.id, project]),
+    projectPaths,
+    onSelectAgent,
+    onSelectRemoteSession,
   );
-  const reviewAgents = [
-    ...liveAgents.filter((agent) => agent.needsApproval || agent.done),
-    ...remoteReview.map(({ agent }) => agent),
-  ];
-  const onSelectReviewAgent = (sessionId: string) => {
-    const project = remoteReviewProjects.get(sessionId);
-    if (!project) return onSelectAgent?.(sessionId);
-    // Opening one is not checking it, as with a local session.
-    onSelectRemoteSession?.(project, sessionId);
-  };
-  const onMarkReviewAgentChecked = (agent: LiveAgent) => {
-    const project = remoteReviewProjects.get(agent.id);
-    // A host keeps its own sessions; only this desktop's are listed as checked.
-    if (project) return void markRemoteSessionReviewed(project, agent.id);
-    markSessionsReviewed([agent.id]);
-    const { id, cwd, title, harness } = agent;
-    noteSessionsChecked([{ id, cwd, title, harness }]);
-  };
-  const workingAgents = liveAgents.filter(
-    (agent) => !agent.needsApproval && !agent.done,
-  );
-  const storedChecks = useSyncExternalStore(
-    subscribeCheckedSessions,
-    checkedSessions,
-  );
-  // One that works or waits again leaves the list until it is checked again.
-  const checkedAgents = liveAgentsEnabled
-    ? storedChecks.filter(
-        (entry) => !liveAgents.some((agent) => agent.id === entry.id),
-      )
-    : [];
   return (
     <nav
       ref={resize.setPaneRef}
@@ -537,6 +483,15 @@ export function ProjectRail({
               active={automationsActive}
               ariaLabel="Automations"
             />
+            {onOpenBoard ? (
+              <RailAction
+                label="Board"
+                icon={DashboardSquare}
+                onClick={onOpenBoard}
+                active={boardActive}
+                ariaLabel="Board"
+              />
+            ) : null}
           </div>
 
           <div
@@ -648,11 +603,11 @@ export function ProjectRail({
                 groupMascots={groupMascots}
               />
               <ReviewAgentsSection
-                agents={reviewAgents}
-                checked={checkedAgents}
+                agents={board.review}
+                checked={board.checked}
                 activeSessionId={activeSessionId}
-                onSelect={onSelectReviewAgent}
-                onMarkChecked={onMarkReviewAgentChecked}
+                onSelect={board.onSelect}
+                onMarkChecked={board.onMarkChecked}
                 groupLabels={groupLabels}
                 groupColors={groupColors}
                 groupCustomColors={groupCustomColors}
@@ -661,7 +616,7 @@ export function ProjectRail({
             </ProjectStatusContext.Provider>
           </div>
           <LiveAgentsPreview
-            agents={workingAgents}
+            agents={board.working}
             activeSessionId={activeSessionId}
             onSelect={onSelectAgent}
             groupLabels={groupLabels}

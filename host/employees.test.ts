@@ -192,7 +192,7 @@ it("keeps the sessions each employee started, dropping malformed ones", () => {
     work: {
       m: [
         { sessionId: "s1", title: "Fix CI", cwd: "/code/app", harness: "claude", state: "input", activity: "Approve git push", at: 1 },
-        { sessionId: "s2", title: "Docs", cwd: "/code/app", harness: "codex", state: "done", at: 2, settledAt: 3 },
+        { sessionId: "s2", title: "Docs", cwd: "/code/app", harness: "codex", state: "done", at: 2, settledAt: 3, toReview: true },
         { sessionId: "s3", cwd: "/code/app", harness: "claude", state: "exploded", at: 4 },
         { title: "no id", cwd: "/x", harness: "claude", state: "done", at: 5 },
       ],
@@ -202,7 +202,7 @@ it("keeps the sessions each employee started, dropping malformed ones", () => {
   expect(store.accounts()?.work).toEqual({
     m: [
       { sessionId: "s1", title: "Fix CI", cwd: "/code/app", harness: "claude", state: "input", activity: "Approve git push", at: 1 },
-      { sessionId: "s2", title: "Docs", cwd: "/code/app", harness: "codex", state: "done", at: 2, settledAt: 3 },
+      { sessionId: "s2", title: "Docs", cwd: "/code/app", harness: "codex", state: "done", at: 2, settledAt: 3, toReview: true },
     ],
   });
 });

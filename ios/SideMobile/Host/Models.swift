@@ -446,6 +446,8 @@ struct ColleagueAccounts: Decodable, Equatable {
         let at: Double
         /// When it stopped working, in Unix milliseconds.
         let settledAt: Double?
+        /// Settled and not yet checked on the desktop; nil from older desktops.
+        let toReview: Bool?
         var id: String { sessionId }
         var active: Bool { state == "working" || state == "input" }
     }

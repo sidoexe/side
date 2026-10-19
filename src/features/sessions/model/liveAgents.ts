@@ -21,6 +21,8 @@ export type LiveAgent = {
   done: boolean;
   /** Done because its turn ended on an error. */
   failed?: boolean;
+  /** The colleague that started it. */
+  colleague?: { id: string; name: string };
 };
 
 /** Inbox discussions and orchestration workers have their own panels and

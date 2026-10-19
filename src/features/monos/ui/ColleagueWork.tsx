@@ -1,19 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { projectName } from "../../../shared/lib/paths";
-import { Popover } from "../../../shared/ui/Popover";
-import { ChevronDown, ChevronUp, DashboardSquare } from "../../../shared/ui/icons";
+import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
 import { sessionDisplayTitle } from "../../sessions/model/session";
+import {
+  sessionsToReview,
+  subscribeSessionsToReview,
+} from "../../sessions/model/sessionReview";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import {
   activeWorkLine,
   colleagueWorkSummary,
   pinnedColleagueWork,
-  sinceLastVisitLine,
+  toReviewLine,
   useColleagueWork,
   type ColleagueWorkItem,
 } from "../model/colleagueWork";
-import { listMonos, monoLook, type MonoLook } from "../model/mono";
-import { ColleagueAvatar } from "./ColleagueAvatar";
+import type { MonoLook } from "../model/mono";
 import { LAUNCHED_STATUS } from "./LaunchedSessionCard";
 
 /** Rows the strip shows before "more". */
@@ -103,9 +105,9 @@ export function ColleagueWorkRow({
 }
 
 /**
- * Pinned above a colleague's composer: what settled since the last visit,
- * and the sessions still running or waiting on the user, so they stay in
- * sight however far the chat scrolls.
+ * Pinned above a colleague's composer: its part of To review and Working,
+ * the sessions running, waiting on the user or waiting to be checked, so
+ * they stay in sight however far the chat scrolls.
  */
 export function ColleagueWorkStrip({
   monoId,
@@ -121,15 +123,19 @@ export function ColleagueWorkStrip({
   onShowAll: () => void;
 }) {
   const store = useColleagueWork();
+  const toReview = useSyncExternalStore(
+    subscribeSessionsToReview,
+    sessionsToReview,
+  );
   const now = useMinute();
   const [collapsed, setCollapsed] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const entry = store[monoId];
   if (!entry) return null;
-  const rows = pinnedColleagueWork(entry.items, entry.seenAt);
+  const rows = pinnedColleagueWork(entry.items, toReview);
   if (!rows.length) return null;
-  const summary = colleagueWorkSummary(entry.items, entry.seenAt);
-  const lines = [sinceLastVisitLine(summary), activeWorkLine(summary)].filter(
+  const summary = colleagueWorkSummary(entry.items, toReview);
+  const lines = [activeWorkLine(summary), toReviewLine(summary)].filter(
     Boolean,
   );
   const shown = expanded ? rows : rows.slice(0, STRIP_ROWS);
@@ -198,141 +204,5 @@ export function ColleagueWorkStrip({
         </div>
       )}
     </section>
-  );
-}
-
-/** How many sessions wait on the user across every colleague. */
-export function useColleagueInputCount(): number {
-  const store = useColleagueWork();
-  return Object.values(store).reduce(
-    (count, entry) =>
-      count + entry.items.filter((item) => item.state === "input").length,
-    0,
-  );
-}
-
-/**
- * Every colleague's work on one board: the ones with a session waiting on
- * the user first, then the ones with work running or news to read.
- */
-export function ColleagueBoard({
-  onOpen,
-}: {
-  onOpen: (monoId: string, sessionId: string) => void;
-}) {
-  const store = useColleagueWork();
-  const now = useMinute();
-  const groups = listMonos()
-    .map((mono) => {
-      const entry = store[mono.id];
-      const rows = entry ? pinnedColleagueWork(entry.items, entry.seenAt) : [];
-      return {
-        mono,
-        look: monoLook(mono),
-        rows,
-        summary: colleagueWorkSummary(entry?.items ?? [], entry?.seenAt),
-      };
-    })
-    .filter((group) => group.rows.length)
-    .sort(
-      (a, b) =>
-        Number(!!b.summary.input) - Number(!!a.summary.input) ||
-        b.summary.working - a.summary.working,
-    );
-  if (!groups.length)
-    return (
-      <p className="px-3 py-4 text-[13px] text-content/50">
-        Nothing running. Sessions your colleagues start show here while they
-        work, and once they end until you open that colleague.
-      </p>
-    );
-  return (
-    <div className="flex flex-col gap-2">
-      {groups.map(({ mono, look, rows, summary }) => (
-        <section key={mono.id} data-colleague-board={mono.id}>
-          <div className="flex min-w-0 items-center gap-2 px-2 pb-0.5 pt-1">
-            <ColleagueAvatar
-              mascot={look.mascot}
-              color={look.color}
-              avatar={look.avatar}
-              still
-              className="size-4 shrink-0"
-            />
-            <span className="min-w-0 truncate text-[12px] font-medium text-content/80">
-              {look.name}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-[12px] text-content/45">
-              {[activeWorkLine(summary), sinceLastVisitLine(summary)]
-                .filter(Boolean)
-                .join(" · ")
-                .replace("Since your last visit: ", "new: ")}
-            </span>
-          </div>
-          {rows.map((item) => (
-            <ColleagueWorkRow
-              key={item.sessionId}
-              item={item}
-              projects={look.projects}
-              now={now}
-              onOpen={() => onOpen(mono.id, item.sessionId)}
-            />
-          ))}
-        </section>
-      ))}
-    </div>
-  );
-}
-
-/** The rail's way to the board, marked while a session waits on the user. */
-export function ColleagueBoardButton({
-  onOpen,
-}: {
-  onOpen: (monoId: string, sessionId: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const anchor = useRef<HTMLButtonElement>(null);
-  const waiting = useColleagueInputCount();
-  const label = waiting
-    ? `Colleagues' work, ${waiting} waiting on you`
-    : "Colleagues' work";
-  return (
-    <>
-      <button
-        ref={anchor}
-        type="button"
-        title={label}
-        aria-label={label}
-        aria-expanded={open}
-        data-colleague-board-button
-        onClick={() => setOpen(!open)}
-        className="relative grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content"
-      >
-        <DashboardSquare className="size-3.5" strokeWidth={1.75} />
-        {waiting ? (
-          <span
-            aria-hidden
-            className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-amber-400"
-          />
-        ) : null}
-      </button>
-      {open ? (
-        <Popover
-          anchor={anchor}
-          side="right"
-          align="start"
-          width={420}
-          onDismiss={() => setOpen(false)}
-          aria-label="Colleagues' work"
-          className="p-1.5"
-        >
-          <ColleagueBoard
-            onOpen={(monoId, sessionId) => {
-              setOpen(false);
-              onOpen(monoId, sessionId);
-            }}
-          />
-        </Popover>
-      ) : null}
-    </>
   );
 }

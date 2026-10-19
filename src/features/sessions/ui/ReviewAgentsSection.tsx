@@ -93,52 +93,69 @@ export function ReviewAgentsSection({
           </button>
           {checkedOpen ? (
             <div className="flex flex-col gap-px px-2">
-              {checked.map((entry) => {
-                const seed = projectName(entry.cwd);
-                const key = projectKey(entry.cwd);
-                const project = resolveTabGroupLabel(key, groupLabels, seed);
-                return (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    title={[entry.title, project].join("\n")}
-                    aria-label={`${entry.title}, ${project}, checked`}
-                    aria-current={
-                      entry.id === activeSessionId ? "true" : undefined
-                    }
-                    data-checked-session={entry.id}
-                    onClick={() => onSelect?.(entry.id)}
-                    className={`flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left ${
-                      entry.id === activeSessionId
-                        ? "bg-selection"
-                        : "hover:bg-content/8"
-                    }`}
-                  >
-                    <ProjectMascot
-                      project={seed}
-                      color={resolveTabGroupColor(
-                        key,
-                        groupColors,
-                        groupCustomColors,
-                        seed,
-                      )}
-                      name={resolveTabGroupMascot(key, groupMascots)}
-                      className="size-2 shrink-0"
-                    />
-                    <span className="min-w-0 flex-1 truncate text-[13px] text-content/60">
-                      {entry.title}
-                    </span>
-                    <Check
-                      className="size-3 shrink-0 text-content/35"
-                      strokeWidth={2.25}
-                    />
-                  </button>
-                );
-              })}
+              {checked.map((entry) => (
+                <CheckedSessionRow
+                  key={entry.id}
+                  entry={entry}
+                  selected={entry.id === activeSessionId}
+                  onSelect={onSelect}
+                  groupLabels={groupLabels}
+                  groupColors={groupColors}
+                  groupCustomColors={groupCustomColors}
+                  groupMascots={groupMascots}
+                />
+              ))}
             </div>
           ) : null}
         </>
       ) : null}
     </section>
+  );
+}
+
+/** A session the user checked, dimmed, opening it again on a click. */
+export function CheckedSessionRow({
+  entry,
+  selected,
+  onSelect,
+  groupLabels,
+  groupColors,
+  groupCustomColors,
+  groupMascots,
+}: {
+  entry: CheckedSession;
+  selected: boolean;
+  onSelect?: (sessionId: string) => void;
+  groupLabels: Record<string, string>;
+  groupColors: Record<string, number>;
+  groupCustomColors: Record<string, string>;
+  groupMascots: Record<string, string>;
+}) {
+  const seed = projectName(entry.cwd);
+  const key = projectKey(entry.cwd);
+  const project = resolveTabGroupLabel(key, groupLabels, seed);
+  return (
+    <button
+      type="button"
+      title={[entry.title, project].join("\n")}
+      aria-label={`${entry.title}, ${project}, checked`}
+      aria-current={selected ? "true" : undefined}
+      data-checked-session={entry.id}
+      onClick={() => onSelect?.(entry.id)}
+      className={`flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left ${
+        selected ? "bg-selection" : "hover:bg-content/8"
+      }`}
+    >
+      <ProjectMascot
+        project={seed}
+        color={resolveTabGroupColor(key, groupColors, groupCustomColors, seed)}
+        name={resolveTabGroupMascot(key, groupMascots)}
+        className="size-2 shrink-0"
+      />
+      <span className="min-w-0 flex-1 truncate text-[13px] text-content/60">
+        {entry.title}
+      </span>
+      <Check className="size-3 shrink-0 text-content/35" strokeWidth={2.25} />
+    </button>
   );
 }

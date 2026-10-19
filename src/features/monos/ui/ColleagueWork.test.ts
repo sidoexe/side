@@ -3,10 +3,10 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
-  markColleagueSeen,
   recordColleagueWork,
   type LiveLaunch,
 } from "../model/colleagueWork";
+import { addSessionsToReview } from "../../sessions/model/sessionReview";
 import { ColleagueWorkStrip } from "./ColleagueWork";
 
 let container: HTMLDivElement;
@@ -66,18 +66,20 @@ it("shows nothing while the colleague has nothing running or new", () => {
   expect(container.querySelector("[data-colleague-work]")).toBeNull();
 });
 
-it("keeps what waits, what runs and what ended since the last visit in sight", () => {
+it("keeps what waits, what runs and what waits to be checked in sight", () => {
   const now = Date.now();
+  track("checked", { state: "working", title: "Old docs" }, now - 6_000);
+  track("checked", undefined, now - 5_500);
   track("ended", { state: "working", title: "Ship docs" }, now - 5_000);
-  markColleagueSeen("m", now - 4_000);
   track("ended", undefined, now - 1_000);
+  addSessionsToReview([{ id: "ended", cwd: "/code/app" }]);
   track("ask", { state: "input", title: "Fix CI", activity: "Approve git push" }, now);
   track("run", { state: "working", title: "Write tests", activity: "Running npm test" }, now);
 
   const { onOpen, onShowAll } = render();
   const strip = container.querySelector("[data-colleague-work]")!;
   expect(strip.textContent).toContain(
-    "Since your last visit: 1 done · 1 needs input · 1 working",
+    "1 needs input · 1 working · To review: 1 done",
   );
   const rows = [...strip.querySelectorAll("[data-colleague-work-item]")];
   expect(rows.map((row) => row.getAttribute("data-colleague-work-item"))).toEqual([

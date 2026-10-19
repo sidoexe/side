@@ -13,7 +13,7 @@ struct RootView: View {
                     Tab("Now", systemImage: "tray", value: HomeTab.now) {
                         TabStack(tab: .now) { NowView() }
                     }
-                    .badge(model.toReview.count)
+                    .badge(model.waitingCount)
                     Tab("Projects", systemImage: "folder", value: HomeTab.projects) {
                         TabStack(tab: .projects) { ProjectsView() }
                     }
@@ -21,7 +21,6 @@ struct RootView: View {
                         Tab("Colleagues", systemImage: "person.2", value: HomeTab.colleagues) {
                             TabStack(tab: .colleagues) { ColleaguesView() }
                         }
-                        .badge(model.colleaguesWaiting)
                     }
                 }
             }
@@ -72,7 +71,8 @@ struct TabStack<Root: View>: View {
     }
 }
 
-/// What needs you, across every project: to review, working, checked.
+/// What needs you, across every project and colleague: to review, working,
+/// checked.
 struct NowView: View {
     @Environment(AppModel.self) private var model
     @State private var checkedOpen = false
@@ -81,15 +81,22 @@ struct NowView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if let update = model.update { UpdateBanner(update: update).padding(.top, 4) }
-                if !model.toReview.isEmpty {
+                if !model.toReview.isEmpty || !model.colleagueToReview.isEmpty {
                     SectionLabel(text: "To review")
                     ForEach(model.toReview) { reviewRow($0) }
+                    // A colleague's sessions its desktop runs, which the host does not list.
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        VStack(spacing: 0) {
+                            ForEach(model.colleagueToReview) { workReviewRow($0, now: context.date) }
+                        }
+                    }
                 }
-                if !model.working.isEmpty {
+                if !model.working.isEmpty || !model.colleagueWorking.isEmpty {
                     SectionLabel(text: "Working")
                     ForEach(model.working) { SessionLink(session: $0, showProject: true) }
+                    ForEach(model.colleagueWorking) { WorkRow(item: $0, showColleague: true).padding(.horizontal, 16) }
                 }
-                if model.host != nil, model.toReview.isEmpty, model.working.isEmpty {
+                if model.host != nil, model.waitingCount == 0, model.working.isEmpty, model.colleagueWorking.isEmpty {
                     VStack(spacing: 6) {
                         Image(systemName: "checkmark.circle").font(.system(size: 28)).foregroundStyle(Theme.faint)
                         Text("Nothing waits on you").font(Theme.body).foregroundStyle(Theme.muted)
@@ -132,6 +139,28 @@ struct NowView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Mark checked")
                 .padding(.trailing, 6)
+            }
+        }
+    }
+
+    /// A colleague's session in To review, with Checked on a settled one.
+    private func workReviewRow(_ item: WorkItem, now: Date) -> some View {
+        HStack(spacing: 0) {
+            WorkRow(item: item, now: now, showColleague: true).padding(.leading, 16)
+            if !item.active {
+                Button {
+                    model.markChecked(item)
+                } label: {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Theme.addFg)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Mark checked")
+                .padding(.trailing, 6)
+            } else {
+                Spacer().frame(width: 16)
             }
         }
     }
@@ -429,6 +458,10 @@ struct SessionRow: View {
                 if let project {
                     Text("·")
                     Text(project.name).lineLimit(1)
+                }
+                if let colleague = model.colleague(of: session.id) {
+                    Text("·")
+                    Text("by \(colleague.displayName)").lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 if session.pinned == true { Image(systemName: "pin.fill").font(.system(size: 9)) }

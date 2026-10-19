@@ -23,9 +23,6 @@ struct ColleaguesView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 2) {
-                if let roster, let work = accounts?.work {
-                    ColleagueBoard(roster: roster, work: work)
-                }
                 if let roster {
                     if roster.isEmpty {
                         Text("No colleagues on this host. They live here when it is your home machine.")
@@ -113,8 +110,6 @@ struct ColleagueView: View {
     @State private var newSent = false
     @State private var now = Date()
     @State private var atEnd = true
-    /// When this phone last showed the colleague, read once as it opens.
-    @State private var seenAt: Double?
 
     private var canWrite: Bool { model.can("employees.inbox") }
 
@@ -129,7 +124,7 @@ struct ColleagueView: View {
             // Its sessions stay in sight above the chat; a request one waits
             // on is answered in that session, never in this chat.
             if tab == .chat, let work = accounts?.work?[id] {
-                ColleagueWorkCard(items: work, seenAt: seenAt ?? 0)
+                ColleagueWorkCard(items: work)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 6)
             }
@@ -159,9 +154,6 @@ struct ColleagueView: View {
         .task(id: id) {
             files = try? await model.client?.rpc("employees.load", ["mono": id], as: MonoFiles.self)
         }
-        .onAppear { if seenAt == nil { seenAt = ColleagueSeen.at(id) } }
-        // What ended until now is no longer news on the next visit.
-        .onDisappear { ColleagueSeen.mark(id) }
         .task(id: id) { await poll() }
         #if DEBUG
         // SIDE_OPEN=usage opens the usage detail on a scripted simulator run.

@@ -117,11 +117,16 @@ import {
 } from "../features/monos/ui/MonoOverview";
 import { ColleagueWorkStrip } from "../features/monos/ui/ColleagueWork";
 import {
+  colleagueLiveAgents,
+  colleagueOfSession,
   colleagueWorkStore,
   forgetColleagueWork,
-  markColleagueSeen,
   publishedColleagueWork,
+  useColleagueWork,
 } from "../features/monos/model/colleagueWork";
+import { sessionsToReview } from "../features/sessions/model/sessionReview";
+import { useSessionBoard } from "../features/sessions/hooks/useSessionBoard";
+import { BoardView } from "../features/sessions/ui/BoardView";
 import { useColleagueWorkTracking } from "./hooks/useColleagueWorkTracking";
 import { MonoSettingsDialog } from "../features/monos/ui/MonoSettingsDialog";
 import { MonoActivityView } from "../features/monos/ui/MonoActivityView";
@@ -1307,6 +1312,7 @@ function Workspace({
   const openingInboxSessions = useRef(new Map<string, Promise<string>>());
   const [notesViewOpen, setNotesViewOpen] = useState(false);
   const [automationsViewOpen, setAutomationsViewOpen] = useState(false);
+  const [boardViewOpen, setBoardViewOpen] = useState(false);
   const [webViewOpen, setWebViewOpen] = useState(false);
   const [inspectedWorkerId, setInspectedWorkerId] = useState<string | null>(
     null,
@@ -1340,6 +1346,7 @@ function Workspace({
     inbox: false,
     notes: false,
     automations: false,
+    board: false,
     web: false,
   });
   const [updateNotice, setUpdateNotice] = useState(installedUpdate);
@@ -1592,6 +1599,7 @@ function Workspace({
       !inboxViewOpen &&
       !notesViewOpen &&
       !automationsViewOpen &&
+      !boardViewOpen &&
       !webViewOpen &&
       !settingsOpen &&
       !monoViewId,
@@ -1600,6 +1608,7 @@ function Workspace({
       : !searchViewOpen &&
           !notesViewOpen &&
           !automationsViewOpen &&
+          !boardViewOpen &&
           !webViewOpen &&
           !settingsOpen
         ? (monoViewId ?? undefined)
@@ -1609,6 +1618,7 @@ function Workspace({
       !searchViewOpen &&
       !notesViewOpen &&
       !automationsViewOpen &&
+      !boardViewOpen &&
       !webViewOpen &&
       !settingsOpen
         ? shownMonoSessionId
@@ -1618,6 +1628,8 @@ function Workspace({
   notesViewOpenRef.current = notesViewOpen;
   const automationsViewOpenRef = useRef(automationsViewOpen);
   automationsViewOpenRef.current = automationsViewOpen;
+  const boardViewOpenRef = useRef(boardViewOpen);
+  boardViewOpenRef.current = boardViewOpen;
   const webViewOpenRef = useRef(webViewOpen);
   webViewOpenRef.current = webViewOpen;
   const settingsOpenRef = useRef(settingsOpen);
@@ -2258,33 +2270,60 @@ function Workspace({
     loadedSessionIds,
     liveAgentsEnabled,
   );
-  const liveAgentRows = useMemo(
-    () =>
-      liveAgentsEnabled
-        ? [
-            ...liveAgentsFromSessions(
-              promptableSessions,
-              unseenFinishedIds,
-              new Set(
-                listMonos().flatMap((mono) =>
-                  mono.sessionId ? [mono.sessionId] : [],
-                ),
-              ),
-            ),
-            // Done before this launch and not opened since.
-            ...storedDoneRows,
-          ]
-        : [],
-    [
-      liveAgentsEnabled,
-      promptableSessions,
-      unseenFinishedIds,
-      monosSnap,
-      storedDoneRows,
-    ],
-  );
+  const colleagueWork = useColleagueWork();
+  const liveAgentRows = useMemo(() => {
+    if (!liveAgentsEnabled) return [];
+    const rows = [
+      ...liveAgentsFromSessions(
+        promptableSessions,
+        unseenFinishedIds,
+        new Set(
+          listMonos().flatMap((mono) =>
+            mono.sessionId ? [mono.sessionId] : [],
+          ),
+        ),
+      ),
+      // Done before this launch and not opened since.
+      ...storedDoneRows,
+    ];
+    if (!monosEnabled) return rows;
+    // Every session on one board: a colleague's carry its name, and the ones
+    // it runs where this window does not list them join the rest.
+    const colleagues = listMonos().map((mono) => ({
+      id: mono.id,
+      name: monoLook(mono).name,
+    }));
+    const names = new Map(colleagues.map((entry) => [entry.id, entry]));
+    const startedBy = colleagueOfSession(colleagueWork);
+    const tagged = rows.map((row) => {
+      const colleague = names.get(startedBy.get(row.id) ?? "");
+      return colleague ? { ...row, colleague } : row;
+    });
+    const elsewhere = colleagueLiveAgents(
+      colleagueWork,
+      colleagues,
+      new Set(rows.map((row) => row.id)),
+    );
+    return [...tagged, ...elsewhere].sort(
+      (a, b) =>
+        Number(b.needsApproval) - Number(a.needsApproval) ||
+        Number(a.done) - Number(b.done),
+    );
+  }, [
+    liveAgentsEnabled,
+    monosEnabled,
+    promptableSessions,
+    unseenFinishedIds,
+    monosSnap,
+    storedDoneRows,
+    colleagueWork,
+  ]);
   // Rebuilt for every streamed batch; identity only moves when a row does.
   const liveAgents = useStableValue(liveAgentRows);
+  const recentPaths = useMemo(
+    () => recents.map((item) => item.path),
+    [recents],
+  );
 
   const hiddenApprovalToasts = useMemo(
     () =>
@@ -2327,6 +2366,7 @@ function Workspace({
             !inboxViewOpenRef.current &&
             !notesViewOpenRef.current &&
             !automationsViewOpenRef.current &&
+            !boardViewOpenRef.current &&
             !webViewOpenRef.current &&
             !settingsOpenRef.current
           ) {
@@ -2366,6 +2406,7 @@ function Workspace({
     searchViewOpen,
     notesViewOpen,
     automationsViewOpen,
+    boardViewOpen,
     webViewOpen,
     settingsOpen,
     flushForegroundHarnessEvents,
@@ -2868,6 +2909,7 @@ function Workspace({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setBoardViewOpen(false);
     setWebViewOpen(false);
     const cwd = sidebarCwd;
     const session = newWorkspaceSession(cwd, sessionDefaults?.runtimeMode);
@@ -2885,6 +2927,7 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setBoardViewOpen(false);
       setWebViewOpen(false);
       const existing = findRemoteSessionTab(
         tabsRef.current,
@@ -2914,6 +2957,7 @@ function Workspace({
         setInboxViewOpen(false);
         setNotesViewOpen(false);
         setAutomationsViewOpen(false);
+        setBoardViewOpen(false);
         setWebViewOpen(false);
         const cwd =
           item.projectPath || active?.cwd || sessionDefaults?.cwd || projectCwd;
@@ -2954,6 +2998,7 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setBoardViewOpen(false);
       setWebViewOpen(false);
       const cwd =
         (card.sourceCwd && looksLikeProject(card.sourceCwd)
@@ -4860,6 +4905,7 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setBoardViewOpen(false);
       setWebViewOpen(false);
       lastMonoIdRef.current = monoId;
       const session = await ensureMonoSession(monoId, {
@@ -5193,6 +5239,7 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setBoardViewOpen(false);
       setWebViewOpen(false);
       setSettingsOpen(false);
       setFilePickerOpen(false);
@@ -5802,6 +5849,7 @@ function Workspace({
             inboxViewOpenRef.current ||
             notesViewOpenRef.current ||
             automationsViewOpenRef.current ||
+            boardViewOpenRef.current ||
             webViewOpenRef.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
@@ -6383,6 +6431,7 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setBoardViewOpen(false);
       setWebViewOpen(false);
 
       // At most one folder can take the blank session, and it keeps the
@@ -8748,6 +8797,7 @@ function Workspace({
           setInboxViewOpen(false);
           setNotesViewOpen(false);
           setAutomationsViewOpen(false);
+          setBoardViewOpen(false);
           setWebViewOpen(false);
           setSidebarTab("sessions", session.cwd);
         }
@@ -8895,6 +8945,7 @@ function Workspace({
             setInboxViewOpen(false);
             setNotesViewOpen(false);
             setAutomationsViewOpen(false);
+            setBoardViewOpen(false);
             setWebViewOpen(false);
             setSidebarTab("sessions", cwd);
           },
@@ -8978,6 +9029,7 @@ function Workspace({
     work: publishedColleagueWork(
       colleagueWorkStore(),
       listMonos().map((mono) => mono.id),
+      sessionsToReview(),
     ),
     current: Object.fromEntries(
       listMonos().flatMap((mono) => {
@@ -11888,10 +11940,33 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setBoardViewOpen(false);
       setWebViewOpen(false);
+      // A colleague's session this window does not hold, such as a habit's
+      // run, opens over that colleague, as from its strip.
+      const held = sessionsRef.current.find((s) => s.id === sessionId);
+      const monoId =
+        held && !held.ephemeral
+          ? undefined
+          : colleagueOfSession(colleagueWorkStore()).get(sessionId);
+      if (monoId) return void onOpenColleagueWork(monoId, sessionId);
       onOpenApprovalSession(sessionId);
     },
-    [onOpenApprovalSession],
+    [onOpenApprovalSession, onOpenColleagueWork],
+  );
+  // A host's session opens in place of the board, as a local one does.
+  const onSelectBoardRemoteSession = useCallback(
+    (project: string, sessionId: string) => {
+      setBoardViewOpen(false);
+      onSelectRemoteSession(project, sessionId);
+    },
+    [onSelectRemoteSession],
+  );
+  const sessionBoard = useSessionBoard(
+    liveAgents,
+    recentPaths,
+    onSelectLiveAgent,
+    onSelectBoardRemoteSession,
   );
 
   const nextTitleTabs: TitleTab[] = deckProjectTabs.map((tab) =>
@@ -12039,6 +12114,7 @@ function Workspace({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setBoardViewOpen(false);
     setWebViewOpen(false);
     setFilePickerInitialQuery("");
     setFilePickerResetToken((token) => token + 1);
@@ -12049,6 +12125,7 @@ function Workspace({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setBoardViewOpen(false);
     setWebViewOpen(false);
     setFilePickerInitialQuery(">");
     setFilePickerResetToken((token) => token + 1);
@@ -12066,6 +12143,7 @@ function Workspace({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setBoardViewOpen(false);
     setWebViewOpen(false);
     setSidebarTab("files");
     setFilesSearchOpen(true);
@@ -12080,6 +12158,7 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setBoardViewOpen(false);
       setWebViewOpen(false);
       setSearchViewOpen(true);
       setSearchViewFocusToken((token) => token + 1);
@@ -12098,6 +12177,7 @@ function Workspace({
       setSearchViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setBoardViewOpen(false);
       setWebViewOpen(false);
       setInboxViewOpen(true);
     });
@@ -12112,6 +12192,7 @@ function Workspace({
       setSearchViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setBoardViewOpen(false);
       setWebViewOpen(false);
       setInboxViewOpen(false);
       const cwd =
@@ -12216,6 +12297,7 @@ function Workspace({
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setAutomationsViewOpen(false);
+      setBoardViewOpen(false);
       setWebViewOpen(false);
       setNotesViewOpen(true);
     });
@@ -12242,6 +12324,24 @@ function Workspace({
     setAutomationsViewOpen(false);
   }, []);
 
+  const onOpenBoard = useCallback(() => {
+    workspaceNavigation.cancel();
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setWebViewOpen(false);
+      setAutomationsViewOpen(false);
+      setBoardViewOpen(true);
+    });
+  }, []);
+
+  const onLeaveBoard = useCallback(() => {
+    setBoardViewOpen(false);
+  }, []);
+
   const onOpenWeb = useCallback(() => {
     workspaceNavigation.cancel();
     startTransition(() => {
@@ -12251,6 +12351,7 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setBoardViewOpen(false);
       setWebViewOpen(true);
     });
   }, []);
@@ -12265,6 +12366,7 @@ function Workspace({
       if (!session)
         throw new Error("This conversation is no longer available.");
       setAutomationsViewOpen(false);
+      setBoardViewOpen(false);
       setWebViewOpen(false);
       setSearchViewOpen(false);
       setInboxViewOpen(false);
@@ -12288,6 +12390,7 @@ function Workspace({
           inbox: inboxViewOpenRef.current,
           notes: notesViewOpenRef.current,
           automations: automationsViewOpenRef.current,
+          board: boardViewOpenRef.current,
           web: webViewOpenRef.current,
         };
       }
@@ -12297,6 +12400,7 @@ function Workspace({
         setInboxViewOpen(false);
         setNotesViewOpen(false);
         setAutomationsViewOpen(false);
+        setBoardViewOpen(false);
         setWebViewOpen(false);
         if (section) {
           setSettingsSection(section);
@@ -12355,6 +12459,7 @@ function Workspace({
     setInboxViewOpen(returnView.inbox);
     setNotesViewOpen(returnView.notes && loadNotesEnabled());
     setAutomationsViewOpen(returnView.automations);
+    setBoardViewOpen(returnView.board);
     setWebViewOpen(returnView.web);
     setSettingsOpen(false);
   }, []);
@@ -12393,6 +12498,10 @@ function Workspace({
       setAutomationsViewOpen(false);
       return;
     }
+    if (boardViewOpen) {
+      setBoardViewOpen(false);
+      return;
+    }
     if (webViewOpen) {
       setWebViewOpen(false);
       return;
@@ -12412,6 +12521,7 @@ function Workspace({
     inboxViewOpen,
     notesViewOpen,
     automationsViewOpen,
+    boardViewOpen,
     webViewOpen,
   ]);
 
@@ -12421,6 +12531,7 @@ function Workspace({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setBoardViewOpen(false);
     setWebViewOpen(false);
     onVisitForward();
   }, [onVisitForward]);
@@ -12699,6 +12810,7 @@ function Workspace({
             inboxViewOpenRef.current ||
             notesViewOpenRef.current ||
             automationsViewOpenRef.current ||
+            boardViewOpenRef.current ||
             webViewOpenRef.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
@@ -12783,6 +12895,7 @@ function Workspace({
         !inboxViewOpenRef.current &&
         !notesViewOpenRef.current &&
         !automationsViewOpenRef.current &&
+        !boardViewOpenRef.current &&
         !webViewOpenRef.current &&
         !(
           e.target instanceof Element &&
@@ -13112,13 +13225,6 @@ function Workspace({
   // Renames, mascot picks and new projects show up on the rail.
   const monoViewMono = monoViewId ? monoForSession(monoViewId) : undefined;
   useColleagueWorkTracking(sessions, monosEnabled && !windowTransfer);
-  // What settled while the user was with a colleague is no longer news once
-  // they leave it; the strip keeps showing it until then.
-  const seenMonoId = monoViewMono?.id;
-  useEffect(() => {
-    if (!seenMonoId) return;
-    return () => markColleagueSeen(seenMonoId);
-  }, [seenMonoId]);
   const selectedMonoActivity = resolveMonoActivity(
     monoActivity,
     monoViewSession,
@@ -13403,11 +13509,6 @@ function Workspace({
     (monoId: string) => void onOpenMono(monoId),
     [onOpenMono],
   );
-  const onOpenRailWork = useCallback(
-    (monoId: string, sessionId: string) =>
-      void onOpenColleagueWork(monoId, sessionId),
-    [onOpenColleagueWork],
-  );
   const onDeleteRailMono = useCallback(
     (monoId: string) => void onDeleteMono(monoId),
     [onDeleteMono],
@@ -13423,7 +13524,6 @@ function Workspace({
             onOpen: onOpenRailMono,
             onCreate: onCreateMono,
             onDelete: onDeleteRailMono,
-            onOpenWork: onOpenRailWork,
           }
         : undefined,
     [
@@ -13433,7 +13533,6 @@ function Workspace({
       onOpenRailMono,
       onCreateMono,
       onDeleteRailMono,
-      onOpenRailWork,
     ],
   );
   const onDismissUpdate = useCallback(() => setUpdateNotice(null), []);
@@ -13444,6 +13543,7 @@ function Workspace({
     inboxViewOpen ||
     notesViewOpen ||
     automationsViewOpen ||
+    boardViewOpen ||
     webViewOpen;
   const compactProjectRail = collapsedProjectRailMode === "compact";
   const compactRailActive = compactProjectRail && !projectRailOpen;
@@ -13584,6 +13684,7 @@ function Workspace({
                 inboxViewOpen ||
                 notesViewOpen ||
                 automationsViewOpen ||
+                boardViewOpen ||
                 webViewOpen
               }
               canGoForward={tabVisitNav.canForward}
@@ -13619,12 +13720,14 @@ function Workspace({
               onOpenInboxItem={onOpenLinkedWorkItem}
               onOpenNotes={notesEnabled ? onOpenNotes : undefined}
               onOpenAutomations={onOpenAutomations}
+              onOpenBoard={onOpenBoard}
               onOpenWeb={onOpenWeb}
               onGoToFile={onGoToFile}
               searchActive={searchViewOpen}
               inboxActive={inboxViewOpen}
               notesActive={notesViewOpen}
               automationsActive={automationsViewOpen}
+              boardActive={boardViewOpen}
               webActive={webViewOpen}
               notesEnabled={notesEnabled}
               projectRailOpen={projectRailOpen}
@@ -13653,6 +13756,7 @@ function Workspace({
                   inboxViewOpen ||
                   notesViewOpen ||
                   automationsViewOpen ||
+                  boardViewOpen ||
                   webViewOpen
                     ? "hidden"
                     : "flex min-h-0 min-w-0 flex-1 flex-col"
@@ -13663,6 +13767,7 @@ function Workspace({
                   inboxViewOpen ||
                   notesViewOpen ||
                   automationsViewOpen ||
+                  boardViewOpen ||
                   webViewOpen
                 }
                 inert={
@@ -13671,6 +13776,7 @@ function Workspace({
                   inboxViewOpen ||
                   notesViewOpen ||
                   automationsViewOpen ||
+                  boardViewOpen ||
                   webViewOpen ||
                   undefined
                 }
@@ -13904,6 +14010,7 @@ function Workspace({
                             !inboxViewOpen &&
                             !notesViewOpen &&
                             !automationsViewOpen &&
+                            !boardViewOpen &&
                             !webViewOpen &&
                             !monoViewId &&
                             activeLinkedWorkItemPanel?.sessionId ===
@@ -14016,6 +14123,16 @@ function Workspace({
                   onOpenSession={onOpenAutomationSession}
                 />
               ) : null}
+              {boardViewOpen ? (
+                <BoardView
+                  board={sessionBoard}
+                  activeSessionId={activeSessionId}
+                  besideRail={projectRailOpen || compactProjectRail}
+                  compactRail={compactRailActive}
+                  onClose={onLeaveBoard}
+                  onToggleSidebar={onToggleSidebar}
+                />
+              ) : null}
               {settingsOpen ? (
                 <SettingsView
                   section={settingsSection}
@@ -14048,6 +14165,7 @@ function Workspace({
               inboxViewOpen ||
               notesViewOpen ||
               automationsViewOpen ||
+              boardViewOpen ||
               webViewOpen ||
               settingsOpen ||
               monoCovers ? null : (
