@@ -11,6 +11,7 @@ import {
 } from "../../shared/ui/icons";
 import { useAnimatedReorder } from "../../shared/hooks/useAnimatedReorder";
 import { useWebApps } from "../../features/web-apps/hooks/useWebApps";
+import { WebAppIcon } from "../../features/web-apps/ui/WebAppIcon";
 import {
   addWebApp,
   deleteWebApp,
@@ -316,12 +317,7 @@ function WebAppRow({
         aria-current={selected ? "true" : undefined}
         className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left transition-[padding] duration-150 motion-reduce:transition-none group-hover:pr-[4.5rem] group-has-[button:focus-visible]:pr-[4.5rem]"
       >
-        <span
-          aria-hidden
-          className="grid size-5 shrink-0 place-items-center rounded-md bg-content/12 text-[11px] font-semibold uppercase leading-none text-content/80"
-        >
-          {app.name.charAt(0)}
-        </span>
+        <WebAppIcon name={app.name} url={app.url} />
         <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight">
           {app.name}
         </span>

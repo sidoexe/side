@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import {
   ExternalLink,
-  Globe,
+  Minus,
   Pencil,
+  Plus,
   RefreshCw,
 } from "../../../shared/ui/icons";
 import { IS_MAC } from "../../../platform/tauri/platform";
@@ -16,6 +18,13 @@ import {
 } from "../../settings/model/uiScale";
 import { useWebApps } from "../hooks/useWebApps";
 import { renameWebApp } from "../model/webApps";
+import {
+  loadWebAppZoom,
+  saveWebAppZoom,
+  steppedWebAppZoom,
+  subscribeWebAppZoom,
+} from "../model/webAppZoom";
+import { WebAppIcon } from "./WebAppIcon";
 
 type Props = {
   besideRail?: boolean;
@@ -26,6 +35,17 @@ type Props = {
 
 const reload = (app: string, home?: string) =>
   void invoke("web_embed_reload", { app, home: home ?? null }).catch(() => {});
+
+/** Step `app`'s page zoom; a reset also undoes a trackpad pinch. */
+function zoomApp(app: string, direction: "in" | "out" | "reset") {
+  const zoom = steppedWebAppZoom(loadWebAppZoom(app), direction);
+  saveWebAppZoom(app, zoom);
+  void invoke("web_embed_zoom", {
+    app,
+    zoom,
+    resetPinch: direction === "reset",
+  }).catch(() => {});
+}
 
 /**
  * The active web app (picked in the rail), in a native webview laid over this
@@ -42,8 +62,28 @@ export function WebAppsView({
   const slotRef = useRef<HTMLDivElement>(null);
   const { active } = useWebApps();
   const [renaming, setRenaming] = useState(false);
+  const zoom = useSyncExternalStore(subscribeWebAppZoom, () =>
+    loadWebAppZoom(active.id),
+  );
   // Picking another app in the rail drops an unfinished rename.
   useEffect(() => setRenaming(false), [active.id]);
+
+  // Cmd +/−/0 pressed inside the page, which keeps them from sIDE's own keys.
+  useEffect(() => {
+    if (!isTauri()) return;
+    const stop = listen<{ app: string; action: string }>(
+      "web_embed_zoom_key",
+      ({ payload }) => {
+        if (
+          payload.action === "in" ||
+          payload.action === "out" ||
+          payload.action === "reset"
+        )
+          zoomApp(payload.app, payload.action);
+      },
+    );
+    return () => void stop.then((unlisten) => unlisten()).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const slot = slotRef.current;
@@ -59,6 +99,7 @@ export function WebAppsView({
         void invoke("web_embed_show", {
           app: active.id,
           url: active.url,
+          zoom: loadWebAppZoom(active.id),
           bounds: {
             x: box.left * scale,
             y: box.top * scale,
@@ -99,10 +140,7 @@ export function WebAppsView({
           <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
         )}
         <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-          <Globe
-            className="size-3.5 shrink-0 text-content/45"
-            strokeWidth={1.75}
-          />
+          <WebAppIcon name={active.name} url={active.url} className="size-4" />
           {renaming ? (
             <input
               autoFocus
@@ -132,6 +170,35 @@ export function WebAppsView({
               {active.name}
             </button>
           )}
+        </div>
+        <div className="mr-1 flex shrink-0 items-center">
+          <button
+            type="button"
+            title="Zoom out (⌘−)"
+            aria-label={`Zoom out of ${active.name}`}
+            onClick={() => zoomApp(active.id, "out")}
+            className="grid size-6 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
+          >
+            <Minus className="size-3.5" strokeWidth={1.75} />
+          </button>
+          <button
+            type="button"
+            title="Reset zoom (⌘0)"
+            aria-label={`Reset the zoom of ${active.name}`}
+            onClick={() => zoomApp(active.id, "reset")}
+            className="h-6 min-w-10 rounded-md px-1 text-[11px] tabular-nums text-content/55 hover:bg-content/10 hover:text-content"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button
+            type="button"
+            title="Zoom in (⌘+)"
+            aria-label={`Zoom in on ${active.name}`}
+            onClick={() => zoomApp(active.id, "in")}
+            className="grid size-6 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
+          >
+            <Plus className="size-3.5" strokeWidth={1.75} />
+          </button>
         </div>
         <button
           type="button"

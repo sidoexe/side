@@ -13,8 +13,8 @@ use std::sync::{Mutex, OnceLock};
 
 use tauri::webview::{Cookie, NewWindowFeatures, NewWindowResponse, WebviewBuilder};
 use tauri::{
-    AppHandle, LogicalPosition, LogicalSize, Manager, Rect, Url, WebviewUrl, WebviewWindowBuilder,
-    Window,
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, Url, WebviewUrl,
+    WebviewWindowBuilder, Window,
 };
 
 /// The first app, whose id predates UUIDs. It gets a store of its own like
@@ -35,6 +35,33 @@ const USER_AGENT: Option<&str> = Some(
 );
 #[cfg(not(target_os = "macos"))]
 const USER_AGENT: Option<&str> = None;
+
+/// The page's zoom chords never reach sIDE's own keyboard handling while the
+/// page has focus, so the page asks for them by navigating here; the
+/// navigation is cancelled and the request handed to the window.
+const ZOOM_SCHEME: &str = "side-zoom";
+
+const ZOOM_KEYS_SCRIPT: &str = r#"(() => {
+  if (window.top !== window) return;
+  addEventListener("keydown", (event) => {
+    if (!(event.metaKey || event.ctrlKey) || event.altKey || event.isComposing) return;
+    const action =
+      event.key === "=" || event.key === "+" ? "in"
+      : event.key === "-" ? "out"
+      : event.key === "0" ? "reset"
+      : null;
+    if (!action) return;
+    event.preventDefault();
+    event.stopPropagation();
+    location.href = "side-zoom:" + action;
+  }, true);
+})();"#;
+
+#[derive(serde::Serialize, Clone)]
+struct ZoomKey {
+    app: String,
+    action: String,
+}
 
 #[derive(serde::Deserialize, Clone, Copy, Debug)]
 pub struct WebEmbedBounds {
@@ -140,8 +167,35 @@ fn hide_others(window: &Window, keep: &str) {
     }
 }
 
-/// Show `app`'s webview at `bounds` (logical pixels, relative to the window),
-/// opening `url` on first use, and hide the window's other apps. Async:
+/// Pinch-to-zoom inside the page, as in Safari; WKWebView ships with it off.
+#[cfg(target_os = "macos")]
+fn allow_pinch(webview: &tauri::Webview) {
+    let _ = webview.with_webview(|platform| unsafe {
+        let view: &objc2::runtime::AnyObject = &*platform.inner().cast();
+        let _: () = objc2::msg_send![view, setAllowsMagnification: true];
+    });
+}
+
+/// Undo a pinch, back to the page at its zoom.
+#[cfg(target_os = "macos")]
+fn reset_pinch(webview: &tauri::Webview) {
+    let _ = webview.with_webview(|platform| unsafe {
+        let view: &objc2::runtime::AnyObject = &*platform.inner().cast();
+        let _: () = objc2::msg_send![view, setMagnification: 1.0f64];
+    });
+}
+
+/// Page zooms the app can be set to.
+fn clamp_zoom(zoom: f64) -> f64 {
+    if zoom.is_finite() {
+        zoom.clamp(0.25, 5.0)
+    } else {
+        1.0
+    }
+}
+
+/// Show `app`'s webview at `bounds` (logical pixels, relative to the window)
+/// and `zoom`, opening `url` on first use, and hide the window's other apps. Async:
 /// `add_child` hops to the main thread and waits, which would deadlock a
 /// command already running there.
 #[tauri::command]
@@ -150,14 +204,17 @@ pub async fn web_embed_show(
     app: String,
     url: String,
     bounds: WebEmbedBounds,
+    zoom: Option<f64>,
 ) -> Result<(), String> {
     let store = app_store(&app)?;
     let label = embed_label(&window, store);
+    let zoom = clamp_zoom(zoom.unwrap_or(1.0));
     hide_others(&window, &label);
     if let Some(webview) = window.app_handle().get_webview(&label) {
         webview
             .set_bounds(rect(bounds))
             .map_err(|e| e.to_string())?;
+        let _ = webview.set_zoom(zoom);
         webview.show().map_err(|e| e.to_string())?;
         return Ok(());
     }
@@ -175,8 +232,28 @@ pub async fn web_embed_show(
         WebviewUrl::External(home.clone())
     };
     let handle = window.app_handle().clone();
+    let zoom_keys = (
+        window.app_handle().clone(),
+        window.label().to_string(),
+        app.clone(),
+    );
     let mut builder = WebviewBuilder::new(&label, first)
-        .on_navigation(allows_navigation)
+        .initialization_script(ZOOM_KEYS_SCRIPT)
+        .on_navigation(move |url| {
+            if url.scheme() == ZOOM_SCHEME {
+                let (handle, window, app) = &zoom_keys;
+                let _ = handle.emit_to(
+                    window.as_str(),
+                    "web_embed_zoom_key",
+                    ZoomKey {
+                        app: app.clone(),
+                        action: url.path().to_string(),
+                    },
+                );
+                return false;
+            }
+            allows_navigation(url)
+        })
         .on_new_window(move |url, features| open_new_window(&handle, url, features));
     if let Some(agent) = USER_AGENT {
         builder = builder.user_agent(agent);
@@ -190,6 +267,9 @@ pub async fn web_embed_show(
     let webview = window
         .add_child(builder, r.position, r.size)
         .map_err(|e| e.to_string())?;
+    let _ = webview.set_zoom(zoom);
+    #[cfg(target_os = "macos")]
+    allow_pinch(&webview);
     if let Some(cookies) = pending {
         set_cookies(&webview, &cookies);
         webview.navigate(home).map_err(|e| e.to_string())?;
@@ -275,6 +355,31 @@ pub async fn web_embed_hide(window: Window) -> Result<(), String> {
     Ok(())
 }
 
+/// Set `app`'s page zoom (1 = 100%); `reset_pinch` also undoes a trackpad
+/// pinch.
+#[tauri::command]
+pub async fn web_embed_zoom(
+    window: Window,
+    app: String,
+    zoom: f64,
+    reset_pinch: bool,
+) -> Result<(), String> {
+    let label = embed_label(&window, app_store(&app)?);
+    let Some(webview) = window.app_handle().get_webview(&label) else {
+        return Ok(());
+    };
+    webview
+        .set_zoom(clamp_zoom(zoom))
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    if reset_pinch {
+        self::reset_pinch(&webview);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = reset_pinch;
+    Ok(())
+}
+
 /// Reload `app`, or go back to its `home` page when given.
 #[tauri::command]
 pub async fn web_embed_reload(
@@ -354,6 +459,22 @@ mod tests {
         assert_eq!(again.domain(), Some("linear.app"));
         assert_eq!(again.http_only(), Some(true));
         assert_eq!(again.secure(), Some(true));
+    }
+
+    #[test]
+    fn zoom_stays_in_range() {
+        assert_eq!(clamp_zoom(1.25), 1.25);
+        assert_eq!(clamp_zoom(0.0), 0.25);
+        assert_eq!(clamp_zoom(40.0), 5.0);
+        assert_eq!(clamp_zoom(f64::NAN), 1.0);
+    }
+
+    #[test]
+    fn zoom_requests_are_not_navigations() {
+        let url: Url = "side-zoom:in".parse().unwrap();
+        assert_eq!(url.scheme(), ZOOM_SCHEME);
+        assert_eq!(url.path(), "in");
+        assert!(!allows_navigation(&url));
     }
 
     #[test]
