@@ -15,6 +15,7 @@ import { saveMonosEnabled } from "../../features/settings/model/settings";
 import { ProjectBackgroundDialog } from "../../features/projects/ui/ProjectBackgroundDialog";
 import { monoBackgroundKey } from "../../features/monos/model/monoBackground";
 import { ColleagueLookPicker } from "../../features/monos/ui/ColleagueLookPicker";
+import { ColleagueBoardButton } from "../../features/monos/ui/ColleagueWork";
 import {
   defaultMonoName,
   findMono,
@@ -40,6 +41,8 @@ export type MonoRailProps = {
   onOpen: (monoId: string) => void;
   onCreate: () => void;
   onDelete: (monoId: string) => void;
+  /** Opens a session a colleague started, from the board of their work. */
+  onOpenWork?: (monoId: string, sessionId: string) => void;
 };
 
 const IDLE: MonoState = { status: "idle" };
@@ -65,6 +68,7 @@ export function MonoRailSection({
   onOpen,
   onCreate,
   onDelete,
+  onOpenWork,
 }: MonoRailProps) {
   const snapshot = useSyncExternalStore(subscribeMonos, monosSnapshot);
   const monos = useMemo(() => listMonos(), [snapshot]);
@@ -92,6 +96,7 @@ export function MonoRailSection({
         <span className="min-w-0 flex-1 truncate px-1 text-xs leading-5 text-content/50">
           Colleagues
         </span>
+        {onOpenWork ? <ColleagueBoardButton onOpen={onOpenWork} /> : null}
         <button
           type="button"
           title="New colleague"
@@ -234,7 +239,7 @@ export function MonoRailSection({
         <ProjectBackgroundDialog
           project={monoBackgroundKey(backgroundMono.id)}
           name={monoLook(backgroundMono).name}
-          locked
+          standalone
           onClose={() => setBackground(undefined)}
         />
       ) : null}

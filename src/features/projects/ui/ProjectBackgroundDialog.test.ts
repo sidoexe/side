@@ -50,7 +50,7 @@ afterEach(async () => {
 });
 
 describe("project background dialog", () => {
-  it("offers only the image when locked to a dimmed Haze", async () => {
+  it("offers a Colleague's background every option a project's has", async () => {
     saveProjectChatBackgroundSettings("mono:a", {
       path: "/backgrounds/mono.png",
       emptyOpacity: 0.24,
@@ -64,7 +64,7 @@ describe("project background dialog", () => {
         createElement(ProjectBackgroundDialog, {
           project: "mono:a",
           name: "MonoCrab",
-          locked: true,
+          standalone: true,
           onClose: vi.fn(),
         }),
       ),
@@ -72,9 +72,9 @@ describe("project background dialog", () => {
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
     expect(dialog.textContent).toContain("Change image");
     expect(dialog.textContent).toContain("Remove background image");
-    expect(dialog.textContent).not.toContain("Background effect");
-    expect(dialog.querySelector('input[type="range"]')).toBeNull();
-    expect(dialog.querySelector('[role="radiogroup"]')).toBeNull();
+    expect(dialog.textContent).toContain("Background effect");
+    expect(dialog.querySelectorAll('input[type="range"]')).toHaveLength(2);
+    expect(dialog.querySelector('[role="radiogroup"]')).not.toBeNull();
     expect(dialog.querySelector(".gradient-blur-background")).not.toBeNull();
   });
 

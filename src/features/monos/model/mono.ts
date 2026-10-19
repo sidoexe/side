@@ -36,6 +36,19 @@ export type MonoAvatar =
   | { kind: "emoji"; value: string }
   | { kind: "icon"; value: string };
 
+/** When a Mono may start sessions of its own to hand work to. */
+export type MonoDelegation = "never" | "ask" | "free";
+
+export const MONO_DELEGATIONS: { id: MonoDelegation; label: string; description: string }[] = [
+  { id: "never", label: "Never", description: "Does the work itself in this chat." },
+  { id: "ask", label: "When asked", description: "Starts a session only when you ask for one." },
+  { id: "free", label: "As it sees fit", description: "Hands long or parallel work to sessions of its own." },
+];
+
+export function monoDelegation(mono: Pick<Mono, "delegation">): MonoDelegation {
+  return mono.delegation ?? "never";
+}
+
 /** One of a Mono's conversations, each on a topic of its own. */
 export type MonoThread = {
   /** The conversation's session id. */
@@ -71,6 +84,9 @@ export type Mono = {
   /** Runs on whichever account has the most weekly room, and moves to the
    * next one, conversation and all, when a limit stops it. */
   balancedAccounts?: boolean;
+  /** Whether it starts sessions of its own: only when asked (`ask`), as it
+   * sees fit (`free`), or never when absent. */
+  delegation?: Exclude<MonoDelegation, "never">;
   /** Superseded by SOUL.md; only read once, to seed it. */
   instructions?: string;
   /**
@@ -201,6 +217,9 @@ function parseMono(value: unknown): Mono | undefined {
     ...(entry.useSidebarFolders === true ? { useSidebarFolders: true } : {}),
     ...(entry.localOnly === true ? { localOnly: true } : {}),
     ...(entry.balancedAccounts === true ? { balancedAccounts: true } : {}),
+    ...(entry.delegation === "ask" || entry.delegation === "free"
+      ? { delegation: entry.delegation }
+      : {}),
     ...(parseThreads(entry.threads, sessionId)),
     ...(instructions ? { instructions } : {}),
     ...(legacyProject ? { legacyProject } : {}),
@@ -464,6 +483,15 @@ export function saveMonoBalanced(monoId: string, balanced: boolean): void {
   );
 }
 
+export function saveMonoDelegation(
+  monoId: string,
+  delegation: MonoDelegation,
+): void {
+  updateMono(monoId, ({ delegation: _delegation, ...mono }) =>
+    delegation === "never" ? mono : { ...mono, delegation },
+  );
+}
+
 export function saveMonoName(monoId: string, name: string): void {
   updateMono(monoId, (mono) => ({ ...mono, name }));
 }
@@ -535,6 +563,8 @@ export type MonoLook = {
   mascot: string;
   color: string;
   avatar?: MonoAvatar;
+  /** Absent: it never starts sessions of its own. */
+  delegation?: Exclude<MonoDelegation, "never">;
   projects: MonoProject[];
 };
 
@@ -546,6 +576,7 @@ export function monoLook(mono: Mono): MonoLook {
     mascot: mono.mascot,
     color: mono.color,
     ...(mono.avatar ? { avatar: mono.avatar } : {}),
+    ...(mono.delegation ? { delegation: mono.delegation } : {}),
     projects: mono.projects.map((path) => ({
       path,
       name: resolveTabGroupLabel(projectKey(path), labels, projectName(path)),

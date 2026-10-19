@@ -140,6 +140,8 @@ export type AgentAppHost = {
     showStartedSessionsInSidebar?: boolean;
     /** Files the sessions it starts into a folder named after it. */
     folder?: { name: string; color: string };
+    /** Set to never start sessions of its own. */
+    noDelegation?: boolean;
   } | undefined;
   /** A hidden run of one of a Mono's habits: it may remember, not schedule. */
   isHabitRun?(sessionId: string): boolean;
@@ -1067,6 +1069,10 @@ export async function handleAgentApp(
       };
     }
     case "sessions.start": {
+      if (host.monoOf?.(source.id)?.noDelegation)
+        throw new Error(
+          "This Colleague is set to do its work itself and never start sessions. Do the task in this chat; the user can change this in its settings.",
+        );
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId))
         throw new Error(
           "request ID must use letters, digits, underscores or hyphens",

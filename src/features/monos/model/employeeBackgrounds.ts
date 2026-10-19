@@ -151,17 +151,14 @@ async function pull(
         extension: EXTENSIONS[image.mimeType],
         data: image.data,
       });
-      saveProjectChatBackgroundSettings(
-        key,
-        {
-          path,
-          emptyOpacity: CHAT_BACKGROUND_OPACITY_DEFAULT,
-          sessionOpacity: CHAT_BACKGROUND_OPACITY_DEFAULT,
-          scope: "all",
-          effect: "gradient-blur",
-        },
-        true,
-      );
+      // Only the image is shared: the look chosen here stays.
+      const look = loadProjectChatBackgroundSettings(key) ?? {
+        emptyOpacity: CHAT_BACKGROUND_OPACITY_DEFAULT,
+        sessionOpacity: CHAT_BACKGROUND_OPACITY_DEFAULT,
+        scope: "all" as const,
+        effect: "gradient-blur" as const,
+      };
+      saveProjectChatBackgroundSettings(key, { ...look, path }, true);
     } else if (loadProjectChatBackgroundSettings(key)) {
       await clearProjectChatBackground(key).catch(() => {});
       clearProjectChatBackgroundSetting(key);

@@ -429,11 +429,30 @@ struct ColleagueAccounts: Decodable, Equatable {
         let status: String
         let activity: String?
     }
+    /// A session a colleague started (src/features/monos/model/colleagueWork.ts).
+    struct WorkItem: Decodable, Identifiable, Equatable {
+        let sessionId: String
+        let title: String
+        let cwd: String
+        let harness: String
+        /// `working`, `input`, `done`, `failed` or `stopped`.
+        let state: String
+        /// What it does, or the call it waits for.
+        let activity: String?
+        let at: Double
+        /// When it stopped working, in Unix milliseconds.
+        let settledAt: Double?
+        var id: String { sessionId }
+        var active: Bool { state == "working" || state == "input" }
+    }
     let accounts: [Account]
     let current: [String: Current]
     let status: [String: State]?
     /// The state of each thread its desktop has open, by its id.
     let threads: [String: State]?
+    /// Each colleague's sessions that run, wait or recently ended; nil from
+    /// desktops and hosts before it.
+    let work: [String: [WorkItem]]?
 }
 
 struct ColleagueTranscript: Decodable {

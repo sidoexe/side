@@ -59,7 +59,7 @@ vi.mock("../../features/monos/model/monoFiles", async (original) => {
 const { useMonoHabits } = await import("./useMonoHabits");
 const { shouldPersistSession } =
   await import("../../features/sessions/data/sessionStore");
-const { checkHabitsNow, noteHabitRunLaunch, relayApproval } =
+const { checkHabitsNow, noteHabitRunLaunch } =
   await import("../../features/monos/model/monoHabits");
 const { loadMonoFiles } = await import("../../features/monos/model/monoFiles");
 
@@ -160,17 +160,6 @@ function makeHost(reply: string, approve?: { wait: Promise<void> }) {
     }),
     remove: vi.fn(async () => {}),
     post: vi.fn(),
-    // Like the app: the request is relayed, so later polls skip it.
-    askApproval: vi.fn(
-      (monoId: string, _habit: Habit, runId: string, block: Block) =>
-        relayApproval({
-          monoId,
-          runId,
-          requestId: block.approval!.requestId,
-          blockId: "b",
-        }),
-    ),
-    endApprovals: vi.fn(),
   };
   return host;
 }
@@ -240,7 +229,6 @@ it("runs a due habit in a hidden session and posts what it found", async () => {
   // Never saved, so it can never show up with the project's chats.
   expect(host.add.mock.calls[0][0].ephemeral).toBe(true);
   expect(shouldPersistSession(host.add.mock.calls[0][0])).toBe(false);
-  expect(host.endApprovals).toHaveBeenCalledWith(runId);
   await vi.waitFor(() => expect(stored[0].lastOutcome).toBe("posted"));
   expect(stored[0].runs?.[0]).toMatchObject({
     outcome: "posted",
@@ -363,29 +351,31 @@ it("stops and records a habit that is still running after one hour", async () =>
 });
 
 it(
-  "puts an approval the run still asks for to the user, once",
+  "leaves an approval the run asks for in the run, out of the Mono's chat",
   { timeout: 15_000 },
   async () => {
     let allow!: () => void;
     const wait = new Promise<void>((resolve) => (allow = resolve));
     const host = setup("Pushed the fix.", { wait });
-    await vi.waitFor(() => expect(host.askApproval).toHaveBeenCalled(), {
-      timeout: 5_000,
-    });
-    const [monoId, habit, runId, block] = host.askApproval.mock.calls[0];
-    expect([monoId, habit.id, block.approval.requestId]).toEqual([
-      "mono",
-      "h1",
-      7,
-    ]);
-    expect(runId).toBe(host.add.mock.calls[0][0].id);
-    // Still waiting on the user through the next poll: not asked again.
+    await vi.waitFor(
+      () =>
+        expect(
+          host
+            .sessions()
+            .some((session) =>
+              session.blocks.some((block) => block.approval?.requestId === 7),
+            ),
+        ).toBe(true),
+      { timeout: 5_000 },
+    );
+    // Waiting on the user through the next poll: nothing goes to the chat.
     await new Promise((resolve) => setTimeout(resolve, 2_500));
+    expect(host.post).not.toHaveBeenCalled();
+    expect(host.sessions()[0].blocks).toEqual([]);
     allow();
     await vi.waitFor(() => expect(host.post).toHaveBeenCalled(), {
       timeout: 5_000,
     });
-    expect(host.askApproval).toHaveBeenCalledTimes(1);
   },
 );
 

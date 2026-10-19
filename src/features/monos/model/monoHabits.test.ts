@@ -8,10 +8,6 @@ import {
   habitStarting,
   setHabitRunning,
   afterRun,
-  dropRelays,
-  isRelayed,
-  relayApproval,
-  takeRelayedApproval,
   dueHabits,
   habitPostsContext,
   habitReport,
@@ -131,27 +127,6 @@ it("hands the Employee what its habits posted since the user last wrote", () => 
   expect(context).toContain("<while_you_were_away>");
   expect(context).toContain("Morning CI check: CI is red on main");
   expect(habitPostsContext([])).toBe("");
-});
-
-it("routes an answer in the Employee's chat back to the run that asked", () => {
-  const id = relayApproval({
-    monoId: "mono",
-    runId: "run",
-    requestId: 7,
-    blockId: "b",
-  });
-  // Its own id, so it cannot collide with the Mono's own requests.
-  expect(id).not.toBe(7);
-  expect(isRelayed("run", 7)).toBe(true);
-  expect(takeRelayedApproval("other-mono", id)).toBeUndefined();
-  expect(takeRelayedApproval("mono", id)).toMatchObject({
-    runId: "run",
-    requestId: 7,
-  });
-  expect(takeRelayedApproval("mono", id)).toBeUndefined();
-  relayApproval({ monoId: "mono", runId: "run", requestId: 8, blockId: "c" });
-  expect(dropRelays("run").map((relay) => relay.blockId)).toEqual(["c"]);
-  expect(isRelayed("run", 8)).toBe(false);
 });
 
 it("keeps a short history of runs, newest first", () => {

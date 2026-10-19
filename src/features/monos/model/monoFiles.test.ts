@@ -115,6 +115,8 @@ it("says how to keep memory and update the soul only at the user's request", () 
       { path: "/code/monocode", name: "monocode" },
       { path: "/code/site", name: "site" },
     ],
+    // Set to start sessions as it sees fit, so it gets their rules.
+    delegation: "free" as const,
   };
   const full = monoContext(look, files(), { soul: true, memory: true });
   expect(full).toContain("You are Skull, a Colleague in sIDE");

@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { Composer } from "./Composer";
 import type { Worktree } from "../../source-control/model/worktrees";
@@ -157,6 +158,8 @@ export type SessionPaneProps = {
   monoLaunchedSessions?: ReadonlyMap<string, LaunchedSessionView>;
   /** The launched session open in the Mono's sidebar. */
   openMonoSessionId?: string;
+  /** The Mono's sessions in progress, pinned above its composer. */
+  monoWork?: ReactNode;
   recents: RecentProject[];
   hideProjectPicker?: boolean;
   onFocus: (sessionId: string) => void;
@@ -381,6 +384,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onOpenMonoSession,
   monoLaunchedSessions,
   openMonoSessionId,
+  monoWork,
   onOpenPlan,
   onBuildPlan,
   onSecondOpinion,
@@ -1178,6 +1182,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             >
               {agent ? (
                 <>
+                  {monoWork}
                   <MessageQueue
                     messages={visibleMonoCompletionMessages(session)}
                     status={session.queueStatus}

@@ -492,56 +492,6 @@ export function habitRunLaunches(sessionId: string): MonoSpawnedSession[] {
   return launches.get(sessionId) ?? [];
 }
 
-/**
- * An approval a hidden run asked for, put to the user in the Mono's chat
- * under an id of its own: the run's request ids would collide with the
- * Mono's. In memory only; a relay outlives neither its run nor the app.
- */
-export type ApprovalRelay = {
-  monoId: string;
-  runId: string;
-  requestId: number;
-  blockId: string;
-};
-
-const relays = new Map<number, ApprovalRelay>();
-let nextRelayId = 1_000_000_000;
-
-export function relayApproval(relay: ApprovalRelay): number {
-  const id = nextRelayId++;
-  relays.set(id, relay);
-  return id;
-}
-
-/** The relay behind a request in the Mono's chat, removed once answered. */
-export function takeRelayedApproval(
-  monoId: string,
-  requestId: number,
-): ApprovalRelay | undefined {
-  const relay = relays.get(requestId);
-  if (!relay || relay.monoId !== monoId) return undefined;
-  relays.delete(requestId);
-  return relay;
-}
-
-/** Whether a run's request has already been put to the user. */
-export function isRelayed(runId: string, requestId: number): boolean {
-  for (const relay of relays.values())
-    if (relay.runId === runId && relay.requestId === requestId) return true;
-  return false;
-}
-
-/** Relays still open when their run ended, to withdraw from the chat. */
-export function dropRelays(runId: string): ApprovalRelay[] {
-  const dropped: ApprovalRelay[] = [];
-  for (const [id, relay] of relays)
-    if (relay.runId === runId) {
-      relays.delete(id);
-      dropped.push(relay);
-    }
-  return dropped;
-}
-
 /** A habit's place in today: what it did, is doing, or is about to do. */
 export type HabitToday = {
   habit: Habit;

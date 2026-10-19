@@ -115,6 +115,14 @@ import {
   MonoOverview,
   type MonoOverviewTab,
 } from "../features/monos/ui/MonoOverview";
+import { ColleagueWorkStrip } from "../features/monos/ui/ColleagueWork";
+import {
+  colleagueWorkStore,
+  forgetColleagueWork,
+  markColleagueSeen,
+  publishedColleagueWork,
+} from "../features/monos/model/colleagueWork";
+import { useColleagueWorkTracking } from "./hooks/useColleagueWorkTracking";
 import { MonoSettingsDialog } from "../features/monos/ui/MonoSettingsDialog";
 import { MonoActivityView } from "../features/monos/ui/MonoActivityView";
 import {
@@ -600,6 +608,7 @@ import {
   saveMonoBalanced,
   loadOpenMono,
   monoForSession,
+  monoDelegation,
   monoLook,
   monosSnapshot,
   monoState,
@@ -631,13 +640,10 @@ import {
 import { useMonoHabits } from "./hooks/useMonoHabits";
 import { useFloatingMono } from "./hooks/useFloatingMono";
 import {
-  dropRelays,
   habitPostsContext,
   habitRunMono,
   isHabitRun,
   noteHabitRunLaunch,
-  relayApproval,
-  takeRelayedApproval,
   loadHabits,
   unseenHabitPosts,
   updateHabits,
@@ -2215,8 +2221,8 @@ function Workspace({
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
-  // Sessions that belong in the UI: a habit's hidden run is not one of them,
-  // and asks through its Mono's chat rather than on its own.
+  // Sessions that belong in the UI: a habit's hidden run is not one of them.
+  // What it asks for waits in the run, on its Mono's work list.
   const promptableSessions = useMemo(
     () => sessions.filter((session) => !session.ephemeral),
     [sessions],
@@ -5156,6 +5162,17 @@ function Workspace({
     },
     [ensureOpenSession],
   );
+  // From the colleagues' board: that colleague, with the session open over
+  // its overview, where a request it waits on is answered.
+  const onOpenColleagueWork = useCallback(
+    async (monoId: string, sessionId: string) => {
+      await onOpenMono(monoId);
+      const view = monoViewIdRef.current;
+      if (view && findMono(monoId) && monoForSession(view)?.id === monoId)
+        await showMonoLaunchedSession(view, sessionId);
+    },
+    [onOpenMono, showMonoLaunchedSession],
+  );
   const onOpenMonoSession = useCallback(
     (
       monoSessionId: string,
@@ -5965,6 +5982,7 @@ function Workspace({
         }
       }
       removeMono(monoId);
+      forgetColleagueWork(monoId);
       if (lastMonoIdRef.current === monoId) lastMonoIdRef.current = undefined;
     },
     [closeMonoView, history, onRemoveHistorySession],
@@ -8614,29 +8632,6 @@ function Workspace({
           );
         },
       ),
-    // The chat shows it like any approval, and the usual approval banner
-    // fires for the Mono; the answer is routed back in onApproval.
-    askApproval: (monoId, habit, runId, block) => {
-      const blockId = crypto.randomUUID();
-      const requestId = relayApproval({
-        monoId,
-        runId,
-        requestId: block.approval!.requestId,
-        blockId,
-      });
-      appendToMono(monoId, {
-        id: blockId,
-        role: "approval",
-        text: block.text,
-        ...(block.tool ? { tool: block.tool } : {}),
-        approval: { requestId },
-        monoHabit: { id: habit.id, name: habit.name, at: Date.now() },
-      });
-    },
-    endApprovals: (runId) => {
-      for (const relay of dropRelays(runId))
-        decideMonoBlock(relay.monoId, relay.blockId, "cancelled");
-    },
   });
 
   const automationSessionReservations = useRef(new Set<string>());
@@ -8976,6 +8971,11 @@ function Workspace({
           session ? monoState(session) : { status: "idle" as const },
         ];
       }),
+    ),
+    // What each colleague's sessions are doing, for the phone's lists.
+    work: publishedColleagueWork(
+      colleagueWorkStore(),
+      listMonos().map((mono) => mono.id),
     ),
     current: Object.fromEntries(
       listMonos().flatMap((mono) => {
@@ -10758,33 +10758,14 @@ function Workspace({
     (sessionId: string, requestId: number, decision: ApprovalDecision) => {
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       if (!session || session.worktreeRemoved) return;
-      // An approval a habit's hidden run asked for, put to the user in the
-      // Mono's chat: answer the run, and settle the question in the chat.
+      // An approval a habit's run once put in the Mono's chat. Runs keep
+      // their requests now, and that run is gone: settle it as cancelled.
       if (isMonoSession(sessionId)) {
         const asked = session.blocks.find(
           (block) => block.monoHabit && block.approval?.requestId === requestId,
         );
         if (asked) {
-          const relay = takeRelayedApproval(sessionId, requestId);
-          const run = relay
-            ? sessionsRef.current.find((s) => s.id === relay.runId)
-            : undefined;
-          if (relay && run)
-            respondHarnessApproval(
-              run.harness,
-              run.id,
-              relay.requestId,
-              decision,
-            );
-          decideMonoBlockRef.current(
-            sessionId,
-            asked.id,
-            relay && run
-              ? decision === "deny"
-                ? "deny"
-                : "allow"
-              : "cancelled",
-          );
+          decideMonoBlockRef.current(sessionId, asked.id, "cancelled");
           return;
         }
       }
@@ -11649,6 +11630,9 @@ function Workspace({
                 id: mono.id,
                 projects: mono.projects,
                 showStartedSessionsInSidebar: mono.showStartedSessionsInSidebar,
+                ...(monoDelegation(mono) === "never"
+                  ? { noDelegation: true }
+                  : {}),
                 ...(mono.useSidebarFolders
                   ? {
                       folder: {
@@ -13125,6 +13109,14 @@ function Workspace({
 
   // Renames, mascot picks and new projects show up on the rail.
   const monoViewMono = monoViewId ? monoForSession(monoViewId) : undefined;
+  useColleagueWorkTracking(sessions, monosEnabled && !windowTransfer);
+  // What settled while the user was with a colleague is no longer news once
+  // they leave it; the strip keeps showing it until then.
+  const seenMonoId = monoViewMono?.id;
+  useEffect(() => {
+    if (!seenMonoId) return;
+    return () => markColleagueSeen(seenMonoId);
+  }, [seenMonoId]);
   const selectedMonoActivity = resolveMonoActivity(
     monoActivity,
     monoViewSession,
@@ -13241,6 +13233,31 @@ function Workspace({
       ),
     [monoLaunchesKey],
   );
+  // Pinned above the open colleague's composer. Kept as one element so the
+  // memoized chat pane skips renders that change nothing here.
+  const monoWorkId = monoViewMono?.id;
+  const monoWorkStrip = useMemo(() => {
+    const mono = monoWorkId ? findMono(monoWorkId) : undefined;
+    if (!mono || !monoViewId) return undefined;
+    return (
+      <ColleagueWorkStrip
+        monoId={mono.id}
+        agent={monoLook(mono)}
+        openSessionId={shownMonoSessionId}
+        onOpen={(launchedId) =>
+          void showMonoLaunchedSession(monoViewId, launchedId)
+        }
+        onShowAll={() => {
+          setMonoShownSession(null);
+          setMonoOverviewDocument(null);
+          setMonoOverviewTab("sessions");
+          setMonoOverviewOpen(true);
+        }}
+      />
+    );
+    // The roster snapshot changes with the colleague's name and look.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monoWorkId, monoViewId, shownMonoSessionId, showMonoLaunchedSession, monosSnap]);
   const monoShownSessionPane = shownMonoSessionId
     ? sessions.find((session) => session.id === shownMonoSessionId)
     : undefined;
@@ -13384,6 +13401,11 @@ function Workspace({
     (monoId: string) => void onOpenMono(monoId),
     [onOpenMono],
   );
+  const onOpenRailWork = useCallback(
+    (monoId: string, sessionId: string) =>
+      void onOpenColleagueWork(monoId, sessionId),
+    [onOpenColleagueWork],
+  );
   const onDeleteRailMono = useCallback(
     (monoId: string) => void onDeleteMono(monoId),
     [onDeleteMono],
@@ -13399,6 +13421,7 @@ function Workspace({
             onOpen: onOpenRailMono,
             onCreate: onCreateMono,
             onDelete: onDeleteRailMono,
+            onOpenWork: onOpenRailWork,
           }
         : undefined,
     [
@@ -13408,6 +13431,7 @@ function Workspace({
       onOpenRailMono,
       onCreateMono,
       onDeleteRailMono,
+      onOpenRailWork,
     ],
   );
   const onDismissUpdate = useCallback(() => setUpdateNotice(null), []);
@@ -13850,6 +13874,9 @@ function Workspace({
                                           : undefined
                                       }
                                       openMonoSessionId={shownMonoSessionId}
+                                      monoWork={
+                                        visible ? monoWorkStrip : undefined
+                                      }
                                     />
                                   </div>
                                 );

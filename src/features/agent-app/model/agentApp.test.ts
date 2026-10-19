@@ -148,6 +148,16 @@ describe("agent app commands", () => {
     },
   );
 
+  it("refuses to start a session for a Colleague set never to delegate", async () => {
+    const { source, host } = fixture();
+    host.isMono = () => true;
+    host.monoOf = () => ({ id: "mono", projects: [source.cwd], noDelegation: true });
+    await expect(
+      handleAgentApp(source, "never", "sessions.start", { prompt: "Review the project" }, host),
+    ).rejects.toThrow("never start sessions");
+    expect(host.start).not.toHaveBeenCalled();
+  });
+
   it("uses the owning Colleague's preference when a habit starts a session", async () => {
     const { source, host } = fixture();
     host.isHabitRun = () => true;

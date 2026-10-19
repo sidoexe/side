@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { ControlOutcome } from "../../features/orchestration/model/orchestration";
 import {
   newSession,
-  type Block,
+  sessionNeedsInput,
   type MonoSpawnedSession,
   type Session,
 } from "../../features/sessions/model/session";
@@ -25,7 +25,6 @@ import {
   HABIT_RUN_TIMEOUT_MS,
   habitReport,
   habitRunLaunches,
-  isRelayed,
   habitRunPrompt,
   loadHabits,
   markHabitRun,
@@ -64,15 +63,6 @@ export type MonoHabitHost = {
     artifacts?: ArtifactCard[],
     launches?: MonoSpawnedSession[],
   ): void;
-  /** Puts an approval the run is waiting on to the user, in the Mono's chat. */
-  askApproval(
-    monoSessionId: string,
-    habit: Habit,
-    runId: string,
-    block: Block,
-  ): void;
-  /** Withdraws the run's unanswered approvals from the chat once it ends. */
-  endApprovals(runId: string): void;
 };
 
 const POLL_MS = 2_000;
@@ -90,14 +80,13 @@ function finalReply(session: Session | undefined): string {
 }
 
 /**
- * Sends the run's turn and waits for it, relaying any approval it asks for to
- * the Mono's chat. Only time spent working counts toward the timeout; time
- * waiting on the user has its own, much longer limit.
+ * Sends the run's turn and waits for it. An approval it asks for stays in the
+ * run, which the Mono's work list offers to open; it never goes to the Mono's
+ * chat. Only time spent working counts toward the timeout; time waiting on
+ * the user has its own, much longer limit.
  */
 async function watchRun(
   host: MonoHabitHost,
-  monoId: string,
-  habit: Habit,
   runId: string,
   start: () => Promise<ControlOutcome>,
 ): Promise<ControlOutcome> {
@@ -116,16 +105,8 @@ async function watchRun(
   while (!settled) {
     await Promise.race([turn, new Promise((r) => setTimeout(r, POLL_MS))]);
     if (settled) break;
-    const pending =
-      host
-        .sessions()
-        .find((session) => session.id === runId)
-        ?.blocks.filter((block) => block.approval && !block.approval.decided) ??
-      [];
-    for (const block of pending)
-      if (!isRelayed(runId, block.approval!.requestId))
-        host.askApproval(monoId, habit, runId, block);
-    if (pending.length) waiting += POLL_MS;
+    const run = host.sessions().find((session) => session.id === runId);
+    if (run && sessionNeedsInput(run)) waiting += POLL_MS;
     else working += POLL_MS;
     if (working >= HABIT_RUN_TIMEOUT_MS || waiting >= HABIT_APPROVAL_WAIT_MS)
       return {
@@ -196,7 +177,7 @@ export function useMonoHabits(host: MonoHabitHost, enabled = true) {
       try {
         // /operator gives the run the same app access the Mono has.
         const prompt = `/operator ${habitRunPrompt(look, files, habit, now)}`;
-        outcome = await watchRun(host, mono.id, habit, run.id, () =>
+        outcome = await watchRun(host, run.id, () =>
           host.run(run.id, prompt),
         );
       } catch (error) {
@@ -213,7 +194,6 @@ export function useMonoHabits(host: MonoHabitHost, enabled = true) {
         host.sessions().find((s) => s.id === run.id)?.blocks ?? [],
       );
       const launches = habitRunLaunches(run.id);
-      host.endApprovals(run.id);
       await host.remove(run.id).catch(() => undefined);
       clearHabitRun(run.id);
       setHabitRunning(habit.id);

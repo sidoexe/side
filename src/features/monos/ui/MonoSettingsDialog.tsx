@@ -44,6 +44,9 @@ import { ModelPicker, ModelSettingRows } from "../../sessions/ui/ModelPicker";
 import {
   defaultMonoName,
   findMono,
+  MONO_DELEGATIONS,
+  monoDelegation,
+  saveMonoDelegation,
   saveMonoName,
   subscribeMonos,
   updateMono,
@@ -192,6 +195,13 @@ function GeneralSection({
     subscribeMonos,
     () => findMono(monoId)?.useSidebarFolders === true,
   );
+  const delegation = useSyncExternalStore(subscribeMonos, () => {
+    const mono = findMono(monoId);
+    return mono ? monoDelegation(mono) : "never";
+  });
+  const delegationChoice = MONO_DELEGATIONS.find(
+    (choice) => choice.id === delegation,
+  );
   return (
     <div
       ref={lock}
@@ -266,6 +276,28 @@ function GeneralSection({
 
       <GroupHeading title="Sessions it starts" />
       <SettingGroup>
+        <SettingRow
+          label="Starts sessions"
+          description={delegationChoice?.description}
+        >
+          <select
+            aria-label="When it starts sessions"
+            value={delegation}
+            onChange={(event) =>
+              saveMonoDelegation(
+                monoId,
+                event.target.value as typeof delegation,
+              )
+            }
+            className="rounded-md border border-stroke bg-background-base px-2 py-1 text-[12px] text-content"
+          >
+            {MONO_DELEGATIONS.map((choice) => (
+              <option key={choice.id} value={choice.id}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+        </SettingRow>
         <SwitchRow
           label="Show sessions in sidebar"
           description="Sessions it starts appear in your project sidebar. Hidden ones stay saved and open from its overview."

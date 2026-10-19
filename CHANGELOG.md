@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A Colleague's **background image** has the same options as a project's: the effect, whether it shows on empty chats only or on every session, and how visible it is in each. A new image still starts as a dimmed Haze, and the look stays per desktop when the image syncs through the home machine.
+- A Colleague's **sessions stay in sight**: a strip above its composer lists the sessions it started that wait on you, then the ones running and what they are doing, then the ones that ended since your last visit, with a line such as "Since your last visit: 3 done · 1 needs input · 2 working". Opening one shows it over the overview, where a request it waits on is answered; **All sessions** opens the overview's list. On the phone, the same card sits above the Colleague's chat.
+- A **board of every Colleague's work** opens from the Colleagues header in the rail, marked while a session waits on you: each Colleague's sessions waiting, running or new, those waiting first. On the phone it heads the Colleagues list. A session the host runs opens from there; one on a desktop says to answer it there. The phone needs a host updated with this release.
 - An account whose sign-in expired has a **Sign in again** button wherever it is listed: Settings → Providers → Accounts, a Colleague's account menu, and the usage chip in the footer, which already had it for the account in use. It runs the provider's browser sign-in for that account and reads its usage to check it took. The phone app says where to do it.
 - The phone app lists the desktop's **web apps** at the top of its home screen and opens them in place, signed in with the login the desktop saved on the host, so a review page or a dashboard kept as a web app works on the phone as it does on the desktop. Its toolbar goes back, reloads, or opens the page in Safari.
 - On the phone, a working Colleague can be **stopped or steered**: its composer shows a stop button, and a message sent while it works goes into the current turn at once, as the desktop's steer does, instead of waiting for it to end. Both reach the thread on screen.
@@ -26,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A Colleague **no longer starts sessions of its own** unless set to: its settings have **Starts sessions** under Sessions it starts, with Never (the default, and what every Colleague is now on), When asked, and As it sees fit. On Never it does the work itself in its chat and the app refuses its session launches; When asked starts one only when you ask for it.
+- A request a Colleague's habit run waits on, an approval or a question, **stays in that run** instead of being put in the Colleague's chat. The run shows on the Colleague's work strip and board as needing input while it waits, and opens there to be answered.
 - **Accounts work the same everywhere**: normal chats, Colleagues, Settings, a host's chats and the phone.
   - Switching a chat's account **moves the conversation** instead of opening an empty one, as a Colleague's does: a Claude transcript is carried over, otherwise the new account gets a recap. The footer's Switch suggestion does the same, and a chat stopped at a limit continues at once.
   - Local chats can run **Balanced**, as Colleagues do: on the account with the most room, moving on at a usage limit. Picking an account by hand turns it off.
@@ -41,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Projects given to a Colleague on another desktop or on the host now stay given.** A desktop read the host's copy of each Colleague as changed by itself, because the host returns it with its fields in another order, so it put its own copy back every 15 seconds and undid edits made anywhere else.
 - **"Claude usage request failed (429)"** no longer appears on the phone or the desktop. When Anthropic limits how often usage is read, the desktop and a host keep the last reading, with its bars, and wait five minutes before asking again, instead of showing an error and asking again at once. Such a refusal no longer takes an account out of Balanced. Balanced and the account menus reuse a reading under a minute old instead of each reading every account; **Refresh** still reads at once.
 - The phone app finds its own updates: **Check for updates** reads the latest GitHub release, where every release now attaches the IPA's build number, instead of a `/ipa` address no host served, and says whether it is up to date. A newer build shows the update banner. The header shows the app's own version instead of the host's, which updates on its own and was easy to take for the app's; the menu shows both.
 - The host on this Mac, which the phone and the desktop's sessions reach, **keeps running after it updates itself**. An update could find the old host still answering while it stopped, skip registering the login service, and leave nothing running once it exited: the phone got HTTP 502 and the desktop listed no history and started no chat until the host was reinstalled.

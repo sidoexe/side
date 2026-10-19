@@ -110,8 +110,63 @@ export type EmployeeAccounts = {
   status?: Record<string, { status: string; activity?: string }>;
   /** The same for each of their conversations that is open there, by its id. */
   threads?: Record<string, { status: string; activity?: string }>;
+  /** The sessions each employee started that run, wait or recently ended. */
+  work?: Record<string, EmployeeWorkItem[]>;
   at: number;
 };
+
+export type EmployeeWorkItem = {
+  sessionId: string;
+  title: string;
+  cwd: string;
+  harness: string;
+  state: string;
+  activity?: string;
+  at: number;
+  settledAt?: number;
+};
+
+const WORK_STATES = new Set(["working", "input", "done", "failed", "stopped"]);
+/** Per employee, as the desktop sends them. */
+const WORK_MAX = 12;
+
+/** Keeps the well-formed entries, so one bad field never drops the rest. */
+function sanitizeWork(value: unknown): Record<string, EmployeeWorkItem[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const text = (entry: unknown, max: number) =>
+    typeof entry === "string" ? entry.slice(0, max) : undefined;
+  const time = (entry: unknown) =>
+    typeof entry === "number" && Number.isFinite(entry) ? entry : undefined;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).flatMap(([mono, items]) => {
+      if (!Array.isArray(items)) return [];
+      const kept = items.slice(0, WORK_MAX).flatMap((raw): EmployeeWorkItem[] => {
+        const item = (raw ?? {}) as Record<string, unknown>;
+        const sessionId = text(item.sessionId, 512);
+        const cwd = text(item.cwd, 4096);
+        const harness = text(item.harness, 64);
+        const at = time(item.at);
+        if (!sessionId || !cwd || !harness || at === undefined) return [];
+        if (typeof item.state !== "string" || !WORK_STATES.has(item.state)) return [];
+        const activity = text(item.activity, 200);
+        const settledAt = time(item.settledAt);
+        return [
+          {
+            sessionId,
+            title: text(item.title, 200) ?? "",
+            cwd,
+            harness,
+            state: item.state,
+            ...(activity ? { activity } : {}),
+            at,
+            ...(settledAt !== undefined ? { settledAt } : {}),
+          },
+        ];
+      });
+      return kept.length ? [[mono, kept]] : [];
+    }),
+  );
+}
 
 export type EmployeeBackground = { updatedAt: number; mimeType: string; data: string };
 
@@ -468,7 +523,8 @@ export class HostEmployees {
     if (!accounts || !current) throw new Error("Invalid accounts");
     const status = record?.status && typeof record.status === "object" ? record.status : {};
     const threads = record?.threads && typeof record.threads === "object" ? record.threads : {};
-    const text = JSON.stringify({ accounts, current, status, threads, at: this.now() });
+    const work = sanitizeWork(record?.work);
+    const text = JSON.stringify({ accounts, current, status, threads, work, at: this.now() });
     if (Buffer.byteLength(text) > ACCOUNTS_MAX) throw new Error("Too many accounts");
     mkdirSync(this.root, { recursive: true, mode: 0o700 });
     writeAtomic(join(this.root, ACCOUNTS_FILE), text);

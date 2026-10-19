@@ -18,6 +18,18 @@ type HostRoster = { revision: number; roster: unknown[] };
 
 const POLL_MS = 15_000;
 
+/** JSON with object keys sorted: the host hands entries back with their keys
+ * reordered, which must not read as a change. */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, inner: unknown) =>
+    inner && typeof inner === "object" && !Array.isArray(inner)
+      ? Object.fromEntries(
+          Object.entries(inner).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+        )
+      : inner,
+  );
+}
+
 function entryId(entry: unknown): string | undefined {
   const id = (entry as { id?: unknown } | null)?.id;
   return typeof id === "string" ? id : undefined;
@@ -38,7 +50,7 @@ export function mergeRosters(
   const before = byId(base);
   const mine = byId(local);
   const changed = (id: string) =>
-    JSON.stringify(before.get(id)) !== JSON.stringify(mine.get(id));
+    canonical(before.get(id)) !== canonical(mine.get(id));
   const merged: unknown[] = [];
   const seen = new Set<string>();
   for (const entry of remote) {
@@ -59,7 +71,7 @@ export function mergeRosters(
 }
 
 const same = (a: readonly unknown[], b: readonly unknown[]) =>
-  JSON.stringify(a) === JSON.stringify(b);
+  canonical(a) === canonical(b);
 
 /** The shared roster with this desktop's local-only employees put back
  * after the one each followed, or first when none did. */

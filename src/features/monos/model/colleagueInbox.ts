@@ -2,6 +2,7 @@ import { remoteRequest } from "../../connections/model/connections";
 import { homeWith } from "../../connections/model/homeCapability";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import type { ProviderRateLimits } from "../../providers/model/rateLimits";
+import type { PublishedWorkItem } from "./colleagueWork";
 import { findMono, type MonoState } from "./mono";
 
 /**
@@ -66,6 +67,8 @@ export type ColleagueAccounts = {
   status: Record<string, MonoState>;
   /** The state of each thread this desktop has open, by its id. */
   threads: Record<string, MonoState>;
+  /** Each colleague's sessions running, waiting or recently ended. */
+  work?: Record<string, PublishedWorkItem[]>;
 };
 
 /** An account's plan windows as the phone shows them; none until read once. */

@@ -23,6 +23,15 @@ it("keeps this desktop's changes and takes everything else from the host", () =>
   ]);
 });
 
+it("takes the host's change when the host only reordered this desktop's keys", () => {
+  // The host hands entries back with their keys sorted.
+  const sorted = (entry: Mono) =>
+    Object.fromEntries(Object.entries(entry).sort(([a], [b]) => a.localeCompare(b)));
+  const base = [sorted(mono("a"))];
+  const remote = [sorted(mono("a", { projects: ["/work/app"] }))];
+  expect(mergeRosters(base, [mono("a")], remote)).toEqual(remote);
+});
+
 it("does not bring back an employee another desktop removed", () => {
   expect(mergeRosters([mono("a"), mono("b")], [mono("a"), mono("b")], [mono("a")])).toEqual([
     mono("a"),

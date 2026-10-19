@@ -37,15 +37,15 @@ type Props = {
   project: string;
   name: string;
   /**
-   * Only the image can change: it shows as a dimmed Haze on every chat, and
-   * nothing falls back to the global background. A Mono's chat is like this.
+   * Nothing falls back to the global background, and a new image starts as a
+   * dimmed Haze on every chat. A Colleague's chat is like this.
    */
-  locked?: boolean;
+  standalone?: boolean;
   onClose: () => void;
 };
 
-/** What a locked background always looks like. */
-const LOCKED_LOOK = {
+/** How a standalone background looks until it is changed. */
+const STANDALONE_LOOK = {
   emptyOpacity: CHAT_BACKGROUND_OPACITY_DEFAULT,
   sessionOpacity: CHAT_BACKGROUND_OPACITY_DEFAULT,
   scope: "all",
@@ -55,28 +55,32 @@ const LOCKED_LOOK = {
 export function ProjectBackgroundDialog({
   project,
   name,
-  locked = false,
+  standalone = false,
   onClose,
 }: Props) {
   const initial = loadProjectChatBackgroundSettings(project);
   const [path, setPath] = useState(initial?.path ?? null);
   const [emptyOpacity, setEmptyOpacity] = useState(
-    locked
-      ? LOCKED_LOOK.emptyOpacity
-      : (initial?.emptyOpacity ?? loadChatBackgroundEmptyOpacity()),
+    initial?.emptyOpacity ??
+      (standalone
+        ? STANDALONE_LOOK.emptyOpacity
+        : loadChatBackgroundEmptyOpacity()),
   );
   const [sessionOpacity, setSessionOpacity] = useState(
-    locked
-      ? LOCKED_LOOK.sessionOpacity
-      : (initial?.sessionOpacity ?? loadChatBackgroundSessionOpacity()),
+    initial?.sessionOpacity ??
+      (standalone
+        ? STANDALONE_LOOK.sessionOpacity
+        : loadChatBackgroundSessionOpacity()),
   );
   const [scope, setScope] = useState<ChatBackgroundScope>(
-    locked ? LOCKED_LOOK.scope : (initial?.scope ?? loadChatBackgroundScope()),
+    initial?.scope ??
+      (standalone ? STANDALONE_LOOK.scope : loadChatBackgroundScope()),
   );
   const [effect, setEffect] = useState<NewThreadBackgroundEffect>(
-    locked
-      ? LOCKED_LOOK.effect
-      : (initial?.effect ?? NEW_THREAD_BACKGROUND_EFFECT_DEFAULT),
+    initial?.effect ??
+      (standalone
+        ? STANDALONE_LOOK.effect
+        : NEW_THREAD_BACKGROUND_EFFECT_DEFAULT),
   );
   const [revision, setRevision] = useState(projectChatBackgroundImageRevision);
   const [busy, setBusy] = useState(false);
@@ -85,11 +89,11 @@ export function ProjectBackgroundDialog({
   const effectPreviewSrc = useProjectBackgroundEffect(path, effect, revision);
   const previewSrc = path
     ? (effectPreviewSrc ?? projectChatBackgroundSrc(path, revision))
-    : locked
+    : standalone
       ? null
       : chatBackgroundSrc(globalPath);
   const previewEffect =
-    path || locked ? effect : loadNewThreadBackgroundEffect();
+    path || standalone ? effect : loadNewThreadBackgroundEffect();
 
   const save = (
     nextPath: string,
@@ -135,7 +139,12 @@ export function ProjectBackgroundDialog({
       await clearProjectChatBackground(project);
       clearProjectChatBackgroundSetting(project);
       setPath(null);
-      if (!locked) {
+      if (standalone) {
+        setEmptyOpacity(STANDALONE_LOOK.emptyOpacity);
+        setSessionOpacity(STANDALONE_LOOK.sessionOpacity);
+        setScope(STANDALONE_LOOK.scope);
+        setEffect(STANDALONE_LOOK.effect);
+      } else {
         setEmptyOpacity(loadChatBackgroundEmptyOpacity());
         setSessionOpacity(loadChatBackgroundSessionOpacity());
         setScope(loadChatBackgroundScope());
@@ -224,8 +233,8 @@ export function ProjectBackgroundDialog({
             {path ? "Change image" : "Choose image"}
           </button>
           <p className="mt-1.5 text-[11px] leading-relaxed text-content/45">
-            {locked
-              ? `Shown behind ${name}'s chat, dimmed with the Haze effect.`
+            {standalone
+              ? `Shown behind ${name}'s chat only.`
               : path
                 ? "This image overrides the global background for this project."
                 : "This project currently follows the global Appearance setting."}
@@ -235,7 +244,7 @@ export function ProjectBackgroundDialog({
           ) : null}
         </div>
 
-        {path && !locked ? (
+        {path ? (
           <div className="border-t border-stroke pt-4">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 flex-1">
@@ -266,7 +275,7 @@ export function ProjectBackgroundDialog({
           </div>
         ) : null}
 
-        {locked ? null : (
+        {standalone && !path ? null : (
           <>
             <ProjectBackgroundRow label="Show on">
               <div

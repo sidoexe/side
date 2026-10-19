@@ -184,6 +184,29 @@ it("addresses a message to one of an employee's conversations, or a new one", ()
   expect(store.accounts()?.threads).toEqual({ "thread-2": { status: "working" } });
 });
 
+it("keeps the sessions each employee started, dropping malformed ones", () => {
+  const { store } = employees();
+  store.setAccounts({
+    accounts: [],
+    current: {},
+    work: {
+      m: [
+        { sessionId: "s1", title: "Fix CI", cwd: "/code/app", harness: "claude", state: "input", activity: "Approve git push", at: 1 },
+        { sessionId: "s2", title: "Docs", cwd: "/code/app", harness: "codex", state: "done", at: 2, settledAt: 3 },
+        { sessionId: "s3", cwd: "/code/app", harness: "claude", state: "exploded", at: 4 },
+        { title: "no id", cwd: "/x", harness: "claude", state: "done", at: 5 },
+      ],
+      broken: "nope",
+    },
+  });
+  expect(store.accounts()?.work).toEqual({
+    m: [
+      { sessionId: "s1", title: "Fix CI", cwd: "/code/app", harness: "claude", state: "input", activity: "Approve git push", at: 1 },
+      { sessionId: "s2", title: "Docs", cwd: "/code/app", harness: "codex", state: "done", at: 2, settledAt: 3 },
+    ],
+  });
+});
+
 it("carries a stop or a steer for the desktop to apply to the turn", () => {
   const { store } = employees();
   store.saveRoster([{ id: "m" }], 0);

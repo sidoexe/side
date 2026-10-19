@@ -19,7 +19,10 @@ import type {
   LaunchedSessionView,
 } from "../model/monoSpawnedSessions";
 
-const STATUS: Record<LaunchedSessionState, { label: string; icon: ReactNode }> =
+export const LAUNCHED_STATUS: Record<
+  LaunchedSessionState,
+  { label: string; icon: ReactNode }
+> =
   {
     working: {
       label: "Working",
@@ -96,7 +99,7 @@ export function LaunchedSessionCard({
     view?.title ?? launch.title,
     launch.harness,
   );
-  const status = view ? STATUS[view.state] : undefined;
+  const status = view ? LAUNCHED_STATUS[view.state] : undefined;
   return (
     <button
       type="button"
