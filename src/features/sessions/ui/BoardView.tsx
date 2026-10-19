@@ -23,8 +23,8 @@ type Props = {
 };
 
 /**
- * Every session on one board, yours and your colleagues': what waits on
- * you, what works, and what you checked, as the rail lists them.
+ * Every session on one board, yours and your colleagues': what works,
+ * what waits on you, and what you checked, left to right as work moves.
  */
 export function BoardView({
   board,
@@ -74,6 +74,18 @@ export function BoardView({
       </div>
       {board.enabled ? (
         <div className="grid min-h-0 flex-1 grid-cols-3 gap-3 overflow-x-auto p-3 max-md:grid-cols-[repeat(3,minmax(240px,1fr))]">
+          <Column label="Working" count={board.working.length}>
+            {board.working.map((agent) => (
+              <LiveAgentCard
+                key={agent.id}
+                agent={agent}
+                now={now}
+                selected={agent.id === activeSessionId}
+                onSelect={board.onSelect}
+                {...groups}
+              />
+            ))}
+          </Column>
           <Column label="To review" count={board.review.length}>
             {board.review.map((agent) => (
               <LiveAgentCard
@@ -83,18 +95,6 @@ export function BoardView({
                 selected={agent.id === activeSessionId}
                 onSelect={board.onSelect}
                 onMarkChecked={board.onMarkChecked}
-                {...groups}
-              />
-            ))}
-          </Column>
-          <Column label="Working" count={board.working.length}>
-            {board.working.map((agent) => (
-              <LiveAgentCard
-                key={agent.id}
-                agent={agent}
-                now={now}
-                selected={agent.id === activeSessionId}
-                onSelect={board.onSelect}
                 {...groups}
               />
             ))}
