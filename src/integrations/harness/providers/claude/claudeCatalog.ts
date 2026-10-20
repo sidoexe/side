@@ -6,7 +6,7 @@ import {
 } from "../../../../features/sessions/model/models";
 import {
   DEFAULT_PROVIDER_ACCOUNT_ID,
-  selectedProviderAccountId,
+  providerAccounts,
 } from "../../../../features/providers/model/providerAccounts";
 import {
   execChild,
@@ -240,18 +240,42 @@ export function refreshClaudeCatalog(): Promise<void> {
 export async function discoverClaudeModels(
   workingDirectory?: string,
 ): Promise<AgentModel[]> {
-  const listed = await discoverViaListModels(workingDirectory).catch(
-    (error: unknown) => {
-      console.debug("[monocode] claude list_models catalog failed", error);
-      return [];
-    },
+  // A signed-out profile reports every Opus as disabled, so the models of all
+  // the accounts are gathered: the picker lists what any of them can use.
+  const accounts = providerAccounts("claude");
+  const lists = await Promise.all(
+    accounts.map((account) =>
+      discoverViaListModels(
+        workingDirectory,
+        account.id === DEFAULT_PROVIDER_ACCOUNT_ID
+          ? undefined
+          : { provider: "claude", id: account.id },
+      ).catch((error: unknown) => {
+        console.debug("[monocode] claude list_models catalog failed", error);
+        return [];
+      }),
+    ),
   );
+  const listed = mergeModelLists(lists);
   if (listed.length > 0) return listed;
   return discoverViaVersion(workingDirectory);
 }
 
+function mergeModelLists(lists: AgentModel[][]): AgentModel[] {
+  const merged: AgentModel[] = [];
+  const seen = new Set<string>();
+  for (const model of lists.flat()) {
+    const key = model.nativeId ?? model.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(model);
+  }
+  return merged;
+}
+
 async function discoverViaListModels(
   workingDirectory?: string,
+  account?: { provider: "claude" | "codex"; id: string },
 ): Promise<AgentModel[]> {
   const { path } = await resolveClaudeBinary();
   const cwd = workingDirectory ?? (await homeDir());
@@ -299,17 +323,12 @@ async function discoverViaListModels(
   );
 
   try {
-    // Ask the account the user works with: the unsigned-in default profile
-    // reports every Opus as disabled, so the picker would drop them.
-    const accountId = selectedProviderAccountId("claude", undefined);
     await spawnChild(
       probeId,
       path,
       buildClaudeSpawnArgs({ isolated: true, sessionId }),
       cwd,
-      accountId === DEFAULT_PROVIDER_ACCOUNT_ID
-        ? undefined
-        : { provider: "claude", id: accountId },
+      account,
       "claude",
     );
     await writeChild(
