@@ -5,6 +5,10 @@ import {
   type ModelSetting,
 } from "../../../../features/sessions/model/models";
 import {
+  DEFAULT_PROVIDER_ACCOUNT_ID,
+  selectedProviderAccountId,
+} from "../../../../features/providers/model/providerAccounts";
+import {
   execChild,
   killChild,
   resolveClaudeBinary,
@@ -295,12 +299,17 @@ async function discoverViaListModels(
   );
 
   try {
+    // Ask the account the user works with: the unsigned-in default profile
+    // reports every Opus as disabled, so the picker would drop them.
+    const accountId = selectedProviderAccountId("claude", undefined);
     await spawnChild(
       probeId,
       path,
       buildClaudeSpawnArgs({ isolated: true, sessionId }),
       cwd,
-      undefined,
+      accountId === DEFAULT_PROVIDER_ACCOUNT_ID
+        ? undefined
+        : { provider: "claude", id: accountId },
       "claude",
     );
     await writeChild(
