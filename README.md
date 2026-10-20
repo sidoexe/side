@@ -20,7 +20,7 @@ Install and sign in to at least one supported agent first. See [provider setup](
 
 Download `sIDE_<version>_aarch64.dmg` from the [latest release](https://github.com/sidoexe/side/releases/latest) (Apple Silicon Macs), open it and drag sIDE to Applications. The app is not signed with an Apple Developer ID, so confirm its first launch with right-click → **Open**. sIDE then updates itself from the same releases.
 
-On its first launch, sIDE starts from a copy of MonoCode's sessions, settings and employees when MonoCode is installed; MonoCode keeps its own and both can stay installed.
+On its first launch, sIDE starts from a copy of MonoCode's sessions and settings when MonoCode is installed; MonoCode keeps its own and both can stay installed.
 
 To build it yourself instead, see [build setup](docs/building.md).
 
@@ -32,8 +32,6 @@ Open a project folder, choose an agent, and send a message. Each tab is a sessio
 - Use separate Git worktrees for parallel tasks.
 - Edit files and review changes in the app.
 - Start a message with `/operator` to let an agent open sessions and manage worktrees and notes.
-
-Employees are experimental agents that work across your projects. They keep a memory and can run scheduled tasks you set up with them.
 
 sIDE is still early. If something breaks, [report a bug](https://github.com/sidoexe/side/issues).
 

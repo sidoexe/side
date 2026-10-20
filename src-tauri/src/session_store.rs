@@ -512,10 +512,6 @@ pub fn session_delete(
         .map(|record| generated_image_paths(&record.blocks))
         .unwrap_or_default();
     image_paths.extend(persisted_paths);
-    image_paths.extend(
-        crate::mono_transcript::generated_image_paths(&conn, &session_id)
-            .map_err(|e| e.to_string())?,
-    );
     delete_session(&conn, &session_id).map_err(|e| e.to_string())?;
     drop(conn);
     if !image_paths.is_empty() {
@@ -991,7 +987,41 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     crate::reminders::ensure_table(conn)?;
     crate::automations::ensure_tables(conn)?;
     ensure_orchestration_history(conn)?;
-    crate::mono_transcript::ensure_tables(conn)?;
+    drop_colleague_tables(conn)?;
+    Ok(())
+}
+
+/// Colleagues were removed from sIDE: their conversations, kept in tables of
+/// their own, go with them.
+fn drop_colleague_tables(conn: &Connection) -> rusqlite::Result<()> {
+    let kept: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = 'mono_transcripts')",
+        [],
+        |row| row.get(0),
+    )?;
+    if kept {
+        let ids = conn
+            .prepare("SELECT session_id FROM mono_transcripts")?
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for id in ids {
+            delete_session(conn, &id)?;
+        }
+        conn.execute_batch(
+            "DROP TABLE IF EXISTS mono_blocks;
+             DROP TABLE IF EXISTS mono_turns;
+             DROP TABLE IF EXISTS mono_transcripts;",
+        )?;
+    }
+    // Documents Colleagues saved lived among the notes.
+    let has_kind: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('notes') WHERE name = 'content_kind'",
+        [],
+        |row| row.get(0),
+    )?;
+    if has_kind > 0 {
+        conn.execute("DELETE FROM notes WHERE content_kind = 'artifact'", [])?;
+    }
     Ok(())
 }
 
@@ -1120,8 +1150,7 @@ pub(crate) fn upsert_session(
     let now = now_millis();
     let model_settings = serde_json::to_string(&session.model_settings)
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-    let blocks = crate::artifacts::retain_existing_cards(conn, &session.blocks)?;
-    let blocks_json = serde_json::to_string(blocks.as_ref())
+    let blocks_json = serde_json::to_string(&session.blocks)
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     let queued_messages_json = serde_json::to_string(&session.queued_messages)
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
@@ -1189,7 +1218,7 @@ pub(crate) fn upsert_session(
         .unwrap_or(now);
     let updated_at = match &existing {
         Some((_, prev_updated, prev_blocks, _, _, prev_queue))
-            if json_eq(prev_blocks, blocks.as_ref()) && prev_queue == &queued_messages_json =>
+            if json_eq(prev_blocks, &session.blocks) && prev_queue == &queued_messages_json =>
         {
             *prev_updated
         }
@@ -1334,10 +1363,7 @@ fn search_sessions_sql(include_archived: bool, cwd_scoped: bool) -> String {
             AND (LOWER(title) LIKE LOWER(?1) ESCAPE '\\'
                  OR CASE WHEN octet_length(blocks_json) <= ?2
                          THEN LOWER(blocks_json) LIKE LOWER(?1) ESCAPE '\\'
-                         ELSE 0 END
-                 OR EXISTS(SELECT 1 FROM mono_blocks
-                           WHERE mono_blocks.session_id = sessions.id
-                             AND search_text LIKE LOWER(?1) ESCAPE '\\'))",
+                         ELSE 0 END)",
     );
     if !include_archived {
         sql.push_str(" AND archived = 0");
@@ -1461,19 +1487,8 @@ fn search_sessions_with_connection(
                 String::from_utf8_lossy(value.as_bytes().map_err(|e| e.to_string())?).into_owned()
             }
         };
-        let blocks = if crate::mono_transcript::is_indexed(conn, &id).map_err(|e| e.to_string())? {
-            crate::mono_transcript::matching_blocks(
-                conn,
-                &id,
-                &needle,
-                MAX_MESSAGE_HITS - messages.len(),
-            )
-            .map_err(|e| e.to_string())?
-        } else {
-            let Ok(blocks) = serde_json::from_str::<Value>(&blocks_raw) else {
-                continue;
-            };
-            blocks
+        let Ok(blocks) = serde_json::from_str::<Value>(&blocks_raw) else {
+            continue;
         };
         for hit in block_hits(&blocks, &needle) {
             messages.push(SessionSearchHit {
@@ -1911,13 +1926,6 @@ pub(crate) fn get_session(
     get_session_record(conn, session_id, true)
 }
 
-pub(crate) fn get_session_metadata(
-    conn: &Connection,
-    session_id: &str,
-) -> rusqlite::Result<Option<SessionRecord>> {
-    get_session_record(conn, session_id, false)
-}
-
 fn get_session_record(
     conn: &Connection,
     session_id: &str,
@@ -2083,25 +2091,46 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
 
     #[test]
-    fn search_keeps_older_mono_messages_available_after_conversion() {
+    fn startup_drops_colleague_conversations_and_documents() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.lock_conn().unwrap();
-        let mut mono = sample("mono", "/tmp/a", "Mono");
-        mono.blocks = json!([{ "id":"old", "role":"user", "text":"Archived needle" }, { "id":"answer", "role":"assistant", "text":"Done" }]);
-        upsert_session(&conn, &mono).unwrap();
-        crate::mono_transcript::migrate_transcript(&conn, "mono").unwrap();
-        let result = search_sessions(
-            &conn,
-            &SessionSearchOptions {
-                query: "Archived needle".into(),
-                cwd: None,
-                include_archived: false,
-                search_owner: "mono-search".into(),
-            },
+        upsert_session(&conn, &sample("kept", "/tmp/a", "Kept")).unwrap();
+        upsert_session(&conn, &sample("colleague", "/tmp/a", "Colleague")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE mono_transcripts (
+               session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE
+             );
+             CREATE TABLE mono_turns (session_id TEXT, seq INTEGER);
+             CREATE TABLE mono_blocks (session_id TEXT, seq INTEGER);
+             INSERT INTO mono_transcripts VALUES ('colleague');",
         )
         .unwrap();
-        assert_eq!(result.hits.len(), 1);
-        assert_eq!(result.hits[0].block_id.as_deref(), Some("old"));
+        conn.execute(
+            "INSERT INTO notes (id, slug, title, body, created_at, updated_at, content_kind)
+             VALUES ('doc', 'doc', 'Doc', '', 1, 1, 'artifact')",
+            [],
+        )
+        .unwrap();
+        drop_colleague_tables(&conn).unwrap();
+        assert!(get_session(&conn, "colleague").unwrap().is_none());
+        assert!(get_session(&conn, "kept").unwrap().is_some());
+        let left: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'mono_%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(left, 0);
+        assert!(get_session(&conn, "kept").unwrap().is_some());
+        let documents: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM notes WHERE content_kind = 'artifact'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(documents, 0);
     }
 
     #[test]

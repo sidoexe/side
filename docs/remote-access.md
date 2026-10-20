@@ -89,17 +89,9 @@ The limit notice works on host sessions: **Resume** continues the conversation, 
 
 `binaries` overrides where the host finds a provider CLI; otherwise its PATH decides.
 
-## Colleagues on the home machine
+## Where projects open
 
-Projects open where you choose them: **Open folder…** opens a folder of this computer, **Open folder on a machine…** a folder of a connected machine. Nothing moves between the two.
-
-The home machine keeps your Colleagues, so every computer sees the same ones; a session on a machine runs on that machine's accounts. With a single connected machine, that machine is the home machine. With several, choose it in **Settings → Connections → Colleagues live on**. Automations stay on each computer.
-
-When the home machine's host advertises `employees`, every desktop keeps its employees there instead of in its own data folder: the roster (names, looks, projects) and each employee's `SOUL.md`, `MEMORY.md`, `habits.json` and `memory/` notes, under `~/.side-host/employees`. The first time a desktop reaches such a host, it copies its own employees in; the host keeps whatever it already has, so a second desktop adds its employees without overwriting the first one's. Roster changes are pushed as they happen and read back every 15 seconds; when two desktops change it at once, each one's own edits are kept.
-
-Employees' conversations live there too, so any desktop opens the same chat. A desktop copies a chat it kept locally to the host the first time it opens it, unless the host already has one. Two desktops can write the same chat: a save names the last block its writer saved before, and when someone else has written since, the host merges the save, updating the blocks it has and appending the new ones, instead of replacing the conversation's end. The provider session behind a chat stays on the desktop that started it, so the next turn from another desktop starts a fresh provider session, briefed on the conversation exactly as when a long chat fills its context window. A chat started in another computer's home folder runs in this one's.
-
-Saves of an employee file are checked against the version the writer read, on the host, so a habit is claimed by exactly one desktop even with several open: the others see the claim and skip that run. With no home machine, or a host too old to keep employees, a desktop uses its own data folder as before.
+Projects open where you choose them: **Open folder…** opens a folder of this computer, **Open folder on a machine…** a folder of a connected machine. Nothing moves between the two. A session on a machine runs on that machine's accounts. Automations stay on each computer.
 
 ## Open the host in a browser
 
@@ -109,7 +101,7 @@ The host serves a responsive web app at `/web` for a phone or any browser. It lo
 - new sessions in a project, a worktree or a folder opened from the host, with model, effort, permissions and account chips that also change an open session;
 - attachments, Plan mode and Build, `@` files and `/` skills, context usage;
 - the review card after a turn, a Changes panel to stage, commit and push, and a read-only file explorer;
-- rename, pin, archive and delete; colleagues (read-only) and automations, run now as a session;
+- rename, pin, archive and delete; automations, run now as a session;
 - notifications when a session needs you or finishes (**Notifications** in the sidebar; on iPhone, add the app to the Home Screen first).
 
 1. Create a credential for the browser on the host: `~/.side-host/bin/side-host pair --name "Web"`.

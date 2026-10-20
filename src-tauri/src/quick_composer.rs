@@ -486,12 +486,6 @@ fn toggle(app: &AppHandle) {
     reveal(app, true);
 }
 
-/// Show the composer from the menu bar, where a second click should not
-/// put it away again.
-pub fn open(app: &AppHandle) {
-    reveal(app, false);
-}
-
 fn reveal(app: &AppHandle, toggle: bool) {
     if app
         .state::<QuickComposerState>()

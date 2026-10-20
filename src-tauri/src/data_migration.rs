@@ -1,6 +1,6 @@
 //! sIDE has its own bundle identifier, so it can be installed beside
 //! MonoCode. On its first launch it starts from a copy of MonoCode's data:
-//! the app data folder (sessions, checkpoints, employees, connections) and
+//! the app data folder (sessions, checkpoints, connections) and
 //! the WebKit folder holding the window's localStorage. Nothing is moved:
 //! MonoCode keeps working on its own copy.
 //!
@@ -68,8 +68,7 @@ fn copy_tree(from: &Path, to: &Path) -> Result<(), String> {
         let kind = entry.file_type().map_err(|e| e.to_string())?;
         let name = entry.file_name().to_string_lossy().into_owned();
         if kind.is_symlink() {
-            // A linked folder (such as an employees folder synced elsewhere)
-            // stays a link to the same place.
+            // A linked folder stays a link to the same place.
             let link = std::fs::read_link(&source).map_err(|e| e.to_string())?;
             symlink(&link, &target)?;
         } else if kind.is_dir() {
@@ -103,6 +102,27 @@ fn symlink(link: &Path, target: &Path) -> Result<(), String> {
     std::os::unix::fs::symlink(link, target).map_err(|e| format!("{}: {e}", target.display()))
 }
 
+/// Colleagues were removed from sIDE. What they kept in the app data folder
+/// goes with them: their files, their private Codex stores and the menu bar
+/// icon's setting. A folder that is a link only loses the link, never what it
+/// points at.
+pub fn remove_colleague_data(data: &Path) {
+    for name in ["monos", "agents", "codex-monos", "menu-bar-icon-hidden"] {
+        let path = data.join(name);
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        let removed = if meta.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        if let Err(error) = removed {
+            eprintln!("Could not remove {}: {error}", path.display());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,7 +154,7 @@ mod tests {
         std::fs::create_dir_all(&webkit).unwrap();
         std::fs::write(webkit.join("salt"), "s").unwrap();
         #[cfg(unix)]
-        std::os::unix::fs::symlink("/tmp", old.join("monos")).unwrap();
+        std::os::unix::fs::symlink("/tmp", old.join("linked")).unwrap();
         old
     }
 
@@ -161,7 +181,7 @@ mod tests {
         assert!(new.join(MARKER).is_file());
         #[cfg(unix)]
         assert_eq!(
-            std::fs::read_link(new.join("monos")).unwrap(),
+            std::fs::read_link(new.join("linked")).unwrap(),
             PathBuf::from("/tmp")
         );
         assert!(library
@@ -201,5 +221,24 @@ mod tests {
         assert!(!staging.exists());
         assert!(!adopt_monocode_data(&library, MONOCODE_IDENTIFIER).unwrap());
         std::fs::remove_dir_all(library).unwrap();
+    }
+
+    #[test]
+    fn removes_colleague_data_without_following_links() {
+        let data = library();
+        std::fs::create_dir_all(data.join("monos/e1")).unwrap();
+        std::fs::write(data.join("monos/e1/SOUL.md"), "soul").unwrap();
+        std::fs::create_dir_all(data.join("codex-monos")).unwrap();
+        let kept = library();
+        std::fs::write(kept.join("note"), "n").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&kept, data.join("agents")).unwrap();
+        std::fs::write(data.join("monocode.db"), "db").unwrap();
+        remove_colleague_data(&data);
+        assert!(!data.join("monos").exists());
+        assert!(!data.join("codex-monos").exists());
+        assert!(!data.join("agents").exists());
+        assert!(kept.join("note").is_file());
+        assert!(data.join("monocode.db").is_file());
     }
 }

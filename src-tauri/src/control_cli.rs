@@ -82,7 +82,7 @@ const ACTIONS: [&str; 12] = [
     "list", "delegate", "get", "steer", "message", "retry", "cancel", "wait", "review", "finish",
     "respond", "answer",
 ];
-const APP_ACTIONS: [&str; 32] = [
+const APP_ACTIONS: [&str; 16] = [
     "models.list",
     "sessions.list",
     "sessions.read",
@@ -99,22 +99,6 @@ const APP_ACTIONS: [&str; 32] = [
     "notes.list",
     "notes.read",
     "notes.write",
-    "artifacts.list",
-    "artifacts.read",
-    "artifacts.write",
-    "soul.read",
-    "soul.update",
-    "memory.read",
-    "memory.search",
-    "memory.add",
-    "memory.replace",
-    "memory.remove",
-    "habits.list",
-    "habits.add",
-    "habits.update",
-    "habits.run",
-    "habits.remove",
-    "chat.card",
 ];
 /// Shared with the host's own `app` client, which serves sessions it runs.
 const APP_USAGE: &str = include_str!("../../host/app-cli-usage.txt");
@@ -356,8 +340,7 @@ fn parse_args_for(args: &[String], app_mode: bool) -> Result<Parsed, String> {
         if is_help(flag) {
             return Ok(Parsed::Help);
         }
-        // Colleague prompts teach `app memory.add {"fact":"..."}`: in app
-        // mode a lone object is the input, the same as --json.
+        // In app mode a lone JSON object is the input, the same as --json.
         if !flag.starts_with("--") {
             if !app_mode || input.is_some() || !flag.trim_start().starts_with('{') {
                 return Err(format!(
@@ -464,19 +447,18 @@ mod tests {
     }
     #[test]
     fn app_mode_takes_a_lone_json_object_as_its_input() {
-        let Ok(Parsed::Call(action, input, _)) = parse_args_for(
-            &args(&["memory.search", r#"{"query":"linear 1.1.2"}"#]),
-            true,
-        ) else {
+        let Ok(Parsed::Call(action, input, _)) =
+            parse_args_for(&args(&["notes.list", r#"{"limit":3}"#]), true)
+        else {
             panic!("a lone object should parse");
         };
-        assert_eq!(action, "memory.search");
-        assert_eq!(input["query"], "linear 1.1.2");
-        assert!(parse_args_for(&args(&["memory.search", "{}", "--json", "{}"]), true).is_err());
-        assert!(parse_args_for(&args(&["memory.search", "query"]), true)
+        assert_eq!(action, "notes.list");
+        assert_eq!(input["limit"], 3);
+        assert!(parse_args_for(&args(&["notes.list", "{}", "--json", "{}"]), true).is_err());
+        assert!(parse_args_for(&args(&["notes.list", "query"]), true)
             .err()
             .is_some_and(|e| e.contains("--json")));
-        assert!(parse_args_for(&args(&["memory.search", "[]"]), true).is_err());
+        assert!(parse_args_for(&args(&["notes.list", "[]"]), true).is_err());
     }
     #[test]
     fn help_names_every_action_and_the_real_executable() {
@@ -527,21 +509,13 @@ mod tests {
         );
         assert!(app_help().contains("notes.read"));
         assert!(app_help().contains("notes.write"));
-        for action in [
-            "worktrees.list",
-            "worktrees.create",
-            "artifacts.list",
-            "artifacts.read",
-            "artifacts.write",
-        ] {
+        for action in ["worktrees.list", "worktrees.create"] {
             assert!(matches!(
                 parse_args_for(&args(&[action]), true),
                 Ok(Parsed::Call(_, _, _))
             ));
             assert!(app_help().contains(action));
         }
-        assert!(app_help().contains(r#""kind":"document""#));
-        assert!(app_help().contains("Artifacts are separate from Notes"));
     }
 
     #[test]
@@ -551,51 +525,5 @@ mod tests {
         assert!(denied.get("requestId").is_none());
         let uncertain = with_retry_hint(json!({"ok":false,"error":"timeout"}), "id-1");
         assert_eq!(uncertain["retryWith"], "--request-id id-1");
-    }
-
-    #[test]
-    fn app_mode_accepts_chat_cards_and_documents_every_type() {
-        for input in [
-            r#"{"type":"pr","repo":"owner/repo","number":123}"#,
-            r#"{"type":"session","sessionId":"other"}"#,
-            r#"{"type":"choices","options":["Review","Ship"]}"#,
-            r#"{"type":"habit","name":"Check CI","instructions":"Check CI","schedule":{"kind":"daily","time":"09:00"}}"#,
-        ] {
-            assert!(matches!(
-                parse_args_for(&args(&["chat.card", "--json", input]), true),
-                Ok(Parsed::Call(action, parsed_input, _))
-                    if action == "chat.card"
-                        && parsed_input == serde_json::from_str::<Value>(input).unwrap()
-            ));
-        }
-        assert!(parse_args_for(&args(&["chat.card"]), false).is_err());
-        let help = app_help();
-        assert!(help.contains("chat.card"));
-        for kind in ["pr", "session", "choices", "habit"] {
-            assert!(help.contains(&format!(r#""type":"{kind}""#)));
-        }
-    }
-
-    #[test]
-    fn app_mode_exposes_soul_actions_and_documents_requested_updates() {
-        for (action, input) in [
-            ("soul.read", r#"{}"#),
-            (
-                "soul.update",
-                r##"{"text":"# Soul\n","expectedHash":"old-hash"}"##,
-            ),
-        ] {
-            assert!(matches!(
-                parse_args_for(&args(&[action, "--json", input]), true),
-                Ok(Parsed::Call(parsed_action, parsed_input, _))
-                    if parsed_action == action
-                        && parsed_input == serde_json::from_str::<Value>(input).unwrap()
-            ));
-            assert!(parse_args_for(&args(&[action]), false).is_err());
-            assert!(app_help().contains(action));
-        }
-        assert!(app_help().contains("only when the user asks"));
-        assert!(app_help().contains("expectedHash"));
-        assert!(app_help().contains("Habit runs and other sessions cannot change"));
     }
 }

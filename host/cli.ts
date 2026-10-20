@@ -271,6 +271,9 @@ Connect another computer using an SSH forward to the loopback port.`);
         /* report via descriptor */
       }
     }
+    // Colleagues were removed: what this host kept for them goes too. A link
+    // only loses the link, never what it points at.
+    rmSync(join(directory, "employees"), { recursive: true, force: true });
     const engine = new HostEngine(store, hostProviders, accounts);
     engine.checkpoints = new HostCheckpoints(join(directory, "checkpoints"));
     engine.accountLogins = new HostAccountLogins(accounts, (provider) => backend.resolve(provider));
