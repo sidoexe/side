@@ -42,7 +42,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -185,25 +184,6 @@ import { SessionsEmpty } from "../../features/sessions/ui/SessionsEmpty";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
 import { SourceControl } from "../../features/source-control/ui/SourceControl";
 import { GithubStarPrompt } from "./GithubStarPrompt";
-import {
-  isMonoSession,
-  listMonos,
-  MONO_STATUS_LABEL,
-  monoLook,
-  monosSnapshot,
-  subscribeMonos,
-  type MonoAvatar,
-  type MonoStatus,
-} from "../../features/monos/model/mono";
-import { MonoRailMascot } from "../../features/monos/ui/MonoRailMascot";
-import { useRailMonosPinned } from "../../features/settings/model/displayPrefs";
-import type { PickerMonos } from "../../features/projects/ui/SearchableProjectPicker";
-import { isHabitRun } from "../../features/monos/model/monoHabits";
-import {
-  unreadBadge,
-  unreadLabel,
-  type MonoRailProps,
-} from "./MonoRailSection";
 import {
   markRemoteSessionReviewed,
   refreshRemoteProjectSessions,
@@ -362,10 +342,6 @@ type Props = {
   updateNotice?: InstalledUpdate | null;
   onOpenWhatsNew?: (version: string) => void;
   onDismissUpdate?: () => void;
-  /** The Monos on the rail; absent while Monos are off. */
-  monos?: MonoRailProps;
-  /** A Mono fills the main area, which has no project sidebar. */
-  monoViewActive?: boolean;
 };
 
 function SidebarComponent({
@@ -461,8 +437,6 @@ function SidebarComponent({
   updateNotice = null,
   onOpenWhatsNew,
   onDismissUpdate,
-  monos,
-  monoViewActive = false,
 }: Props) {
   const remoteProject = isRemoteProjectPath(cwd);
   const tab: SidebarTabId = requestedTab;
@@ -741,17 +715,14 @@ function SidebarComponent({
     : pending && sessions.length === 0;
   const worktreeFocus = useWorktreeFocus(cwd);
   const focusedWorktree = remoteProject ? undefined : worktreeFocus;
-  useSyncExternalStore(subscribeMonos, monosSnapshot);
   const listedSessions = mergeFolderSessionSummaries(
     projectSessions,
     remoteProject ? [] : openSessions,
     sessionFolders,
   ).filter(
     (session) =>
-      !isMonoSession(session.id) &&
       !session.sidebarHidden &&
       !("ephemeral" in session && session.ephemeral) &&
-      !isHabitRun(session.id) &&
       !session.orchestrationLeadId &&
       inWorktreeFocus(session, focusedWorktree),
   );
@@ -889,13 +860,9 @@ function SidebarComponent({
     boardActive ||
     webActive ||
     settingsOpen;
-  // A remembered Mono sits underneath these views; select it only while visible.
-  const railMonos = monos
-    ? { ...monos, activeId: otherViewActive ? undefined : monos.activeId }
-    : undefined;
   // A blank session has no project to browse, so the shell stands alone until
   // one is picked — whether or not the rail is open.
-  const sidebarAvailable = !otherViewActive && !monoViewActive && inProject;
+  const sidebarAvailable = !otherViewActive && inProject;
   const sidebarVisible = open && sidebarAvailable;
   // With the sidebar collapsed beside the compact rail, its tab shortcuts
   // open the sidebar temporarily until the user clicks away.
@@ -2423,8 +2390,6 @@ function SidebarComponent({
           onTogglePanel={onToggleProjectRail}
           onLeaveActive={onGoBack}
           titleBarAbove={titleBarAbove}
-          monos={railMonos}
-          monoViewActive={monoViewActive}
         />
       ) : null}
       {railMounted.current && onSelectProject && onOpenProject ? (
@@ -2469,7 +2434,6 @@ function SidebarComponent({
           updateNotice={updateNotice}
           onOpenWhatsNew={onOpenWhatsNew}
           onDismissUpdate={onDismissUpdate}
-          monos={railMonos}
         />
       ) : null}
       {sidebarVisible ? sidebarContent : null}
@@ -2697,8 +2661,6 @@ function CompactProjectRail({
   onTogglePanel,
   onLeaveActive,
   titleBarAbove,
-  monos,
-  monoViewActive = false,
 }: {
   cwd: string;
   recents: RecentProject[];
@@ -2734,32 +2696,7 @@ function CompactProjectRail({
   onTogglePanel?: () => void;
   onLeaveActive?: () => void;
   titleBarAbove: boolean;
-  /** Monos have no row here, so the project button lists them too. */
-  monos?: MonoRailProps;
-  /** A Mono fills the main area: no workspace tab is the current one. */
-  monoViewActive?: boolean;
 }) {
-  const monosSnap = useSyncExternalStore(subscribeMonos, monosSnapshot);
-  const monosPinned = useRailMonosPinned();
-  const monoItems = useMemo(() => {
-    if (!monos) return [];
-    return listMonos().map((mono) => ({
-      id: mono.id,
-      ...monoLook(mono),
-      status: monos.states.get(mono.id)?.status ?? "idle",
-    }));
-    // The roster is read through its snapshot.
-  }, [monos, monosSnap]);
-  const pickerMonos = useMemo((): PickerMonos | undefined => {
-    if (!monos) return undefined;
-    return {
-      // Pinned Monos have their own buttons; the picker keeps "New mono".
-      items: monosPinned ? [] : monoItems,
-      activeId: monos.activeId,
-      onOpen: monos.onOpen,
-      onCreate: monos.onCreate,
-    };
-  }, [monos, monoItems, monosPinned]);
   const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(
     null,
   );
@@ -2772,8 +2709,7 @@ function CompactProjectRail({
     !notesActive &&
     !automationsActive &&
     !boardActive &&
-    !webActive &&
-    !monoViewActive;
+    !webActive;
   const openWorkspaceTab = (nextTab: SidebarTab) => {
     if (!workspaceActive) onLeaveActive?.();
     onTabChange(nextTab);
@@ -2810,39 +2746,6 @@ function CompactProjectRail({
           icon={PanelLeft}
           onClick={onTogglePanel}
         />
-        {monos && monosPinned && monoItems.length ? (
-          <>
-            <div
-              role="group"
-              aria-label="Colleagues"
-              data-compact-rail-monos
-              className="flex flex-col items-center gap-1.5"
-            >
-              {monoItems.map((mono) => (
-                <CompactRailMono
-                  key={mono.id}
-                  name={mono.name}
-                  mascot={mono.mascot}
-                  color={mono.color}
-                  avatar={mono.avatar}
-                  status={mono.status}
-                  active={mono.id === monos.activeId}
-                  unseen={
-                    mono.id === monos.activeId
-                      ? 0
-                      : (monos.unseenCounts?.get(mono.id) ?? 0)
-                  }
-                  onClick={() => monos.onOpen(mono.id)}
-                />
-              ))}
-            </div>
-            <span
-              aria-hidden
-              data-compact-rail-monos-divider
-              className="h-px w-6 shrink-0 bg-stroke"
-            />
-          </>
-        ) : null}
         {onSelectProject ? (
           <SearchableProjectPickerWithMenu
             cwd={cwd}
@@ -2854,7 +2757,6 @@ function CompactProjectRail({
             onOpenProject={onOpenProject}
             onRemoveProject={onRemoveProject}
             onOpenNotificationSettings={onOpenNotificationSettings}
-            monos={pickerMonos}
           />
         ) : null}
         <div
@@ -2965,65 +2867,6 @@ function CompactProjectRail({
       ) : null}
       {railTooltip.tooltip}
     </nav>
-  );
-}
-
-function CompactRailMono({
-  name,
-  mascot,
-  color,
-  avatar,
-  status,
-  active,
-  unseen,
-  onClick,
-}: {
-  name: string;
-  mascot: string;
-  color: string;
-  avatar?: MonoAvatar;
-  status: MonoStatus;
-  active: boolean;
-  /** Replies the user has not read. */
-  unseen: number;
-  onClick: () => void;
-}) {
-  const label = `${name}, ${MONO_STATUS_LABEL[status]}`;
-  return (
-    <button
-      type="button"
-      data-rail-tip={name}
-      data-rail-tip-detail={
-        unseen
-          ? `${MONO_STATUS_LABEL[status]} · ${unreadLabel(unseen)}`
-          : MONO_STATUS_LABEL[status]
-      }
-      aria-label={unseen ? `${label}, ${unreadLabel(unseen)}` : label}
-      aria-current={active ? "true" : undefined}
-      data-compact-rail-mono
-      onClick={onClick}
-      className={`relative grid size-8 shrink-0 place-items-center rounded-md active:scale-[0.97] ${
-        active
-          ? "bg-selection"
-          : "opacity-65 hover:bg-content/10 hover:opacity-100"
-      }`}
-    >
-      <MonoRailMascot
-        name={mascot}
-        color={color}
-        avatar={avatar}
-        status={status}
-      />
-      {unseen ? (
-        <span
-          aria-hidden
-          data-mono-unread={unseen}
-          className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-background-base px-0.5 text-[9px] font-medium tabular-nums leading-none text-content/80 ring-1 ring-content/15"
-        >
-          {unreadBadge(unseen)}
-        </span>
-      ) : null}
-    </button>
   );
 }
 

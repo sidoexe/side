@@ -33,7 +33,7 @@ export function sessionConversationPage(
   for (const block of session.blocks) {
     if (
       block.role === "user" &&
-      (!block.internal || block.monoSessionCompletion) &&
+      !block.internal &&
       !block.draft
     ) {
       exchanges.push({ user: block, assistants: [] });
@@ -63,11 +63,7 @@ export function sessionConversationPage(
     turns: selected.map(({ user, assistants }) => ({
       turnId: user.id,
       user: capped(
-        user.monoSessionCompletion
-          ? user.monoSessionCompletion.sessionCount
-            ? `sIDE: results from ${user.monoSessionCompletion.sessionCount} sessions`
-            : `sIDE: session ${user.monoSessionCompletion.status}: ${user.monoSessionCompletion.title}`
-          : operatorUserPrompt(user),
+        operatorUserPrompt(user),
         maxChars,
       ),
       assistant: assistants.length

@@ -106,7 +106,6 @@ import {
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { useProjectMenu } from "./useProjectMenu";
 import { useSessionBoard } from "../../features/sessions/hooks/useSessionBoard";
-import { MonoRailSection, type MonoRailProps } from "./MonoRailSection";
 import { WebAppsRailSection } from "./WebAppsRailSection";
 
 type Props = {
@@ -153,8 +152,6 @@ type Props = {
   updateNotice?: InstalledUpdate | null;
   onOpenWhatsNew?: (version: string) => void;
   onDismissUpdate?: () => void;
-  /** The Monos section above the projects; absent while Monos are off. */
-  monos?: MonoRailProps;
 };
 
 export function ProjectRail({
@@ -198,7 +195,6 @@ export function ProjectRail({
   updateNotice = null,
   onOpenWhatsNew,
   onDismissUpdate,
-  monos,
 }: Props) {
   const resize = useDragResize({
     min: PROJECT_RAIL_WIDTH_MIN,
@@ -392,8 +388,7 @@ export function ProjectRail({
     notesActive ||
     automationsActive ||
     boardActive ||
-    webActive ||
-    !!monos?.activeId;
+    webActive;
   const pinnedIds = sections.pinned.map((item) => item.path);
   const projectIds = groupedProjectSections.ungrouped.map((item) => item.path);
   const groupIds = groupedProjectSections.grouped.map(({ group }) => group.id);
@@ -503,7 +498,6 @@ export function ProjectRail({
             className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none pb-2"
           >
             <ProjectStatusContext.Provider value={projectStatus}>
-              {monos ? <MonoRailSection {...monos} /> : null}
               {onOpenWeb ? (
                 <WebAppsRailSection
                   webActive={webActive}

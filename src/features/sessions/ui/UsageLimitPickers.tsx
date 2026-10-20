@@ -6,55 +6,18 @@ import {
 } from "react";
 import { ChevronDown } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
-import {
-  HARNESS_TITLE,
-  type HarnessId,
-  type Session,
-} from "../../sessions/model/session";
-import { UsageLimitNotice } from "../../sessions/ui/UsageLimitNotice";
-import { ModelPicker } from "../../sessions/ui/ModelPicker";
-import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import type { HarnessId, Session } from "../model/session";
+import { ModelPicker } from "./ModelPicker";
+import { HarnessIcon } from "./HarnessIcon";
 import {
   sameProviderAccountId,
   type ProviderAccount,
 } from "../../providers/model/providerAccounts";
 import { useProviderAccounts } from "../../providers/ui/ProviderAccountRow";
 
-export function MonoUsageLimitNotice({
-  session,
-  onModelChange,
-  onAccountChange,
-  onResume,
-  onResumeAtReset,
-}: {
-  session: Session;
-  onModelChange: (harness: HarnessId, model: string) => void;
-  onAccountChange?: (accountId: string) => void;
-  onResume: () => void;
-  onResumeAtReset: (enabled: boolean) => void;
-}) {
-  if (!session.usageLimit) return null;
-  return (
-    <UsageLimitNotice
-      variant="mono"
-      limit={session.usageLimit}
-      providerName={HARNESS_TITLE[session.harness]}
-      onResume={onResume}
-      onResumeAtReset={onResumeAtReset}
-      modelPicker={
-        <UsageLimitPickers
-          session={session}
-          onModelChange={onModelChange}
-          onAccountChange={onAccountChange}
-        />
-      }
-    />
-  );
-}
-
 /**
  * Another model, or another account of the same provider, to keep a
- * conversation going after a limit stopped it: a Colleague's or a chat's.
+ * conversation going after a limit stopped it.
  * `compact` fits the chat's one-line notice above its composer.
  */
 export function UsageLimitPickers({
@@ -148,7 +111,7 @@ function AccountPicker({
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
-        data-mono-account-picker
+        data-usage-limit-account-picker
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => {
           if (open) dismiss(true);
@@ -173,7 +136,7 @@ function AccountPicker({
           maxHeight={260}
           autoFocus
           onDismiss={(reason) => dismiss(reason === "escape")}
-          ignore="[data-mono-account-picker]"
+          ignore="[data-usage-limit-account-picker]"
           role="menu"
           aria-label={label}
           aria-activedescendant={`${menuId}-${active}`}

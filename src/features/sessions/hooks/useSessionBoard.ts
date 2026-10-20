@@ -49,11 +49,6 @@ export function useSessionBoard(
   projectPaths: readonly string[],
   onSelectAgent?: (sessionId: string) => void,
   onSelectRemoteSession?: (project: string, sessionId: string) => void,
-  /** Rows only the board lists, such as a colleague's own chat: working, or
-   * waiting on the user. */
-  extraRows: readonly LiveAgent[] = [],
-  /** Checks one of the extra rows that has settled. */
-  onCheckExtra?: (agent: LiveAgent) => void,
 ): SessionBoard {
   const enabled = useSyncExternalStore(
     subscribeLiveAgentsEnabled,
@@ -99,12 +94,10 @@ export function useSessionBoard(
     enabled,
     review: [
       ...liveAgents.filter((agent) => agent.needsApproval || agent.done),
-      ...extraRows.filter((agent) => !isWorking(agent)),
       ...remoteRows.flatMap(({ agent }) => (isWorking(agent) ? [] : agent)),
     ].sort((a, b) => Number(b.needsApproval) - Number(a.needsApproval)),
     working: [
       ...liveAgents,
-      ...extraRows,
       ...remoteRows.map(({ agent }) => agent),
     ].filter(isWorking),
     // One that works or waits again leaves the list until it is checked again.
@@ -120,8 +113,6 @@ export function useSessionBoard(
       onSelectRemoteSession?.(project, sessionId);
     },
     onMarkChecked: (agent) => {
-      if (extraRows.some((row) => row.id === agent.id))
-        return void onCheckExtra?.(agent);
       const project = remoteProjects.get(agent.id);
       // A host keeps its own sessions; only this desktop's are listed as checked.
       if (project) return void markRemoteSessionReviewed(project, agent.id);

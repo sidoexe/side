@@ -55,15 +55,6 @@ export type BlockRole =
   | "system"
   | "handoff";
 
-/** A session created by a Mono during this conversation turn. */
-export type MonoSpawnedSession = {
-  sessionId: string;
-  cwd: string;
-  title: string;
-  harness: HarnessId;
-  model: string;
-};
-
 export type TaskListItemStatus =
   "pending" | "in_progress" | "completed" | "cancelled";
 
@@ -262,14 +253,6 @@ export type Attachment = {
   previewUrl?: string;
 };
 
-export type MonoSessionCompletion = {
-  sessionId: string;
-  title: string;
-  status: "completed" | "failed" | "cancelled";
-  /** A single report covering several sessions launched in one Mono turn. */
-  sessionCount?: number;
-};
-
 export type QueuedMessage = {
   id: string;
   /** User bubble already shown optimistically in a Mono's conversation. */
@@ -279,8 +262,6 @@ export type QueuedMessage = {
   noteCard?: NoteComposerCard;
   handoffCard?: HandoffComposerCard;
   intent?: TurnIntent;
-  /** An app notification that must wait for an idle Mono, never steer its work. */
-  monoSessionCompletion?: MonoSessionCompletion;
   /** Delivery failed; the message remains available to retry or edit. */
   error?: string;
   /** Host queue only: the expanded provider prompt and uploaded files. */
@@ -371,17 +352,11 @@ export type Block = {
    * conversation rather than the user narrating their own agents.
    */
   internal?: boolean;
-  /** Hidden app prompt that starts a separate completion report in a Mono chat. */
-  monoSessionCompletion?: MonoSessionCompletion;
-  /** Accepted session launches, kept on the originating user turn. */
-  monoSpawnedSessions?: MonoSpawnedSession[];
   handoff?: HandoffMeta;
   secondOpinion?: SecondOpinionMeta;
   /** Independent read-only side conversations anchored to this user turn. */
   btwThreads?: BtwThread[];
   noteCard?: NoteCardMeta;
-  /** Saved artifacts attached to this turn; their bodies live outside chat. */
-  artifactCards?: import("../../artifacts/artifacts").ArtifactCard[];
   /** Exact CI repair instructions and evidence supplied with this user turn. */
   ciContext?: string;
   /** Mid-turn interjection chrome; system blocks only. Body lives in text. */
@@ -392,15 +367,6 @@ export type Block = {
    */
   notice?: "error" | "interrupt";
   statusKey?: string;
-  /** Posted to a Mono's chat by one of its habits, outside any turn. */
-  monoHabit?: { id: string; name: string; at: number };
-  /** A card a Mono put in its chat; see `features/monos/model/monoCards`. */
-  monoCard?: import("../../monos/model/monoCards").MonoCard;
-  /**
-   * The emoji a Mono answered this user message with. Drawn from its reply
-   * when the chat renders; see `features/monos/model/monoReaction`.
-   */
-  monoReaction?: string;
 };
 
 export type RuntimeMode =
@@ -458,8 +424,6 @@ export type Session = {
   /** Project / working directory for this session. */
   cwd: string;
   blocks: Block[];
-  /** Mono-only database window. Older blocks are fetched separately by the viewer. */
-  monoTranscript?: { before: number | null; firstBlockId: string | null };
   /** True while a harness turn is in flight. */
   busy?: boolean;
   /** The provider has accepted this turn and can take live follow-ups. */

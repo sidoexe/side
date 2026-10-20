@@ -54,6 +54,7 @@ pub mod ssh_askpass;
 mod trackpad_zoom;
 mod web_app_icon;
 mod web_embed;
+mod web_session;
 mod window;
 mod window_transfer;
 mod worktree_lifecycle;

@@ -6,7 +6,7 @@ import {
 } from "../../providers/model/balancedAccount";
 
 /** The phone's and the account menu's name for the Balanced choice. */
-export const MONO_BALANCED_ACCOUNT = "auto";
+export const BALANCED_ACCOUNT = "auto";
 
 /** What one account has left, as its cached plan windows say. */
 export type AccountRoom = {
@@ -30,7 +30,7 @@ function candidate(account: AccountRoom, now: number): BalancedCandidate {
 }
 
 /**
- * The account a balanced conversation, a Colleague's or a chat's, should run
+ * The account a balanced chat should run
  * on, by the shared Balanced rule. `except` leaves out the account a limit
  * just stopped.
  */

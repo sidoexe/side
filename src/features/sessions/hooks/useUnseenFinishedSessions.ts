@@ -1,5 +1,4 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { isMonoSession } from "../../monos/model/mono";
 import { isLiveAgentSession } from "../model/liveAgents";
 import type { Session } from "../model/session";
 import { nextUnseenFinishedSessions } from "../model/sessionDone";
@@ -37,14 +36,10 @@ export function useUnseenFinishedSessions(
       previousBusyIds: busyForDoneRef.current,
       busyIds: busySessionIds,
       previousUnseenIds: unseenFinishedRef.current,
-      // A Colleague's chat and its habit runs report through the Colleague.
       untrackedIds: new Set(
         sessions
           .filter(
-            (session) =>
-              !isLiveAgentSession(session) ||
-              session.ephemeral ||
-              isMonoSession(session.id),
+            (session) => !isLiveAgentSession(session) || session.ephemeral,
           )
           .map((session) => session.id),
       ),

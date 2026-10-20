@@ -26,7 +26,6 @@ import {
 import { sessionWorkCwd, type Session } from "../../features/sessions/model/session";
 import { addSessionsToReview } from "../../features/sessions/model/sessionReview";
 import { isLiveAgentSession } from "../../features/sessions/model/liveAgents";
-import { isMonoSession } from "../../features/monos/model/mono";
 import { sessionChildHarnesses } from "../../features/sessions/model/handoff";
 import {
   getSession,
@@ -291,8 +290,7 @@ export function cutTurnsToRemind(
       (session) =>
         !wasTurnInterrupted(session) &&
         isLiveAgentSession(session) &&
-        !session.ephemeral &&
-        !isMonoSession(session.id),
+        !session.ephemeral,
     )
     .map((session) => ({ id: session.id, cwd: session.cwd }));
 }

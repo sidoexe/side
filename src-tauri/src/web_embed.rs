@@ -5,17 +5,21 @@
 //! Each app is signed in to one account: its own webview over its own
 //! persistent data store, so two logins to the same site never share or
 //! overwrite each other's cookies. Webviews stay alive while hidden; the
-//! stores keep logins across launches.
+//! stores keep logins across launches, and `web_session` keeps them from
+//! expiring or getting lost.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, Once, OnceLock};
+use std::time::Duration;
 
 use tauri::webview::{Cookie, NewWindowFeatures, NewWindowResponse, WebviewBuilder};
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, Url, WebviewUrl,
     WebviewWindowBuilder, Window,
 };
+
+use crate::web_session;
 
 /// The first app, whose id predates UUIDs. It gets a store of its own like
 /// every other: WebKit's default store is the one sIDE's own UI lives in, so
@@ -219,10 +223,11 @@ pub async fn web_embed_show(
         return Ok(());
     }
     let home = app_url(&url)?;
-    // A login from another desktop goes into the store before the page loads,
-    // so the page opens signed in.
+    // A login from another desktop, or the snapshot of this one's, goes into
+    // the store before the page loads, so the page opens signed in.
     let pending = take_pending(store);
-    let first = if pending.is_some() {
+    let saved = web_session::snapshot(store);
+    let first = if pending.is_some() || saved.is_some() {
         WebviewUrl::External(
             "about:blank"
                 .parse()
@@ -270,11 +275,52 @@ pub async fn web_embed_show(
     let _ = webview.set_zoom(zoom);
     #[cfg(target_os = "macos")]
     allow_pinch(&webview);
-    if let Some(cookies) = pending {
-        set_cookies(&webview, &cookies);
+    if pending.is_some() || saved.is_some() {
+        // Another desktop's login is the newer one, so it goes in last.
+        if let Some(saved) = saved {
+            saved.restore(&webview);
+        }
+        if let Some(cookies) = pending {
+            set_cookies(&webview, &cookies);
+        }
         webview.navigate(home).map_err(|e| e.to_string())?;
     }
+    keep_logins(window.app_handle());
     Ok(())
+}
+
+/// How often open apps' logins are made lasting and snapshotted.
+const KEEP_EVERY: Duration = Duration::from_secs(30);
+
+/// One webview per store that has one open.
+fn open_stores(app: &AppHandle) -> Vec<(uuid::Uuid, tauri::Webview)> {
+    let mut seen = HashSet::new();
+    app.webviews()
+        .into_iter()
+        .filter_map(|(label, webview)| {
+            let id = label.strip_prefix("web-embed-")?.rsplit('-').next()?;
+            let store = uuid::Uuid::parse_str(id).ok()?;
+            seen.insert(store).then_some((store, webview))
+        })
+        .collect()
+}
+
+fn keep_all(app: &AppHandle) {
+    for (store, webview) in open_stores(app) {
+        let _ = web_session::keep(&webview, store);
+    }
+}
+
+/// Keep every open app's login from lapsing, from now on, until sIDE quits.
+fn keep_logins(app: &AppHandle) {
+    static STARTED: Once = Once::new();
+    let app = app.clone();
+    STARTED.call_once(move || {
+        std::thread::spawn(move || loop {
+            std::thread::sleep(KEEP_EVERY);
+            keep_all(&app);
+        });
+    });
 }
 
 /// Logins received for apps whose webview isn't open yet, by store.
@@ -315,6 +361,8 @@ pub async fn web_embed_cookies(window: Window, app: String) -> Result<Option<Vec
     let Some(webview) = store_webview(&window, app_store(&app)?) else {
         return Ok(None);
     };
+    // Lasting first, so what another desktop gets has a lifetime too.
+    let _ = web_session::keep(&webview, app_store(&app)?);
     let cookies = webview.cookies().map_err(|e| e.to_string())?;
     Ok(Some(cookies.iter().map(ToString::to_string).collect()))
 }
@@ -352,6 +400,9 @@ pub async fn web_embed_set_cookies(
 #[tauri::command]
 pub async fn web_embed_hide(window: Window) -> Result<(), String> {
     hide_others(&window, "");
+    // Leaving an app is a good moment to save its login, off the way of the UI.
+    let app = window.app_handle().clone();
+    std::thread::spawn(move || keep_all(&app));
     Ok(())
 }
 
@@ -402,6 +453,7 @@ pub async fn web_embed_reload(
 pub async fn web_embed_forget(window: Window, app: String) -> Result<(), String> {
     let store = app_store(&app)?;
     take_pending(store);
+    web_session::forget(store);
     if let Some(webview) = window
         .app_handle()
         .get_webview(&embed_label(&window, store))

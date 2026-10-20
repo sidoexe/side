@@ -100,11 +100,7 @@ export function MessageQueue({
           const sending = sendingId === message.id;
           const editing = editingId === message.id;
           const label =
-            (message.monoSessionCompletion
-              ? message.monoSessionCompletion.sessionCount
-                ? `${message.monoSessionCompletion.sessionCount} sessions finished`
-                : `Session ${message.monoSessionCompletion.status}: ${message.monoSessionCompletion.title}`
-              : message.text.trim()) ||
+            message.text.trim() ||
             message.noteCard?.title ||
             message.handoffCard?.brief ||
             `${message.attachments.length} attachment${message.attachments.length === 1 ? "" : "s"}`;
@@ -170,7 +166,7 @@ export function MessageQueue({
                       </p>
                     ) : null}
                   </div>
-                  {onSteer && !message.monoSessionCompletion ? (
+                  {onSteer ? (
                     <button
                       type="button"
                       disabled={sending}
@@ -185,7 +181,7 @@ export function MessageQueue({
                     type="button"
                     title="Edit queued message"
                     aria-label="Edit queued message"
-                    disabled={sending || !!message.monoSessionCompletion}
+                    disabled={sending}
                     onClick={() => startEdit(message)}
                     className="grid size-6 shrink-0 place-items-center rounded-md hover:bg-content/10 hover:text-content"
                   >

@@ -760,7 +760,7 @@ function ConnectedRemoteSession({
     if (!operator.matched || !appCli) return { text: typed };
     return {
       text: operator.text.trim() || "Explain what you can do in sIDE with the app CLI.",
-      context: operatorAppContext(appCli, false),
+      context: operatorAppContext(appCli),
     };
   };
 

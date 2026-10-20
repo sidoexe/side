@@ -11,7 +11,6 @@ import {
 } from "../../workspace/model/tabGroups";
 import type { SessionBoard } from "../hooks/useSessionBoard";
 import { LiveAgentCard } from "./LiveAgentsPreview";
-import { CheckedSessionRow } from "./ReviewAgentsSection";
 
 type Props = {
   board: SessionBoard;
@@ -23,8 +22,8 @@ type Props = {
 };
 
 /**
- * Every session on one board, yours and your colleagues': what works,
- * what waits on you, and what you checked, left to right as work moves.
+ * Every session on one board, yours and your colleagues': what works
+ * and what waits on you, left to right as work moves.
  */
 export function BoardView({
   board,
@@ -73,7 +72,7 @@ export function BoardView({
         {IS_MAC ? null : <WindowControls />}
       </div>
       {board.enabled ? (
-        <div className="grid min-h-0 flex-1 grid-cols-3 gap-3 overflow-x-auto p-3 max-md:grid-cols-[repeat(3,minmax(240px,1fr))]">
+        <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-x-auto p-3 max-md:grid-cols-[repeat(2,minmax(240px,1fr))]">
           <Column label="Working" count={board.working.length}>
             {board.working.map((agent) => (
               <LiveAgentCard
@@ -95,17 +94,6 @@ export function BoardView({
                 selected={agent.id === activeSessionId}
                 onSelect={board.onSelect}
                 onMarkChecked={board.onMarkChecked}
-                {...groups}
-              />
-            ))}
-          </Column>
-          <Column label="Checked" count={board.checked.length}>
-            {board.checked.map((entry) => (
-              <CheckedSessionRow
-                key={entry.id}
-                entry={entry}
-                selected={entry.id === activeSessionId}
-                onSelect={board.onSelect}
                 {...groups}
               />
             ))}

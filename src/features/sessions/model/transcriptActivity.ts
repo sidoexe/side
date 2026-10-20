@@ -324,36 +324,20 @@ export function resolveToolCallDisplay(
 }
 
 /**
- * User turns, with handoffs and habit updates sitting on their own row. `managed` is for
+ * User turns, with handoffs sitting on their own row. `managed` is for
  * a worker's own transcript, where the app-written turns are the orchestrator
  * talking to it — the whole prompt side of that conversation, and the only
  * thing its replies are answering.
  */
 export function groupTurns(blocks: Block[], managed = false): Block[][] {
-  return groupTranscriptTurns(blocks, managed, false);
-}
-
-function groupTranscriptTurns(
-  blocks: Block[],
-  managed: boolean,
-  retainCompletionPrompts: boolean,
-): Block[][] {
   const turns: Block[][] = [];
   let current: Block[] = [];
   for (const block of blocks) {
     // A turn the app wrote to keep an orchestration moving is not a user
     // message. Dropping it here folds the reply into the turn above, so a
     // supervised run reads as one conversation.
-    if (block.internal && !managed) {
-      if (isMonoCompletionPrompt(block)) {
-        if (current.length > 0) turns.push(current);
-        // Mono replies need a stable turn before their first output arrives.
-        // Keep the hidden prompt as its identity and timing, not visible text.
-        current = retainCompletionPrompts ? [block] : [];
-      }
-      continue;
-    }
-    if (block.role === "handoff" || block.monoHabit) {
+    if (block.internal && !managed) continue;
+    if (block.role === "handoff") {
       if (current.length > 0) turns.push(current);
       turns.push([block]);
       current = [];
@@ -386,17 +370,6 @@ export function joinedTurnStart(
   return undefined;
 }
 
-/** The hidden turn the app writes when a session a Mono launched finishes. */
-export function isMonoCompletionPrompt(block: Block): boolean {
-  // Older completion deliveries lost their marker but kept the receipt ID.
-  return (
-    !!block.internal &&
-    (!!block.monoSessionCompletion ||
-      (block.role === "user" &&
-        !!block.appRequestId?.startsWith("mono-completion-")))
-  );
-}
-
 /** A message this long after the one before gets its own day and time. */
 const STRETCH_GAP = 60 * 60 * 1000;
 
@@ -407,78 +380,6 @@ export function opensNewStretch(at: number, previousAt?: number): boolean {
     at - previousAt > STRETCH_GAP ||
     new Date(at).toDateString() !== new Date(previousAt).toDateString()
   );
-}
-
-/** When the latest run in a Mono turn started, for measuring the gap after it. */
-export function monoTurnLatestStart(turn: Block[]): number | undefined {
-  let latest = turn[0].monoHabit?.at ?? turn[0].startedAt;
-  for (const block of turn) {
-    if (
-      block.role === "user" &&
-      block.startedAt != null &&
-      (latest == null || block.startedAt > latest)
-    )
-      latest = block.startedAt;
-  }
-  return latest;
-}
-
-/**
- * The Mono chat's turns. A reply the Mono sends on its own, after a session it
- * launched finishes, continues the message above it: one header, one answer,
- * one set of actions. Only a new stretch, which gets its own day and time,
- * starts a fresh message.
- */
-export function groupMonoChatTurns(
-  blocks: Block[],
-  managed = false,
-): Block[][] {
-  const groups: Block[][] = [];
-  for (const turn of groupMonoTurns(blocks, managed)) {
-    const previous = groups[groups.length - 1];
-    const at = turn[0].startedAt;
-    if (
-      previous &&
-      !previous[0].monoHabit &&
-      previous[0].role !== "handoff" &&
-      isMonoCompletionPrompt(turn[0]) &&
-      (at == null || !opensNewStretch(at, monoTurnLatestStart(previous)))
-    ) {
-      previous.push(...turn);
-    } else groups.push(turn);
-  }
-  return groups;
-}
-
-/** The runs a merged Mono turn holds, each opened by its own prompt. */
-export function monoTurnRuns(turn: Block[]): Block[][] {
-  const runs: Block[][] = [];
-  turn.forEach((block, index) => {
-    if (
-      index === 0 ||
-      (isMonoCompletionPrompt(block) && block.startedAt != null)
-    )
-      runs.push([block]);
-    else runs[runs.length - 1].push(block);
-  });
-  return runs;
-}
-
-/** Follow-ups belong to one conversation burst even when work lands between them. */
-export function groupMonoTurns(blocks: Block[], managed = false): Block[][] {
-  const groups: Block[][] = [];
-  for (const turn of groupTranscriptTurns(blocks, managed, true)) {
-    const previous = groups[groups.length - 1];
-    if (
-      previous?.[0].role === "user" &&
-      turn[0].role === "user" &&
-      turn[0].sentAt != null &&
-      turn[0].startedAt == null
-    ) {
-      previous.push(...turn);
-    } else groups.push([...turn]);
-  }
-  return groups;
 }
 
 /**
@@ -535,34 +436,6 @@ export function groupTurnItems(
   });
   flush();
   return items;
-}
-
-/**
- * A Mono's tool calls and reasoning fold into the activity trail. Its prose
- * never does: every reply stays in the chat, live or settled, before the
- * question it waits on as much as after. Cards, notices and interjections keep
- * their own rows.
- */
-export function groupMonoTurnItems(blocks: Block[]): TurnItem[] {
-  // Keep the opening messages together above the work, without mutating
-  // history. A message sent after the Mono first answered stays where it was
-  // sent, so it never jumps above a reply it came after.
-  const firstReply = blocks.findIndex(
-    (block) => isProseBlock(block) && !!block.text.trim(),
-  );
-  const opening = (block: Block, index: number) =>
-    block.role === "user" && (firstReply < 0 || index < firstReply);
-  const items = groupTurnItems([
-    ...blocks.filter((block, index) => opening(block, index)),
-    ...blocks.filter((block, index) => !opening(block, index)),
-  ]);
-  return items.map((item): TurnItem =>
-    item.type === "subagents"
-      ? { type: "activity", blocks: item.blocks }
-      : item.type === "block" && isToolBlock(item.block)
-        ? { type: "activity", blocks: [item.block] }
-        : item,
-  );
 }
 
 /**

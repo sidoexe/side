@@ -1,8 +1,3 @@
-import { ColleagueAvatar } from "../../features/monos/ui/ColleagueAvatar";
-import {
-  MonoThreadMenu,
-  type MonoThreadMenuProps,
-} from "../../features/monos/ui/MonoThreadMenu";
 import {
   CheckCircle,
   ChevronLeft,
@@ -43,11 +38,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { TabLabel } from "../../shared/ui/TabLabel";
 import { WindowControls } from "./WindowControls";
-import {
-  MONO_STATUS_LABEL,
-  type MonoLook,
-  type MonoState,
-} from "../../features/monos/model/mono";
 import { IS_MAC, MOD, SHIFT } from "../../platform/tauri/platform";
 import type { RecentProject } from "../../features/projects/model/recents";
 import {
@@ -98,16 +88,7 @@ type Props = {
   tabs: Tab[];
   activeId: string;
   cwd: string;
-  /**
-   * The Mono filling the main area. It takes the tabs' place, and nothing
-   * project-scoped belongs beside it.
-   */
-  mono?: { look: MonoLook; state: MonoState; threads?: MonoThreadMenuProps };
-  /** Shows or hides the Mono's overview panel beside its chat. */
-  onToggleMonoOverview?: () => void;
-  monoOverviewOpen?: boolean;
-  onOpenMonoSettings?: () => void;
-  /** The full-height Mono panel owns these while it is open. */
+  /** The window controls are drawn by another panel while it is open. */
   hideWindowControls?: boolean;
   projectRailOpen?: boolean;
   sessionSidebarOpen?: boolean;
@@ -633,10 +614,6 @@ function TitleBarComponent({
   tabs,
   activeId,
   cwd,
-  mono,
-  onToggleMonoOverview,
-  monoOverviewOpen = false,
-  onOpenMonoSettings,
   hideWindowControls = false,
   projectRailOpen = true,
   sessionSidebarOpen = true,
@@ -913,44 +890,13 @@ function TitleBarComponent({
   const showProjectButton =
     railClosed && Boolean(onSelectProject) && !showCurrentProject;
   const showTrailingActions =
-    !mono &&
     projectless &&
     railClosed &&
     Boolean(onOpenInbox || onOpenNotes || onOpenSettings);
   const trailingControls =
     showTrailingActions ||
-    (mono && (onToggleMonoOverview || onOpenMonoSettings)) ||
     (!IS_MAC && !hideWindowControls) ? (
       <div className="flex h-full shrink-0 items-stretch">
-        {mono && (onToggleMonoOverview || onOpenMonoSettings) ? (
-          <div className="flex items-center gap-1 px-3">
-            {onToggleMonoOverview ? (
-              <button
-                type="button"
-                aria-pressed={monoOverviewOpen}
-                title={monoOverviewOpen ? "Hide overview" : "Show overview"}
-                data-tauri-drag-region="false"
-                onClick={onToggleMonoOverview}
-                className={`flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] ${
-                  monoOverviewOpen
-                    ? "bg-content/10 text-content"
-                    : "bg-content/5 text-content/70 hover:bg-content/8 hover:text-content"
-                }`}
-              >
-                <DashboardSquare className="size-3.5" strokeWidth={1.75} />
-                Overview
-              </button>
-            ) : null}
-            {onOpenMonoSettings ? (
-              <IconButton
-                label={`${mono.look.name} settings`}
-                onClick={onOpenMonoSettings}
-              >
-                <Settings className="size-3.5" strokeWidth={1.75} />
-              </IconButton>
-            ) : null}
-          </div>
-        ) : null}
         {showTrailingActions ? (
           <div className="flex items-center gap-0.5 px-2">
             {projectless && railClosed && onOpenInbox ? (
@@ -980,15 +926,14 @@ function TitleBarComponent({
   return (
     <header
       className={`flex h-10 shrink-0 select-none items-stretch border-b border-stroke${
-        compactRail && !mono ? " body-glass" : ""
+        compactRail ? " body-glass" : ""
       }`}
       data-tauri-drag-region="deep"
     >
       {compactRail ? (
         <div
           data-compact-title-nav
-          // A full Mono's title bar starts beside the 48px compact rail.
-          className={`flex shrink-0 items-center ${mono ? "pl-[22px]" : "pl-[70px]"}`}
+          className="flex shrink-0 items-center pl-[70px]"
         >
           <TabVisitNav
             canGoBack={canGoBack}
@@ -1044,13 +989,6 @@ function TitleBarComponent({
           showProjectButton ? " border-l border-stroke" : ""
         }`}
       >
-        {mono ? (
-          <MonoTitle
-            look={mono.look}
-            state={mono.state}
-            threads={mono.threads}
-          />
-        ) : (
           <div
             className="relative h-full min-w-0 flex-1 overflow-hidden"
             onWheel={(event) => {
@@ -1146,7 +1084,6 @@ function TitleBarComponent({
               })}
             </div>
           </div>
-        )}
 
         {!IS_MAC ? (
           <div className="flex min-w-0 flex-1 items-center justify-center px-4">
@@ -1173,47 +1110,3 @@ function TitleBarComponent({
 }
 
 export const TitleBar = memo(TitleBarComponent);
-
-/** In a Mono's view the title bar names it and shows its status. */
-function MonoTitle({
-  look,
-  state,
-  threads,
-}: {
-  look: MonoLook;
-  state: MonoState;
-  threads?: MonoThreadMenuProps;
-}) {
-  return (
-    <div
-      data-mono-title
-      className="flex min-w-0 flex-1 items-center gap-2 px-4"
-    >
-      <ColleagueAvatar
-        mascot={look.mascot}
-        color={look.color}
-        avatar={look.avatar}
-        status={state.status}
-        still={state.status === "idle"}
-        className="size-4 shrink-0"
-      />
-      <span className="min-w-0 truncate text-[13px] font-medium text-content">
-        {look.name}
-      </span>
-      <span
-        data-mono-status={state.status}
-        className={`shrink-0 text-[12px] ${
-          state.status === "needs-you" ? "text-accent" : "text-content/45"
-        }`}
-      >
-        {MONO_STATUS_LABEL[state.status]}
-      </span>
-      {threads ? (
-        <>
-          <span className="shrink-0 text-content/20">/</span>
-          <MonoThreadMenu {...threads} />
-        </>
-      ) : null}
-    </div>
-  );
-}
