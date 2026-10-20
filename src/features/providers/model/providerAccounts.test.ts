@@ -197,14 +197,25 @@ describe("provider accounts", () => {
     );
   });
 
-  it("renames but does not remove the provider-owned default account", () => {
+  it("hides a removed default account while another one exists", () => {
+    const work = newProviderAccount("codex", "Work");
+    saveProviderAccount(work);
+    expect(removeProviderAccount("codex", "default")).toBe(true);
+    expect(providerAccounts("codex").map((account) => account.id)).toEqual([
+      work.id,
+    ]);
+    expect(selectedProviderAccountId("codex", "/repo")).toBe(work.id);
+    expect(removeProviderAccount("codex", work.id)).toBe(true);
+    expect(providerAccounts("codex")[0]?.id).toBe(DEFAULT_PROVIDER_ACCOUNT_ID);
+  });
+
+  it("renames the provider-owned default account", () => {
     expect(renameProviderAccount("codex", "default", "  Personal  ")).toEqual({
       id: DEFAULT_PROVIDER_ACCOUNT_ID,
       provider: "codex",
       label: "Personal",
       isDefault: true,
     });
-    expect(removeProviderAccount("codex", "default")).toBe(false);
     expect(providerAccounts("codex")[0]?.label).toBe("Personal");
   });
 

@@ -5,6 +5,8 @@ const ACCOUNTS_KEY = "monocode.providerAccounts.v1";
 const SELECTIONS_KEY = "monocode.providerAccountSelections.v1";
 /** Accounts taken out of Balanced; every other one is in, as on a host. */
 const OUT_OF_BALANCED_KEY = "monocode.providerAccountsOutOfBalanced.v1";
+/** Providers whose default profile was deleted; it stays out while another account exists. */
+const HIDDEN_DEFAULT_KEY = "monocode.providerAccountsHiddenDefault.v1";
 const CHANGE_EVENT = "monocode-provider-accounts-changed";
 
 export const DEFAULT_PROVIDER_ACCOUNT_ID = "default";
@@ -93,6 +95,8 @@ export function providerAccounts(
     seen.add(id);
     return [{ id, provider, label }];
   });
+  // The list is never empty: a deleted default returns once it is the only one.
+  if (defaultHidden(provider) && profiles.length > 0) return profiles;
   return [
     {
       id: DEFAULT_PROVIDER_ACCOUNT_ID,
@@ -102,6 +106,25 @@ export function providerAccounts(
     },
     ...profiles,
   ];
+}
+
+function defaultHidden(provider: ProviderAccountProvider): boolean {
+  const stored = readRecord<Partial<Record<ProviderAccountProvider, boolean>>>(
+    HIDDEN_DEFAULT_KEY,
+  );
+  return stored[provider] === true;
+}
+
+function setDefaultHidden(
+  provider: ProviderAccountProvider,
+  hidden: boolean,
+): void {
+  const stored = readRecord<Partial<Record<ProviderAccountProvider, boolean>>>(
+    HIDDEN_DEFAULT_KEY,
+  );
+  if (hidden) stored[provider] = true;
+  else delete stored[provider];
+  writeJson(HIDDEN_DEFAULT_KEY, stored);
 }
 
 export function newProviderAccount(
@@ -204,16 +227,18 @@ export function removeProviderAccount(
   provider: ProviderAccountProvider,
   accountId: string,
 ): boolean {
-  if (accountId === DEFAULT_PROVIDER_ACCOUNT_ID || !validAccountId(accountId)) {
-    return false;
-  }
+  if (!validAccountId(accountId)) return false;
   const accounts = providerAccounts(provider);
   if (!accounts.some((account) => account.id === accountId)) return false;
-  const stored = readRecord<StoredAccounts>(ACCOUNTS_KEY);
-  stored[provider] = serializeProviderAccounts(
-    accounts.filter((account) => account.id !== accountId),
-  );
-  writeJson(ACCOUNTS_KEY, stored);
+  if (accountId === DEFAULT_PROVIDER_ACCOUNT_ID) {
+    setDefaultHidden(provider, true);
+  } else {
+    const stored = readRecord<StoredAccounts>(ACCOUNTS_KEY);
+    stored[provider] = serializeProviderAccounts(
+      accounts.filter((account) => account.id !== accountId),
+    );
+    writeJson(ACCOUNTS_KEY, stored);
+  }
 
   const selections = readRecord<StoredSelections>(SELECTIONS_KEY);
   for (const [key, selection] of Object.entries(selections)) {
@@ -261,9 +286,10 @@ export function selectedProviderAccountId(
 ): string {
   const selections = readRecord<StoredSelections>(SELECTIONS_KEY);
   const id = selections[selectionKey(project)]?.[provider];
-  return providerAccounts(provider).some((account) => account.id === id)
+  const accounts = providerAccounts(provider);
+  return accounts.some((account) => account.id === id)
     ? id!
-    : DEFAULT_PROVIDER_ACCOUNT_ID;
+    : (accounts[0]?.id ?? DEFAULT_PROVIDER_ACCOUNT_ID);
 }
 
 export function selectProviderAccount(

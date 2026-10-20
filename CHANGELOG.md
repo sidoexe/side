@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The default account can be removed from the list.** A signed-out default profile, such as a deleted personal account, stayed in Settings → Providers → Accounts with no way to take it out. Removing it now hides it from sIDE and keeps the CLI's own folder, shared with the other profiles; the next account is used instead.
 - **Opus shows in the model picker again.** The list of models was read from the default Claude profile alone, and a profile that is signed out reports every Opus as disabled, so the picker dropped them. It now gathers the models of all your accounts.
 - **The Board's Working column shows every running session.** A session running on a host and a Colleague's own chat while it works were missing from it; the first opens from the board as a host session does, the second opens that Colleague.
 - **Projects given to a Colleague on another desktop or on the host now stay given.** A desktop read the host's copy of each Colleague as changed by itself, because the host returns it with its fields in another order, so it put its own copy back every 15 seconds and undid edits made anywhere else.

@@ -3456,9 +3456,11 @@ function ProviderAccountsSettings() {
   };
 
   const removeAccount = async (account: ProviderAccount) => {
-    if (account.isDefault || working) return;
+    if (working) return;
     const confirmed = await ask(
-      `Remove “${account.label}”? Its stored credentials will be deleted and any running turns for this account will stop. Existing conversations stay in history, but cannot continue until you switch accounts.`,
+      account.isDefault
+        ? `Remove “${account.label}” from sIDE? It is the ${HARNESS_TITLE[account.provider]} CLI's own profile, so its folder on this Mac, with its settings and history, is kept; sIDE just stops listing it.`
+        : `Remove “${account.label}”? Its stored credentials will be deleted and any running turns for this account will stop. Existing conversations stay in history, but cannot continue until you switch accounts.`,
       {
         title: `Remove ${HARNESS_TITLE[account.provider]} account`,
         kind: "warning",
@@ -3471,7 +3473,11 @@ function ProviderAccountsSettings() {
     setWorking(key);
     setError(null);
     try {
-      await removeProviderAccountCredentials(account.provider, account.id);
+      // The default profile is the CLI's own folder, shared with every other
+      // profile that links to it: it is hidden, never deleted.
+      if (!account.isDefault) {
+        await removeProviderAccountCredentials(account.provider, account.id);
+      }
       removeProviderAccount(account.provider, account.id);
       clearCachedRateLimits(account.provider, account.id);
       if (
@@ -3646,7 +3652,7 @@ function ProviderAccountsSettings() {
                       >
                         <Pencil className="size-3.5" strokeWidth={1.75} />
                       </button>
-                      {!account.isDefault ? (
+                      {!account.isDefault || supportsAccountProfiles(provider) ? (
                         <button
                           type="button"
                           disabled={Boolean(working)}
