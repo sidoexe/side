@@ -56,11 +56,11 @@ function render(board: Partial<SessionBoard> = {}) {
 const column = (label: string) =>
   container.querySelector(`[data-board-column="${label}"]`)!;
 
-it("lays every session out in To review, Working and Checked", () => {
+it("lays every session out in Working and To review", () => {
   const board = render({
     review: [
       agent("ask", { needsApproval: true }),
-      agent("done", { done: true, colleague: { id: "m", name: "CTO" } }),
+      agent("done", { done: true }),
     ],
     working: [agent("run")],
     checked: [{ id: "old", cwd: "/code/app", title: "Old task", harness: "claude" }],
@@ -71,9 +71,6 @@ it("lays every session out in To review, Working and Checked", () => {
     );
   expect(ids("To review", "data-live-agent-card")).toEqual(["ask", "done"]);
   expect(ids("Working", "data-live-agent-card")).toEqual(["run"]);
-  expect(ids("Checked", "data-checked-session")).toEqual(["old"]);
-  // A colleague's session says who started it.
-  expect(column("To review").textContent).toContain("by CTO");
 
   act(() =>
     (column("Working").querySelector("[data-live-agent-card]") as HTMLElement).click(),

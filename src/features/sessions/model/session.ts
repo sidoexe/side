@@ -255,8 +255,6 @@ export type Attachment = {
 
 export type QueuedMessage = {
   id: string;
-  /** User bubble already shown optimistically in a Mono's conversation. */
-  blockId?: string;
   text: string;
   attachments: Attachment[];
   noteCard?: NoteComposerCard;
@@ -445,7 +443,7 @@ export type Session = {
   usageLimit?: UsageLimit;
   /**
    * Lives only in memory: never saved, never listed with the project's chats.
-   * A Mono's habit runs are, and disappear when the run ends.
+   * A hidden run is, and disappears when it ends.
    */
   ephemeral?: boolean;
   /** Provider-side conversation id (Cursor ACP session id). */

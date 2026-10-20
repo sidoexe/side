@@ -38,7 +38,7 @@ type Props = {
   name: string;
   /**
    * Nothing falls back to the global background, and a new image starts as a
-   * dimmed Haze on every chat. A Colleague's chat is like this.
+   * dimmed Haze on every chat.
    */
   standalone?: boolean;
   onClose: () => void;

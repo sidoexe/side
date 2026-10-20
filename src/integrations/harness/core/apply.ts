@@ -177,11 +177,7 @@ export function applyHarnessEvent(
     case "turn.started": {
       const index = lastMatchingBlock(
         session.blocks,
-        (block) =>
-          block.role === "user" &&
-          !session.queuedMessages?.some(
-            (message) => message.blockId === block.id,
-          ),
+        (block) => block.role === "user",
       );
       if (index < 0) return session;
       const block = session.blocks[index];
@@ -749,11 +745,10 @@ function upsertKeyedStatus(
   const trimmed = text.trim();
   const turnStart = lastMatchingBlock(
     session.blocks,
-    // Mono outbox bubbles and mid-turn follow-ups do not start a new turn.
+    // Mid-turn follow-ups do not start a new turn.
     (block) =>
       block.role === "user" &&
-      (block.sentAt == null || block.startedAt != null) &&
-      !session.queuedMessages?.some((message) => message.blockId === block.id),
+      (block.sentAt == null || block.startedAt != null),
   );
   const index = lastMatchingBlock(
     session.blocks,

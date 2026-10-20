@@ -197,7 +197,7 @@ function RemoteAccountSlot({ sessionId }: { sessionId: string }) {
  * and anywhere else a conversation shows how much of its plan is left.
  * `accountPicker` off keeps the chips to usage alone, for a conversation
  * whose account is not switched from here. `variant` `composer` matches
- * the tool buttons under a Mono's composer instead of the footer.
+ * the tool buttons under a composer instead of the footer.
  */
 export function UsageChips({
   providers,

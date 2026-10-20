@@ -28,15 +28,6 @@ describe("resolveAppShortcut", () => {
     });
   });
 
-  it("toggles the colleague with Mod+I", () => {
-    expect(resolveAppShortcut(key({ key: "i", metaKey: true }))).toBe(
-      "App: Toggle Colleague",
-    );
-    expect(
-      resolveAppShortcut(key({ key: "I", metaKey: true, shiftKey: true })),
-    ).toBeNull();
-  });
-
   it("resolves the default app chords", () => {
     expect(resolveAppShortcut(key({ key: "k", metaKey: true }))).toBe(
       "App: Search",

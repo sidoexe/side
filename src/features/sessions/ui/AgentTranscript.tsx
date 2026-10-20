@@ -442,8 +442,9 @@ function AgentTranscriptComponent({
     (el: HTMLDivElement | null) => {
       scroller.current = el;
       setScrollerEl(el);
-      // The Mono already has overscroll-none. Prefer native scrolling where
-      // supported so its first wheel event need not wait on a blocking listener.
+      // The bottom-aligned chat already has overscroll-none. Prefer native
+      // scrolling where supported so its first wheel event need not wait on a
+      // blocking listener.
       const nativeOverscroll =
         bottomAligned && CSS.supports?.("overscroll-behavior", "none");
       lockOverscroll(nativeOverscroll ? null : el);

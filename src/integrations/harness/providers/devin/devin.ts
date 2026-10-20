@@ -296,7 +296,6 @@ export async function startDevinAcp(
     cwd,
     undefined,
     "devin",
-    undefined,
     options.askBeforeEdits,
   );
   let init: unknown;

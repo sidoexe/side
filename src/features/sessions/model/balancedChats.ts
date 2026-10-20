@@ -2,8 +2,7 @@ const BALANCED_CHATS_KEY = "monocode.balancedChats.v1";
 const CHANGE_EVENT = "monocode-balanced-chats-changed";
 
 /**
- * Chats set to Balanced, by session id. A Colleague keeps the same choice
- * on itself; a chat keeps it here, beside its stored conversation.
+ * Chats set to Balanced, by session id. It is kept here, beside the stored conversation.
  */
 export function balancedChatIds(): string[] {
   try {

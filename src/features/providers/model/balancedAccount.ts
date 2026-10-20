@@ -1,6 +1,6 @@
 /**
- * The one rule every Balanced choice follows, on the desktop (Colleagues and
- * chats) and on a host (remote chats): which account should take the next
+ * The one rule every Balanced choice follows, on the desktop (chats)
+ * and on a host (remote chats): which account should take the next
  * turn. Pure and dependency-free so the host bundles it as is.
  */
 

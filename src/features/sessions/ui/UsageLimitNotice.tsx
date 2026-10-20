@@ -11,7 +11,6 @@ export function UsageLimitNotice({
   onResume,
   onResumeAtReset,
   onDismiss,
-  variant = "composer",
   providerName,
   modelPicker,
 }: {
@@ -19,7 +18,6 @@ export function UsageLimitNotice({
   onResume?: () => void;
   onResumeAtReset?: (enabled: boolean) => void;
   onDismiss?: () => void;
-  variant?: "composer" | "mono";
   providerName?: string;
   modelPicker?: ReactNode;
 }) {
@@ -34,20 +32,12 @@ export function UsageLimitNotice({
 
   return (
     <div
-      className={
-        variant === "mono"
-          ? "mx-1.5 mb-2 rounded-lg border border-amber-400/20 bg-amber-400/6 px-3 py-2.5 text-[12px] text-content/60"
-          : "px-2 text-content/55"
-      }
+      className="px-2 text-content/55"
       data-usage-limit
       role="status"
     >
       <div
-        className={
-          variant === "mono"
-            ? "flex items-center gap-2"
-            : "relative z-0 flex h-8 items-center gap-2 rounded-t-[10px] border border-b-0 border-amber-400/25 bg-amber-400/10 px-2 text-[12px]"
-        }
+        className="relative z-0 flex h-8 items-center gap-2 rounded-t-[10px] border border-b-0 border-amber-400/25 bg-amber-400/10 px-2 text-[12px]"
       >
         <Gauge className="size-3.5 shrink-0 text-amber-400" />
         <span className="shrink-0 text-content/85">
@@ -55,24 +45,20 @@ export function UsageLimitNotice({
             ? `${providerName} usage limit reached`
             : "Usage limit reached"}
         </span>
-        {variant === "mono" ? null : (
-          <span className="min-w-0 flex-1 truncate">
-            {limit.resetsAt == null
-              ? ""
-              : waiting
-                ? `Resets ${formatUsageLimitReset(limit.resetsAt, now)}`
-                : "Limit has reset"}
-          </span>
-        )}
-        {variant === "mono" ? null : modelPicker}
-        {variant === "mono" ? null : (
-          <ResumeControls
-            limit={limit}
-            waiting={waiting}
-            onResume={onResume}
-            onResumeAtReset={onResumeAtReset}
-          />
-        )}
+        <span className="min-w-0 flex-1 truncate">
+          {limit.resetsAt == null
+            ? ""
+            : waiting
+              ? `Resets ${formatUsageLimitReset(limit.resetsAt, now)}`
+              : "Limit has reset"}
+        </span>
+        {modelPicker}
+        <ResumeControls
+          limit={limit}
+          waiting={waiting}
+          onResume={onResume}
+          onResumeAtReset={onResumeAtReset}
+        />
         {onDismiss ? (
           <button
             type="button"
@@ -85,30 +71,6 @@ export function UsageLimitNotice({
           </button>
         ) : null}
       </div>
-      {variant === "mono" ? (
-        <div className="pl-5.5">
-          <p className="mt-1 leading-relaxed">
-            Your conversation is saved. Choose another model or account to keep
-            going.
-          </p>
-          {limit.resetsAt != null ? (
-            <p className="mt-1 text-content/45">
-              {waiting
-                ? `Resets ${formatUsageLimitReset(limit.resetsAt, now)}`
-                : "Limit has reset"}
-            </p>
-          ) : null}
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            {modelPicker}
-            <ResumeControls
-              limit={limit}
-              waiting={waiting}
-              onResume={onResume}
-              onResumeAtReset={onResumeAtReset}
-            />
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

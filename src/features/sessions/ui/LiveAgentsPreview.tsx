@@ -170,8 +170,7 @@ export function LiveAgentCard({
         ? "Done"
         : agent.activity;
   const live = !agent.needsApproval && !agent.done;
-  const by = agent.colleague ? `by ${agent.colleague.name}` : "";
-  const title = [agent.title, project, by, activity, elapsed]
+  const title = [agent.title, project, activity, elapsed]
     .filter(Boolean)
     .join("\n");
 
@@ -181,7 +180,7 @@ export function LiveAgentCard({
     <button
       type="button"
       title={title}
-      aria-label={[agent.title, project, by, activity, elapsed]
+      aria-label={[agent.title, project, activity, elapsed]
         .filter(Boolean)
         .join(", ")}
       aria-current={selected ? "true" : undefined}
@@ -232,14 +231,6 @@ export function LiveAgentCard({
       <span className="mt-1 flex min-w-0 items-center gap-1.5 pl-4 text-[11px] leading-tight text-content/45">
         <HarnessIcon harness={agent.harness} className="size-3 shrink-0" />
         <span className="min-w-0 flex-1 truncate">{project}</span>
-        {by ? (
-          <span
-            className="min-w-0 max-w-[50%] shrink truncate"
-            data-live-agent-colleague={agent.colleague?.id}
-          >
-            {by}
-          </span>
-        ) : null}
         {elapsed ? (
           <span className="shrink-0 tabular-nums">{elapsed}</span>
         ) : null}

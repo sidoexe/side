@@ -35,7 +35,6 @@ export type TextPromptInput = {
   modelSettings?: Record<string, string>;
   /** Codex defaults to unsaved threads; false allows resumable side questions. */
   ephemeral?: boolean;
-  codexStore?: "mono";
   threadId?: string;
   onThreadId?: (threadId: string) => void;
   intent?: TurnIntent;

@@ -51,24 +51,6 @@ describe("restoring a session whose repair cannot be persisted", () => {
     expect(repaired?.[1].session.sidebarHidden).toBe(true);
   });
 
-  it("restores the turn's launched session links", async () => {
-    const record = codexRecord();
-    const launch = {
-      sessionId: "app-review",
-      cwd: "/repo",
-      title: "Review",
-      harness: "codex" as const,
-      model: "gpt-6",
-    };
-    record.blocks[0].monoSpawnedSessions = [launch];
-    invoke.mockImplementation((cmd: string) =>
-      Promise.resolve(cmd === "session_get" ? record : null),
-    );
-    expect((await getSession("s1"))?.blocks[0].monoSpawnedSessions).toEqual([
-      launch,
-    ]);
-  });
-
   it("still returns the repaired session when the write fails", async () => {
     invoke.mockImplementation((cmd: string) => {
       if (cmd === "session_get") return Promise.resolve(codexRecord());

@@ -198,7 +198,7 @@ type ProjectPickerPopoverProps = Pick<
   emptyMessage?: string;
 };
 
-/** Shared searchable project menu for switching projects or adding them to a Mono. */
+/** Shared searchable project menu for switching projects. */
 export function ProjectPickerPopover({
   anchor,
   projects,

@@ -14,7 +14,6 @@ import {
   type RemoteMachine,
   type SshSetup,
 } from "../model/protocol";
-import { HomeMachineSetting } from "./HomeMachineSetting";
 import { LinkedText } from "./LinkedText";
 import { hostIsOlder } from "../model/hostVersion";
 import { readAppVersion } from "../../../app/model/updater";
@@ -271,7 +270,6 @@ export function ConnectionsSettings() {
           </button>
         )}
       </div>
-      {machines.length > 0 ? <HomeMachineSetting machines={machines} /> : null}
       {machines.length > 0 ? (
         <div className="divide-y divide-stroke overflow-hidden rounded-xl border border-stroke">
           {machines.map((machine) => (

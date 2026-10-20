@@ -13,7 +13,7 @@ function sources(dir: string): string[] {
 }
 
 // A host method the desktop calls but its Rust bridge does not list fails
-// silently: `employees.setAccounts` once never reached the host that way.
+// silently: a method missing from the list never reached the host.
 it("lets the desktop's bridge pass every host method the app calls", () => {
   const rust = readFileSync(join(root, "src-tauri/src/remote.rs"), "utf8");
   const listed = rust.slice(rust.indexOf("fn supported_remote_method"));

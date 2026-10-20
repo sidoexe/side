@@ -13,7 +13,6 @@ import {
 import {
   killChild,
   resolveCodexBinary,
-  restoreMonoCodexAgentState,
   spawnChild,
   unwatchChild,
   watchChild,
@@ -48,7 +47,6 @@ import {
 } from "./codexQuestions";
 import { codexMcpConfirmation } from "./codexElicitation";
 import { snapshotRemainder } from "../../core/streamText";
-import { prepareCodexMonoContext } from "./codexStore";
 import type {
   ApprovalDecision,
   CompactContextInput,
@@ -93,7 +91,6 @@ type Live = {
   /** Thread-level network policy used when this app-server opened the thread. */
   controlsAgents: boolean;
   ephemeral: boolean;
-  codexStore?: "mono";
   runtimeMode: RuntimeMode;
   planning: boolean;
   onEvent: (event: HarnessEvent) => void;
@@ -142,7 +139,6 @@ type Resume = {
   cwd: string;
   providerAccountId?: string;
   ephemeral?: boolean;
-  codexStore?: "mono";
 };
 
 const liveByThread = new Map<string, Live>();
@@ -473,16 +469,6 @@ export function bindCodexSession(
   });
 }
 
-export async function migrateMonoCodexSession(input: {
-  sessionId: string;
-  threadId: string;
-  cwd: string;
-  providerAccountId?: string;
-}): Promise<void> {
-  const { path } = await resolveCodexBinaryImpl();
-  await prepareCodexMonoContext({ ...input, path, migrationOnly: true });
-}
-
 /** Ephemeral context exists only while its app-server is alive. */
 export function hasLiveCodexSession(
   sessionId: string,
@@ -504,10 +490,6 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     existing?.ephemeral ??
     resumeByThread.get(input.sessionId)?.ephemeral ??
     false;
-  const codexStore =
-    input.codexStore ??
-    existing?.codexStore ??
-    resumeByThread.get(input.sessionId)?.codexStore;
   if (
     existing &&
     existing.cwd === input.cwd &&
@@ -516,8 +498,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       input.providerAccountId,
     ) &&
     existing.controlsAgents === controlsAgents &&
-    existing.ephemeral === ephemeral &&
-    existing.codexStore === codexStore
+    existing.ephemeral === ephemeral
   ) {
     existing.onEvent = input.onEvent;
     return existing;
@@ -553,17 +534,6 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
   }
 
   const { path } = await resolveCodexBinaryImpl();
-  const store =
-    codexStore === "mono"
-      ? await prepareCodexMonoContext({
-          sessionId: input.sessionId,
-          path,
-          cwd: input.cwd,
-          providerAccountId: input.providerAccountId,
-          threadId: canResume ? resume?.threadId : undefined,
-        })
-      : undefined;
-  const storeConfig = store?.config;
   const liveRef: { current: Live | null } = { current: null };
 
   const rpc = new JsonRpcClient(
@@ -657,7 +627,6 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       id: input.providerAccountId ?? "default",
     },
     "codex",
-    codexStore,
   );
 
   try {
@@ -674,12 +643,6 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       },
     });
     await rpc.notify("initialized", undefined);
-    if (store?.hasThread && canResume && resume) {
-      await restoreMonoCodexAgentState(
-        input.providerAccountId,
-        resume.threadId,
-      );
-    }
 
     const model = nativeModelId(input.model);
     const serviceTier = input.modelSettings?.serviceTier;
@@ -702,23 +665,11 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
           {
             threadId: resume.threadId,
             ...params,
-            ...(storeConfig
-              ? {
-                  config: {
-                    ...storeConfig,
-                    ...(params.config as Record<string, unknown> | undefined),
-                  },
-                }
-              : {}),
           },
         );
         threadId = opened.thread?.id ?? resume.threadId;
         didResume = true;
       } catch (error) {
-        if (store?.hasThread)
-          throw new Error(
-            "The saved Colleague Codex context could not be resumed. Retry to keep its saved context.",
-          );
         if (!isRecoverableThreadResumeError(error)) throw error;
         threadId = undefined;
       }
@@ -736,14 +687,6 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         "thread/start",
         {
           ...params,
-          ...(storeConfig
-            ? {
-                config: {
-                  ...storeConfig,
-                  ...(params.config as Record<string, unknown> | undefined),
-                },
-              }
-            : {}),
           ...(ephemeral ? { ephemeral: true } : {}),
         },
       );
@@ -762,7 +705,6 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       providerAccountId: input.providerAccountId,
       controlsAgents,
       ephemeral,
-      codexStore,
       runtimeMode: input.runtimeMode,
       planning: input.intent === "plan",
       onEvent: input.onEvent,
@@ -797,7 +739,6 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       cwd: input.cwd,
       providerAccountId: input.providerAccountId,
       ephemeral,
-      codexStore,
     });
     live.onEvent({
       type: "session.providerBound",

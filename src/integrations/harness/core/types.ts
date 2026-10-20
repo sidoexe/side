@@ -173,8 +173,6 @@ export type HarnessSessionInput = {
   runtimeMode: RuntimeMode;
   /** Keep provider context in memory; sIDE owns the saved transcript. */
   ephemeral?: boolean;
-  /** Persist Codex context in sIDE's private Mono store. */
-  codexStore?: "mono";
   intent?: TurnIntent;
   /**
    * This session drives sIDE's control CLI, which reaches the app over

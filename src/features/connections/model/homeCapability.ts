@@ -1,5 +1,4 @@
-import { loadRemoteMachines, remoteRequest } from "./connections";
-import { resolveHomeMachine } from "./homeMachine";
+import { remoteRequest } from "./connections";
 import type { HostDescriptor, RemoteMachine } from "./protocol";
 
 const described = new Map<string, { at: number; capabilities: Promise<string[]> }>();
@@ -28,13 +27,4 @@ export function machineCapabilities(
 /** Asks a machine again, after its host was updated. */
 export function forgetCapabilities(machineId: string): void {
   described.delete(machineId);
-}
-
-/** The home machine, when its host advertises `capability`. An unreachable
- * host rejects rather than reading as absent, so callers never fall back to
- * this computer's own copy while the shared one is merely out of reach. */
-export async function homeWith(capability: string): Promise<RemoteMachine | undefined> {
-  const home = resolveHomeMachine(await loadRemoteMachines());
-  if (!home) return undefined;
-  return (await machineCapabilities(home)).includes(capability) ? home : undefined;
 }

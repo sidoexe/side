@@ -22,7 +22,7 @@ type Props = {
 };
 
 /**
- * Every session on one board, yours and your colleagues': what works
+ * Every session on one board: what works
  * and what waits on you, left to right as work moves.
  */
 export function BoardView({

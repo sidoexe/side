@@ -51,7 +51,7 @@ export async function acceptQuickLaunch(
     ) => SubmissionAcceptance;
   },
   placement?: { direction: SplitDir; besideSessionId: string },
-  /** Off for a session followed elsewhere, such as from the Mono that ran it. */
+  /** Off for a session followed elsewhere, such as one opened in a pane beside the chat. */
   openTab = true,
 ): Promise<void> {
   // Rehydrate image previews in this webview; the floating panel sends paths.

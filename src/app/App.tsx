@@ -615,7 +615,6 @@ import {
 } from "../features/connections/model/remoteProjects";
 import type { HostSession } from "../features/connections/model/protocol";
 import { AddRemoteProjectDialog } from "../features/connections/ui/AddRemoteProjectDialog";
-import { useHomeMachine } from "./hooks/useHomeMachine";
 import { useHostAutoUpdate } from "./hooks/useHostAutoUpdate";
 import { useRemoteRailSync } from "./hooks/useRemoteRailSync";
 import { useWebAppsSync } from "./hooks/useWebAppsSync";
@@ -826,8 +825,6 @@ function withPlanStatus(
 function lastAssistantTextInTurn(session: Session): string {
   for (let index = session.blocks.length - 1; index >= 0; index -= 1) {
     const block = session.blocks[index];
-    if (session.queuedMessages?.some((message) => message.blockId === block.id))
-      continue;
     if (block.role === "user") return "";
     if (block.role === "assistant" && block.text.trim()) return block.text;
   }
@@ -1211,7 +1208,6 @@ function Workspace({
 
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
-  const homeMachine = useHomeMachine();
   useHostAutoUpdate();
   useRemoteRailSync();
   useWebAppsSync();
@@ -12060,7 +12056,6 @@ function Workspace({
           ) : null}
           {remoteProjectDialogOpen ? (
             <AddRemoteProjectDialog
-              initialMachineId={homeMachine?.id}
               onCancel={() => setRemoteProjectDialogOpen(false)}
               onOpen={(key) => {
                 setRemoteProjectDialogOpen(false);

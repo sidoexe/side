@@ -118,7 +118,7 @@ function RowTarget({
 }
 
 /**
- * One account in any account menu, a chat's or a Colleague's: its name, a
+ * One account in any account menu, a chat's: its name, a
  * Ready / Running low / Exhausted label, its usage windows, and a way to
  * sign it in again once its sign-in expired. `removed` stands for an
  * account the conversation still names but that no longer exists.

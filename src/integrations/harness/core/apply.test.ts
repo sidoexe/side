@@ -5,10 +5,6 @@ import {
 } from "../../../features/sessions/model/session";
 import { planTurnKey } from "../../../features/sessions/model/plan";
 import { sanitizeSessionForPersist } from "../../../features/sessions/data/sessionStore";
-import {
-  acknowledgeMonoMessage,
-  enqueueMonoMessage,
-} from "../../../features/monos/model/monoMessaging";
 import { previewFromTool } from "../providers/claude/claudeProtocol";
 import {
   appendUser,
@@ -717,71 +713,6 @@ describe("status blocks", () => {
       text: " ",
     });
     expect(session.blocks.map((block) => block.role)).toEqual(["user"]);
-  });
-
-  it("keeps the same keyed status across pending and accepted Employee follow-ups", () => {
-    let session = appendUser(newSession("pi", "/tmp"), "go");
-    session = applyHarnessEvent(session, {
-      type: "status",
-      key: "caveman",
-      text: "Working",
-    });
-    const id = session.blocks[1].id;
-    session = enqueueMonoMessage(session, {
-      id: "follow-up",
-      text: "Check the fallback too",
-      attachments: [],
-    });
-    session = applyHarnessEvent(session, {
-      type: "status",
-      key: "caveman",
-      text: "Still working",
-    });
-    expect(session.blocks.filter((block) => block.statusKey === "caveman"))
-      .toEqual([expect.objectContaining({ id, text: "Still working" })]);
-
-    session = acknowledgeMonoMessage(session, session.queuedMessages![0], {
-      mode: "follow-up",
-    });
-    session = applyHarnessEvent(session, {
-      type: "status",
-      key: "caveman",
-      text: "Checking the fallback",
-    });
-    expect(session.blocks.filter((block) => block.statusKey === "caveman"))
-      .toEqual([expect.objectContaining({ id, text: "Checking the fallback" })]);
-
-    session = applyHarnessEvent(session, {
-      type: "status",
-      key: "caveman",
-      text: "",
-    });
-    expect(session.blocks.some((block) => block.statusKey === "caveman"))
-      .toBe(false);
-  });
-
-  it("starts a new keyed status after a queued Employee message starts a new turn", () => {
-    let session = appendUser(newSession("pi", "/tmp"), "go");
-    session = applyHarnessEvent(session, {
-      type: "status",
-      key: "caveman",
-      text: "First turn",
-    });
-    session = enqueueMonoMessage(stopStreaming(session), {
-      id: "next-turn",
-      text: "again",
-      attachments: [],
-    });
-    session = acknowledgeMonoMessage(session, session.queuedMessages![0], {
-      mode: "new-turn",
-    });
-    session = applyHarnessEvent(session, {
-      type: "status",
-      key: "caveman",
-      text: "Next turn",
-    });
-    expect(session.blocks.filter((block) => block.statusKey === "caveman")
-      .map((block) => block.text)).toEqual(["First turn", "Next turn"]);
   });
 
   it("keeps one row per status key", () => {

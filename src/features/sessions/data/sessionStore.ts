@@ -246,10 +246,6 @@ function sanitizeQueuedMessages(value: unknown): QueuedMessage[] {
     return [
       {
         id: message.id,
-        ...(typeof message.blockId === "string" &&
-        isPersistableId(message.blockId)
-          ? { blockId: message.blockId }
-          : {}),
         text: message.text,
         attachments,
         ...(noteCard ? { noteCard } : {}),
