@@ -173,8 +173,6 @@ struct Block: Decodable, Identifiable, Equatable {
     let notice: String?
     /// An image the agent generated; it stays on the machine that ran it.
     let image: GeneratedImage?
-    /// A Colleague's emoji reaction to this message (`MonoReaction`).
-    var monoReaction: String?
 
     struct TaskList: Decodable, Equatable {
         struct Item: Decodable, Equatable {
@@ -347,129 +345,6 @@ let runtimeModes: [(id: String, label: String)] = [
     ("auto", "Auto"),
     ("full-access", "Full access"),
 ]
-
-/// A colleague (src/features/monos/model/mono.ts), as the host keeps them.
-struct Mono: Decodable, Identifiable, Hashable {
-    struct Avatar: Decodable, Hashable {
-        let kind: String
-        let value: String
-    }
-    let id: String
-    let sessionId: String?
-    let name: String?
-    let mascot: String
-    let color: String
-    let avatar: Avatar?
-    let projects: [String]
-    /// Every conversation it has, each on its own topic; `sessionId` is the open one.
-    let threads: [Thread]?
-
-    struct Thread: Decodable, Hashable, Identifiable {
-        let id: String
-        let title: String?
-        let createdAt: Double?
-    }
-
-    /// Its threads, newest first; one from before threads is its only one.
-    var allThreads: [Thread] {
-        if let threads, !threads.isEmpty { return threads.sorted { ($0.createdAt ?? 0) > ($1.createdAt ?? 0) } }
-        return sessionId.map { [Thread(id: $0, title: nil, createdAt: nil)] } ?? []
-    }
-
-    var displayName: String { name?.isEmpty == false ? name! : mascot.prefix(1).uppercased() + mascot.dropFirst() }
-}
-
-struct MonoRoster: Decodable {
-    let roster: [Mono]
-}
-
-struct MonoFiles: Decodable {
-    let soul: String?
-    let memory: String
-}
-
-/// A message written to a colleague, waiting on the host for a desktop.
-struct InboxMessage: Decodable, Identifiable, Equatable {
-    let id: String
-    let text: String
-    /// A request to move the colleague to this account, not a message.
-    let account: String?
-    /// The conversation it goes to, or `new`; the open one when absent.
-    let thread: String?
-    /// `stop` interrupts the turn; `steer` goes into it at once.
-    let control: String?
-    let at: Double
-    let takenBy: String?
-}
-
-/// The accounts the desktop running the colleagues can move them to, and
-/// the one each colleague is on.
-struct ColleagueAccounts: Decodable, Equatable {
-    struct Window: Decodable, Equatable {
-        /// Percent of the window used, 0 to 100.
-        let used: Double
-        /// When it starts over, in Unix milliseconds, if known.
-        let resetsAt: Double?
-    }
-    struct Usage: Decodable, Equatable {
-        let session: Window?
-        let weekly: Window?
-        /// Optional so one missing field cannot fail the whole sheet.
-        let updatedAt: Double?
-    }
-    struct Account: Decodable, Identifiable, Equatable {
-        let provider: String
-        let id: String
-        let label: String
-        let usage: Usage?
-        /// Why its usage could not be read, such as an expired sign-in.
-        let error: String?
-        /// Balanced may use it; nil from desktops that use every account.
-        let balanced: Bool?
-    }
-    struct Current: Decodable, Equatable {
-        let provider: String
-        let account: String
-        /// Keeps to whichever account has the most room, moving on at a limit.
-        let balanced: Bool?
-    }
-    /// A colleague's state on its desktop.
-    struct State: Decodable, Equatable {
-        /// `working`, `needs-you` or `idle`.
-        let status: String
-        let activity: String?
-    }
-    /// A session a colleague started (src/features/monos/model/colleagueWork.ts).
-    struct WorkItem: Decodable, Identifiable, Equatable {
-        let sessionId: String
-        let title: String
-        let cwd: String
-        let harness: String
-        /// `working`, `input`, `done`, `failed` or `stopped`.
-        let state: String
-        /// What it does, or the call it waits for.
-        let activity: String?
-        let at: Double
-        /// When it stopped working, in Unix milliseconds.
-        let settledAt: Double?
-        /// Settled and not yet checked on the desktop; nil from older desktops.
-        let toReview: Bool?
-        var id: String { sessionId }
-        var active: Bool { state == "working" || state == "input" }
-    }
-    let accounts: [Account]
-    let current: [String: Current]
-    let status: [String: State]?
-    /// The state of each thread its desktop has open, by its id.
-    let threads: [String: State]?
-    /// Each colleague's sessions that run, wait or recently ended; nil from
-    /// desktops and hosts before it.
-    let work: [String: [WorkItem]]?
-}
-
-struct ColleagueTranscript: Decodable {
-    let blocks: [Block]
-}
 
 /// The desktop's rail: which projects it lists, in its order.
 struct RailState: Decodable, Equatable {

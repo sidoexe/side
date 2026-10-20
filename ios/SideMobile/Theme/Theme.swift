@@ -71,32 +71,16 @@ extension Color {
         let m = lightness - c / 2
         self.init(red: r + m, green: g + m, blue: b + m)
     }
-
-    /// `hsl(211 92% 62%)` or `#rrggbb`, as a Mono's colour is stored.
-    init?(css: String) {
-        let value = css.trimmingCharacters(in: .whitespaces)
-        if value.hasPrefix("#"), value.count == 7, let hex = UInt32(value.dropFirst(), radix: 16) {
-            self.init(hex: hex)
-            return
-        }
-        guard let match = value.firstMatch(of: #/hsl\(\s*([\d.]+)[\s,]+([\d.]+)%[\s,]+([\d.]+)%\s*\)/#),
-              let h = Double(match.1), let s = Double(match.2), let l = Double(match.3) else { return nil }
-        self.init(hue: h / 360, saturation: s / 100, lightness: l / 100)
-    }
 }
 
 /// The desktop's 8×8 pixel mascot for a project, in its colour; its two
 /// frames alternate while the project has a turn running.
 struct MascotView: View {
     let seed: String
-    /// A mascot picked by name (a colleague's), instead of hashed from the seed.
-    var name: String?
-    var color: Color?
     var active = false
     var size: CGFloat = 14
 
     private var mascot: (name: String, rest: [String], talk: [String]) {
-        if let name, let chosen = projectMascots.first(where: { $0.name == name }) { return chosen }
         var hash: UInt32 = 0
         for unit in seed.utf16 { hash = hash &* 131 &+ UInt32(unit) }
         return projectMascots[Int(hash % UInt32(projectMascots.count))]
@@ -118,7 +102,7 @@ struct MascotView: View {
             let cell = size.width / 8
             for (y, row) in rows.enumerated() {
                 for (x, char) in row.enumerated() where char == "#" {
-                    context.fill(Path(CGRect(x: CGFloat(x) * cell, y: CGFloat(y) * cell, width: cell, height: cell)), with: .color(color ?? Theme.projectColor(seed)))
+                    context.fill(Path(CGRect(x: CGFloat(x) * cell, y: CGFloat(y) * cell, width: cell, height: cell)), with: .color(Theme.projectColor(seed)))
                 }
             }
         }

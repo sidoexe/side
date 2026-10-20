@@ -156,19 +156,6 @@ struct BlockView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(block.draft == true ? Color.clear : Theme.fillSubtle, in: .rect(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.strokeStrong, style: StrokeStyle(lineWidth: 1, dash: block.draft == true ? [4, 3] : [])))
-            .overlay(alignment: .topLeading) {
-                // A colleague's reaction sits on the message it answers.
-                if let emoji = block.monoReaction {
-                    Text(emoji)
-                        .font(.system(size: 11))
-                        .padding(.horizontal, 7)
-                        .frame(height: 22)
-                        .background(.ultraThinMaterial, in: .rect(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.strokeStrong, lineWidth: 0.5))
-                        .shadow(color: .black.opacity(0.28), radius: 3, y: 2)
-                        .offset(x: -10, y: -10)
-                }
-            }
         case "assistant":
             MarkdownView(text: block.text)
         case "approval":
