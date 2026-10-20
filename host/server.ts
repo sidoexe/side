@@ -189,10 +189,6 @@ export function createHostServer(
     },
     engine.checkpoints,
   );
-  const employees = () => {
-    if (!engine.employees) throw new Error("Colleagues are unavailable on this host");
-    return engine.employees;
-  };
   const accountLogins = () => {
     if (!engine.accountLogins) throw new Error("Signing in is unavailable on this host");
     return engine.accountLogins;
@@ -281,21 +277,15 @@ export function createHostServer(
       // The browser app reaches the same methods at /web/rpc, from its own
       // page only, with the device credential in an HttpOnly cookie.
       const web = request.url === "/web/rpc";
-      // A project's or a colleague's background image, for the signed-in
-      // browser app.
-      if (
-        request.method === "GET" &&
-        (request.url?.startsWith("/web/background?") || request.url?.startsWith("/web/colleague-background?"))
-      ) {
+      // A project's background image, for the signed-in browser app.
+      if (request.method === "GET" && request.url?.startsWith("/web/background?")) {
         webSecurityHeaders(response);
         const token = webToken(request);
         const params = new URL(request.url, "http://host").searchParams;
         const signedIn = !!token && engine.store.authenticated(token);
-        const image = !signedIn
-          ? undefined
-          : request.url.startsWith("/web/background?")
-            ? engine.rail?.background(params.get("cwd") ?? "")
-            : engine.employees?.backgroundFile(params.get("id") ?? "");
+        const image = signedIn
+          ? engine.rail?.background(params.get("cwd") ?? "")
+          : undefined;
         if (!image) {
           response.writeHead(token && engine.store.authenticated(token) ? 404 : 401).end();
           return;
@@ -413,7 +403,6 @@ export function createHostServer(
                 "sessions.queue",
                 "sessions.editLast",
                 ...(engine.checkpoints ? ["sessions.review"] : []),
-                ...(engine.employees ? ["employees", "employees.backgrounds", "employees.inbox", "employees.accounts"] : []),
                 ...(engine.automations ? ["automations"] : []),
                 ...(engine.app ? ["app"] : []),
                 ...(engine.push ? ["push"] : []),
@@ -799,78 +788,6 @@ export function createHostServer(
               )) ?? null;
             break;
           }
-          case "employees.load":
-            result = employees().load(params.mono);
-            break;
-          case "employees.read":
-            result = employees().read(params.mono, params.path);
-            break;
-          case "employees.save":
-            result = employees().save(params.mono, params.path, params.text, params.expectedHash);
-            break;
-          case "employees.import":
-            result = employees().import(params.mono, params.files);
-            break;
-          case "employees.roster":
-            result = employees().roster();
-            break;
-          case "employees.saveRoster":
-            result = employees().saveRoster(params.roster, params.expectedRevision);
-            break;
-          case "employees.backgrounds":
-            result = employees().backgrounds();
-            break;
-          case "employees.background":
-            result = employees().background(params.mono);
-            break;
-          case "employees.setBackground":
-            result = employees().setBackground(params.mono, params);
-            break;
-          case "employees.post":
-            result = employees().post(
-              params.mono,
-              params.text,
-              params.account,
-              params.thread,
-              params.control,
-            );
-            break;
-          case "employees.accounts":
-            result = employees().accounts();
-            break;
-          case "employees.setAccounts":
-            employees().setAccounts(params);
-            result = null;
-            break;
-          case "employees.inbox":
-            result = employees().inbox(params.mono);
-            break;
-          case "employees.waiting":
-            result = employees().waiting();
-            break;
-          case "employees.take":
-            result = employees().take(params.id, params.by);
-            break;
-          case "employees.delivered":
-            employees().delivered(params.id);
-            result = null;
-            break;
-          case "employees.sessionUpsert":
-            result = employees().transcripts.upsert(params);
-            break;
-          case "employees.sessionGet":
-            result = employees().transcripts.get(params.sessionId);
-            break;
-          case "employees.sessionPage":
-            result = employees().transcripts.page(params.sessionId, params);
-            break;
-          case "employees.sessionFind":
-            result = employees().transcripts.find(params.sessionId, params.query);
-            break;
-          case "employees.sessionDelete":
-            employees().transcripts.delete(params.sessionId);
-            result = null;
-            break;
           case "automations.list":
             result = automations().list();
             break;

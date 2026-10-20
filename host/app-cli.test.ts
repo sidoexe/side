@@ -23,9 +23,9 @@ it("parses the same arguments as the desktop's app CLI", () => {
   expect(() => parseAppArgs(["x", "--wat", "1"], () => "")).toThrow("Unknown argument");
 });
 
-it("takes a lone JSON object as the input, the way Colleague prompts write it", () => {
-  expect(parseAppArgs(["memory.search", '{"query":"linear"}', "--request-id", "r"], () => ""))
-    .toEqual({ kind: "call", action: "memory.search", input: { query: "linear" }, requestId: "r" });
+it("takes a lone JSON object as the input, the same as --json", () => {
+  expect(parseAppArgs(["notes.list", '{"limit":3}', "--request-id", "r"], () => ""))
+    .toEqual({ kind: "call", action: "notes.list", input: { limit: 3 }, requestId: "r" });
   expect(() => parseAppArgs(["x", "{}", "--json", "{}"], () => "")).toThrow("only one");
   expect(() => parseAppArgs(["x", "query"], () => "")).toThrow();
 });

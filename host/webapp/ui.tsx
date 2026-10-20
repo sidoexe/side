@@ -8,14 +8,13 @@ export type Route =
   | { kind: "home" }
   | { kind: "session"; projectId: string; sessionId: string }
   | { kind: "new"; projectId: string }
-  | { kind: "colleagues" }
   | { kind: "automations" };
 
 export function parseRoute(): Route {
   const [kind, projectId, sessionId] = location.hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
   if (kind === "s" && projectId && sessionId) return { kind: "session", projectId, sessionId };
   if (kind === "new" && projectId) return { kind: "new", projectId };
-  if (kind === "colleagues" || kind === "automations") return { kind };
+  if (kind === "automations") return { kind };
   return { kind: "home" };
 }
 
@@ -25,7 +24,7 @@ export function go(route: Route) {
       ? `#/s/${encodeURIComponent(route.projectId)}/${encodeURIComponent(route.sessionId)}`
       : route.kind === "new"
         ? `#/new/${encodeURIComponent(route.projectId)}`
-        : route.kind === "colleagues" || route.kind === "automations"
+        : route.kind === "automations"
           ? `#/${route.kind}`
           : "#/";
 }

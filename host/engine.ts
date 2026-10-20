@@ -32,7 +32,6 @@ import {
 import type { HostProvider } from "./providers";
 import { HostStore } from "./store";
 import type { HostCheckpoints } from "./checkpoints";
-import type { HostEmployees } from "./employees";
 import type { HostAutomations } from "./automations";
 import type { HostAppBridge } from "./app-bridge";
 import { CONTINUE_PROMPT } from "../src/features/sessions/model/inFlight";
@@ -343,7 +342,6 @@ export function parseCommand(input: unknown): HostCommand {
 export class HostEngine {
   /** Turn review snapshots; absent in tests that do not exercise them. */
   checkpoints?: HostCheckpoints;
-  employees?: HostEmployees;
   automations?: HostAutomations;
   app?: HostAppBridge;
   accountLogins?: HostAccountLogins;

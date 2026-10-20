@@ -13,7 +13,7 @@ import { sessionDisplayTitle, type RuntimeMode } from "../../src/features/sessio
 import { command, describe, login, logout, rpc, Unauthorized } from "./api";
 import { SessionView } from "./SessionView";
 import { ChangesPanel, FolderBrowser } from "./workspace";
-import { AutomationsPage, ColleaguesPage, FilesPanel } from "./extras";
+import { AutomationsPage, FilesPanel } from "./extras";
 import { backgroundUrl, ProjectBackground, ProjectBadge, ProjectMenu, visibleProjects, WebAppLinks, type HostRailState } from "./rail";
 import { ago, BranchIcon, Chip, Composer, go, MODES, tilde, useNotifications, usePoll, useRoute, type Route } from "./ui";
 import { HarnessIcon } from "../../src/features/sessions/ui/HarnessIcon";
@@ -162,11 +162,9 @@ function Sidebar({
         </button>
       </header>
       <div className="nav-links">
-        {(["colleagues", "automations"] as const).map((kind) => (
-          <a key={kind} className={`nav-link${route.kind === kind ? " active" : ""}`} href={`#/${kind}`} onClick={onClose}>
-            {kind === "colleagues" ? "Colleagues" : "Automations"}
-          </a>
-        ))}
+        <a className={`nav-link${route.kind === "automations" ? " active" : ""}`} href="#/automations" onClick={onClose}>
+          Automations
+        </a>
       </div>
       <WebAppLinks enabled={host.capabilities.includes("webApps")} />
       <input className="search" placeholder="Filter sessions" value={filter} onChange={(e) => setFilter(e.target.value)} />
@@ -488,7 +486,7 @@ function App() {
             {attention ? <span className="badge">{attention}</span> : null}
           </button>
           <div className="topbar-title">
-            <span>{route.kind === "colleagues" ? "Colleagues" : route.kind === "automations" ? "Automations" : route.kind === "new" ? `New session · ${project?.name ?? ""}` : (summary && sessionDisplayTitle(summary.title, summary.harness)) || (route.kind === "home" ? host.name : "")}</span>
+            <span>{route.kind === "automations" ? "Automations" : route.kind === "new" ? `New session · ${project?.name ?? ""}` : (summary && sessionDisplayTitle(summary.title, summary.harness)) || (route.kind === "home" ? host.name : "")}</span>
             {summary ? (
               <span className="muted">
                 {project?.name} · {modelName(summary)}
@@ -537,8 +535,6 @@ function App() {
             background={project ? backgroundUrl(project.cwd, rail) : undefined}
             onError={onError}
           />
-        ) : route.kind === "colleagues" ? (
-          <ColleaguesPage canWrite={host.capabilities.includes("employees.inbox")} onError={onError} />
         ) : route.kind === "automations" ? (
           <AutomationsPage onError={onError} />
         ) : route.kind === "new" && project ? (
