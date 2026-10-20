@@ -114,6 +114,28 @@ export function rememberRemoteProject(
   return remote;
 }
 
+/** Every remote project this desktop remembers, in the rail's recents or not. */
+export function allRemoteProjects(): RemoteProject[] {
+  return Object.values(readAll());
+}
+
+/** Moves whenever a remote project is added; a string so it compares by value. */
+export function remoteProjectsSnapshot(): string {
+  return Object.keys(readAll()).sort().join("\0");
+}
+
+export function subscribeRemoteProjects(onChange: () => void): () => void {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === KEY) onChange();
+  };
+  window.addEventListener(REMOTE_PROJECTS_CHANGED, onChange);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(REMOTE_PROJECTS_CHANGED, onChange);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
 export function remoteProjectsOn(environmentId: string): RemoteProject[] {
   return Object.values(readAll()).filter(
     (project) => project.environmentId === environmentId,

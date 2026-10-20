@@ -78,8 +78,7 @@ describe("AgentTranscript collapsed work", () => {
   });
 
   it("shows sIDE CLI actions instead of their long shell commands", () => {
-    const command =
-      "/repo/target/debug/sIDE.app/Contents/MacOS/monocode";
+    const command = "/repo/target/debug/sIDE.app/Contents/MacOS/monocode";
     const markup = render(
       [
         { id: "user", role: "user", text: "/monocode list my notes" },
@@ -110,7 +109,8 @@ describe("AgentTranscript collapsed work", () => {
   });
 
   it("shows the full command before approving a sIDE CLI call", () => {
-    const command = "monocode app sessions.send --json '{\"prompt\":\"private-marker\"}'";
+    const command =
+      'monocode app sessions.send --json \'{"prompt":"private-marker"}\'';
     const markup = renderToStaticMarkup(
       createElement(AgentTranscript, {
         blocks: [
@@ -868,7 +868,7 @@ describe("Employee inline work", () => {
   }
 
   it.each([true, false])(
-    "keeps narration hidden and shows the final reply only after completion (busy=%s)",
+    "shows every reply while the commands fold into one work header (busy=%s)",
     (busy) => {
       const blocks: Block[] = [
         { id: "user", role: "user", text: "Check this", durationMs: 9_000 },
@@ -903,8 +903,8 @@ describe("Employee inline work", () => {
         busy ? "Running command…" : "MonoCat worked for 9s",
       );
       expect(header).toBeGreaterThanOrEqual(markup.indexOf("MonoCat"));
-      expect(markup).not.toContain("I will check the first part.");
-      expect(markup).not.toContain(
+      expect(markup).toContain("I will check the first part.");
+      expect(markup).toContain(
         "The first part passed. Checking the next part.",
       );
       expect(markup.match(/data-mono-work/g)).toHaveLength(1);
@@ -987,7 +987,7 @@ describe("Employee inline work", () => {
       },
       { id: "answer", role: "assistant", text: "The review could not finish." },
     ]);
-    expect(markup).not.toContain("I will ask for a review.");
+    expect(markup).toContain("I will ask for a review.");
     expect(markup).not.toContain("Subagent failed");
     expect(markup).toContain("The review could not finish.");
     expect(markup).not.toContain("Private provider failure detail");

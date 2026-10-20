@@ -529,7 +529,7 @@ it("waits for the final reply's reveal, then shows its artifact before the actio
   ).toBeTruthy();
 });
 
-it("shows only the final reply, with no separate work summary or opening narration", () => {
+it("keeps every reply in the chat, with only the commands folded into the work", () => {
   render([
     { id: "user", role: "user", text: "Inspect" },
     { id: "intro", role: "assistant", text: "I will inspect the files." },
@@ -542,9 +542,9 @@ it("shows only the final reply, with no separate work summary or opening narrati
   const work = container.querySelector("[data-mono-work]")!;
   expect(work.querySelector("button")).toBeNull();
   act(() => work.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-  expect(container.textContent).not.toContain("Trying another approach.");
+  expect(container.textContent).toContain("Trying another approach.");
   expect(container.textContent).not.toContain("Inspect first");
-  expect(container.textContent).not.toContain("I will inspect the files.");
+  expect(container.textContent).toContain("I will inspect the files.");
   expect(container.textContent).toContain("Everything passed.");
   expect(container.querySelectorAll("[data-mono-work]")).toHaveLength(1);
 });
@@ -585,7 +585,7 @@ it("opens the full turn activity from the footer beside copy and notes", () => {
   expect(onShowWork).toHaveBeenLastCalledWith("user", blocks.slice(2));
   expect(turn.querySelector('[aria-label="Show the work"]')).toBeNull();
   expect(onShowWork).toHaveBeenCalledOnce();
-  expect(container.textContent).not.toContain("Trying another approach.");
+  expect(container.textContent).toContain("Trying another approach.");
   expect(container.textContent).not.toContain("Inspect first");
   render(blocks, {
     onShowWork,
@@ -600,7 +600,7 @@ it("opens the full turn activity from the footer beside copy and notes", () => {
   ).toBe("true");
 });
 
-it("keeps streamed progress inside the status row and reveals the final reply when done", () => {
+it("shows streamed replies as they arrive, with the status row beside the work", () => {
   const opening: Block[] = [
     { id: "user", role: "user", text: "Inspect" },
     { id: "intro", role: "assistant", text: "I will inspect the files." },
@@ -621,7 +621,7 @@ it("keeps streamed progress inside the status row and reveals the final reply wh
   render(narrated, { busy: true });
   settleTicker();
   expect(status()).toBe("Pondering…");
-  expect(container.textContent).not.toContain("Private streamed progress");
+  expect(container.textContent).toContain("Private streamed progress");
   const worked: Block[] = [
     ...narrated,
     tool("second"),
@@ -636,7 +636,9 @@ it("keeps streamed progress inside the status row and reveals the final reply wh
   settleTicker();
   expect(status()).toBe("Considering…");
   expect(container.querySelector("[data-mono-work]")).toBe(group);
-  expect(container.querySelector('[data-chat-message="answer"]')).toBeNull();
+  expect(
+    container.querySelector('[data-chat-message="answer"]'),
+  ).not.toBeNull();
   render(worked.map((block) => ({ ...block, streaming: false })));
   settleTicker();
   expect(status()).toBeUndefined();
@@ -673,7 +675,7 @@ it("keeps pending edit approvals actionable beside the compact status", () => {
   );
   expect(status()).toBe("Waiting for approval…");
   expect(container.textContent).toContain("Approved edit preview");
-  expect(container.textContent).not.toContain("Ready to edit.");
+  expect(container.textContent).toContain("Ready to edit.");
   const allow = Array.from(container.querySelectorAll("button")).find(
     (button) => button.textContent === "Allow",
   )!;
@@ -681,7 +683,7 @@ it("keeps pending edit approvals actionable beside the compact status", () => {
   expect(onApproval).toHaveBeenCalledWith(42, "allow");
 });
 
-it("opens live activity from the header ticker before any tool, while a direct answer waits for completion", () => {
+it("opens live activity from the header ticker before any tool, with a direct answer shown as it streams", () => {
   const user: Block = { id: "user", role: "user", text: "Hello" };
   const props = {
     busy: true,
@@ -717,8 +719,7 @@ it("opens live activity from the header ticker before any tool, while a direct a
   render([user, answer], props);
   settleTicker();
   expect(container.querySelector("[data-mono-work]")).toBe(header);
-  expect(container.textContent).not.toContain(answer.text);
-  expect(container.querySelector('[aria-label="Copy response"]')).toBeNull();
+  expect(container.textContent).toContain(answer.text);
   act(() => activity.click());
   expect(props.onShowWork).toHaveBeenLastCalledWith("user", [user, answer]);
 
@@ -736,7 +737,7 @@ it("opens live activity from the header ticker before any tool, while a direct a
   ).not.toBeNull();
 });
 
-it("copies and saves only the final answer while the activity trail retains every step", async () => {
+it("copies and saves every reply shown while the activity trail retains every step", async () => {
   const onSaveNote = vi.fn();
   const blocks: Block[] = [
     { id: "user", role: "user", text: "Inspect", durationMs: 2000 },
@@ -759,11 +760,12 @@ it("copies and saves only the final answer while the activity trail retains ever
       )!
       .click();
   });
-  const answer = "Everything passed.\n\nThe checks are complete.";
+  const answer =
+    "I will inspect the files.\n\nChecking more files.\n\nEverything passed.\n\nThe checks are complete.";
   expect(copyMessage).toHaveBeenCalledWith(answer, undefined);
   expect(onSaveNote).toHaveBeenCalledWith(answer);
   expect(container.textContent).not.toContain("Weighing the options.");
-  expect(container.textContent).not.toContain("Checking more files.");
+  expect(container.textContent).toContain("Checking more files.");
 
   act(() => root.render(createElement(MonoActivityTrail, { blocks })));
   expect(
@@ -783,7 +785,7 @@ it("copies and saves only the final answer while the activity trail retains ever
   expect(container.textContent).toContain("Checking more files.");
 });
 
-it("keeps interrupted work inspectable without presenting its opening as a final answer", () => {
+it("keeps interrupted work inspectable beside what the Colleague said", () => {
   const onShowWork = vi.fn();
   const blocks: Block[] = [
     { id: "user", role: "user", text: "Inspect" },
@@ -798,8 +800,7 @@ it("keeps interrupted work inspectable without presenting its opening as a final
   ];
   render(blocks, { onShowWork });
   expect(container.textContent).toContain("Turn stopped.");
-  expect(container.textContent).not.toContain("I will inspect the files.");
-  expect(container.querySelector('[aria-label="Copy response"]')).toBeNull();
+  expect(container.textContent).toContain("I will inspect the files.");
   act(() =>
     container
       .querySelector<HTMLButtonElement>('[aria-label="Show activity"]')!
@@ -808,7 +809,7 @@ it("keeps interrupted work inspectable without presenting its opening as a final
   expect(onShowWork).toHaveBeenCalledWith("user", blocks);
 });
 
-it("uses the header to show questions and background work while answers are hidden", () => {
+it("shows the reply beside the question it waits on, and background work in the header", () => {
   const blocks: Block[] = [
     { id: "user", role: "user", text: "Inspect" },
     {
@@ -820,13 +821,13 @@ it("uses the header to show questions and background work while answers are hidd
   ];
   render(blocks, { busy: true, pendingQuestion: true });
   expect(status()).toBe("Waiting for answers…");
-  expect(container.textContent).not.toContain("I have a question.");
+  expect(container.textContent).toContain("I have a question.");
   render(blocks, { busy: true, backgroundTasks: ["Review"] });
   settleTicker();
   expect(status()).toBe("Waiting for background task…");
 });
 
-it("marks the compact group for search without expanding its commands or narration", () => {
+it("marks the reply it finds for search without expanding the commands", () => {
   let navigate: ((blockId: string | null) => boolean) | undefined;
   render(
     [
@@ -849,8 +850,7 @@ it("marks the compact group for search without expanding its commands or narrati
     '[data-transcript-search-current="true"]',
   );
   expect(current).toHaveLength(1);
-  expect(current[0].hasAttribute("data-mono-work")).toBe(true);
-  expect(container.textContent).not.toContain("Trying another approach.");
+  expect(current[0].textContent).toContain("Trying another approach.");
   expect(container.querySelector("[data-mono-work] button")).toBeNull();
 });
 
@@ -935,7 +935,7 @@ it("stacks the next message onto one the Employee only reacted to", () => {
   expect(container.querySelector('[data-message-stack="true"]')).toBeNull();
 });
 
-it("shows answers to mid-turn follow-ups immediately and retains them during later work", () => {
+it("shows every reply, including answers to mid-turn follow-ups, during later work", () => {
   const props = { busy: true, agentName: "MonoInvader" };
   const blocks: Block[] = [
     { id: "user", role: "user", text: "Review the PR", startedAt: 1000 },
@@ -956,7 +956,7 @@ it("shows answers to mid-turn follow-ups immediately and retains them during lat
   ];
   render(blocks, props);
   expect(container.textContent).toContain("I am checking browser security.");
-  expect(container.textContent).not.toContain("I will inspect the files.");
+  expect(container.textContent).toContain("I will inspect the files.");
   const continued: Block[] = [
     ...blocks.map((block) =>
       block.id === "status-reply" ? { ...block, streaming: false } : block,
@@ -976,27 +976,6 @@ it("shows answers to mid-turn follow-ups immediately and retains them during lat
   expect(container.textContent).toContain("I am checking browser security.");
   expect(container.textContent).toContain("Stopping the review now.");
 });
-
-it.each(["pending", "paused", "failed"] as const)(
-  "keeps narration hidden until a %s follow-up is delivered",
-  (delivery) => {
-    const blocks: Block[] = [
-      { id: "user", role: "user", text: "Review the PR", startedAt: 1000 },
-      { id: "intro", role: "assistant", text: "I will inspect the files." },
-      tool("first"),
-      { id: "follow-up", role: "user", text: "Status?", sentAt: 1100 },
-      { id: "reply", role: "assistant", text: "Checking browser security." },
-    ];
-    render(blocks, {
-      busy: true,
-      messageDeliveries: new Map([["follow-up", { status: delivery }]]),
-    });
-    expect(container.textContent).not.toContain("Checking browser security.");
-    render(blocks, { busy: true, messageDeliveries: new Map() });
-    expect(container.textContent).toContain("Checking browser security.");
-    expect(container.textContent).not.toContain("I will inspect the files.");
-  },
-);
 
 it.each(["Follow up", "👍"])(
   "keeps a failed optimistic message visible with inline retry: %s",

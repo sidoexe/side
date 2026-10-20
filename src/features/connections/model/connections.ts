@@ -416,20 +416,27 @@ function storeRemoteSessions(project: string, next: HostSessionSummary[]) {
   }
 }
 
-export type RemoteProjectStatus = { working: number; done: number };
+export type RemoteProjectStatus = {
+  working: number;
+  /** Waiting on a question or an approval. */
+  waiting: number;
+  done: number;
+};
 
-/** How many of a host list's sessions work and wait to be checked. */
+/** How many of a host list's sessions work, wait on the user and wait to be checked. */
 export function remoteProjectStatus(
   sessions: readonly HostSessionSummary[],
 ): RemoteProjectStatus {
   let working = 0;
+  let waiting = 0;
   let done = 0;
   for (const session of sessions) {
     if (session.archived) continue;
-    if (session.status === "running") working += 1;
-    else if (session.toReview && !session.needsInput) done += 1;
+    if (session.needsInput) waiting += 1;
+    else if (session.status === "running") working += 1;
+    else if (session.toReview) done += 1;
   }
-  return { working, done };
+  return { working, waiting, done };
 }
 
 /**
@@ -445,8 +452,10 @@ export function remoteReviewAgents(
     .filter(
       (session) =>
         !session.archived &&
-        session.status !== "running" &&
-        (session.needsInput || session.toReview),
+        // A host answers a question or an approval only while its run is
+        // live, so one waiting on the user is still running.
+        (session.needsInput ||
+          (session.status !== "running" && session.toReview)),
     )
     .sort(
       (a, b) =>
@@ -568,7 +577,8 @@ export function useRemoteProjectsStatus(
     let timer: ReturnType<typeof setTimeout>;
     let failures = 0;
     const poll = async () => {
-      let failed = false;
+      let asked = 0;
+      let answered = 0;
       await Promise.all(
         remoteKey.split("\0").map(async (project) => {
           const remote = remoteProjectFor(project);
@@ -578,6 +588,7 @@ export function useRemoteProjectsStatus(
               )
             : undefined;
           if (!remote || !machine) return;
+          asked += 1;
           try {
             const next = await remoteRequest<HostSessionSummary[]>(
               machine.id,
@@ -585,13 +596,15 @@ export function useRemoteProjectsStatus(
               { projectId: remote.projectId },
             );
             if (!disposed) storeRemoteSessions(project, next);
+            answered += 1;
           } catch {
-            failed = true;
+            /* this project's list keeps its last reading */
           }
         }),
       );
-      // Back off while a machine is unreachable.
-      failures = failed ? Math.min(4, failures + 1) : 0;
+      // Back off only while no machine answers: one project that fails, such
+      // as a folder removed on its host, must not slow every other list.
+      failures = asked > 0 && answered === 0 ? Math.min(4, failures + 1) : 0;
       if (!disposed)
         timer = setTimeout(() => void poll(), STATUS_POLL_MS * 2 ** failures);
     };

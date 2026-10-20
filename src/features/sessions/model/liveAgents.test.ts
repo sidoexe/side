@@ -85,6 +85,25 @@ describe("liveAgentsFromSessions", () => {
     const worker = chat("/repo", { id: "worker", busy: true, orchestrationLeadId: "lead" });
     expect(liveAgentsFromSessions([lead, worker]).map((agent) => agent.id)).toEqual(["lead"]);
   });
+
+  it("lists an internal worker only while it waits on the user", () => {
+    const lead = chat("/repo", { id: "lead", busy: true });
+    const asking = chat("/repo", {
+      id: "asking",
+      busy: true,
+      orchestrationLeadId: "lead",
+      blocks: [{ id: "a", role: "approval", text: "Run", approval: { requestId: 1 } }],
+    });
+    const inbox = chat("/repo", {
+      id: "inbox",
+      busy: true,
+      inboxAsk: { key: "k", title: "T", url: "u", provider: "github" },
+      blocks: [{ id: "a", role: "approval", text: "Run", approval: { requestId: 1 } }],
+    });
+    const agents = liveAgentsFromSessions([lead, asking, inbox]);
+    expect(agents.map((agent) => agent.id)).toEqual(["asking", "lead"]);
+    expect(agents[0]).toMatchObject({ needsApproval: true, done: false });
+  });
   it("skips idle sessions", () => {
     expect(liveAgentsFromSessions([chat("/tmp/a")])).toEqual([]);
   });

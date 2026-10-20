@@ -418,6 +418,7 @@ fn supported_remote_method(method: &str) -> bool {
             | "accounts.refresh"
             | "accounts.balance"
             | "accounts.remove"
+            | "accounts.rename"
             | "accounts.login"
             | "accounts.loginCode"
             | "accounts.loginStatus"

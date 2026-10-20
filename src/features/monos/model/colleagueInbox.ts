@@ -21,8 +21,9 @@ export type InboxMessage = {
   account?: string;
   /** The conversation it goes to, or `new`; the open one when absent. */
   thread?: string;
-  /** `stop` interrupts the turn; `steer` sends the text into it at once. */
-  control?: "stop" | "steer";
+  /** `stop` interrupts the turn; `steer` sends the text into it at once;
+   * `delete` removes the conversation named by `thread`. */
+  control?: "stop" | "steer" | "delete";
   at: number;
 };
 
@@ -38,7 +39,7 @@ export type Deliver = (
   text: string,
   account?: string,
   thread?: string,
-  control?: "stop" | "steer",
+  control?: "stop" | "steer" | "delete",
 ) => Promise<boolean>;
 
 /** How much of a plan window is used, and when it starts over. */
@@ -85,6 +86,11 @@ export function colleagueUsage(limits: ProviderRateLimits): ColleagueUsage | und
 
 const POLL_MS = 3_000;
 
+/** A message this desktop took and still cannot deliver after this long is
+ * dropped: left in the inbox it would hold every later message for its
+ * colleague back for good. */
+const UNDELIVERABLE_MS = 10 * 60_000;
+
 /** One pass: every waiting message for a colleague this desktop has, in order. */
 export async function deliverInbox(
   request: Request,
@@ -95,6 +101,7 @@ export async function deliverInbox(
     const mono = findMono(id);
     return !!mono && !mono.localOnly;
   },
+  now = Date.now(),
 ): Promise<number> {
   const waiting = await request<InboxMessage[]>(home, "employees.waiting");
   let sent = 0;
@@ -115,7 +122,8 @@ export async function deliverInbox(
       message.control,
     ).catch(() => false);
     if (!ok) {
-      held.add(message.mono);
+      if (now - message.at < UNDELIVERABLE_MS) held.add(message.mono);
+      else await request(home, "employees.delivered", { id: message.id });
       continue;
     }
     await request(home, "employees.delivered", { id: message.id });

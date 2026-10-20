@@ -37,9 +37,20 @@ it("holds a colleague's later messages when one cannot go", async () => {
   await deliverInbox(request, home, "me", async (mono, text) => {
     sent.push(text);
     return text !== "1";
-  }, () => true);
+  }, () => true, 0);
   expect(sent).toEqual(["1", "3"]);
   expect(delivered).toEqual(["3"]);
+});
+
+it("drops a message that stays undeliverable, so later ones are not held for good", async () => {
+  const { request, delivered } = host([message("1", "a"), message("2", "a")]);
+  const sent: string[] = [];
+  await deliverInbox(request, home, "me", async (_mono, text) => {
+    sent.push(text);
+    return text !== "1";
+  }, () => true, 11 * 60_000);
+  expect(sent).toEqual(["1", "2"]);
+  expect(delivered).toEqual(["1", "2"]);
 });
 
 it("leaves messages another desktop took, or for colleagues it lacks", async () => {

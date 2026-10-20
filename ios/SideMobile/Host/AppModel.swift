@@ -47,6 +47,9 @@ final class AppModel {
     /// The desktop's web apps, read once per host.
     private(set) var webApps: [HostWebApp]?
     var error: String?
+    /// The last repeating read could not reach the host.
+    private(set) var offline = false
+    private var pollFailures = 0
     var tab = HomeTab.now
     var paths: [HomeTab: [Route]] = [:]
     /// The stack of the tab on screen.
@@ -135,6 +138,23 @@ final class AppModel {
         }
     }
 
+    /// For reads that repeat on their own. A phone sleeps and changes network,
+    /// so a dropped request waits for the next read instead of raising an
+    /// alert; a host that keeps refusing is reported once, after three in a row.
+    func reportPoll(_ error: Error) {
+        if error is HostClient.Unauthorized { return report(error) }
+        if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
+        pollFailures += 1
+        if error is URLError { offline = true }
+        else if pollFailures == 3 { report(error) }
+    }
+
+    /// A repeating read went through.
+    func pollSucceeded() {
+        pollFailures = 0
+        offline = false
+    }
+
     /// The host, its projects and their sessions.
     func refresh() async {
         guard let client else { return }
@@ -145,13 +165,32 @@ final class AppModel {
                 catalog = try? await client.rpc("models.list", as: HostModelCatalog.self)
             }
             let projects = try await client.rpc("projects.list", as: [HostProject].self)
+            // A project whose list fails keeps the last one it had: a folder
+            // moved on the host must not hide every other session.
             var sessions: [String: [HostSessionSummary]] = [:]
-            try await withThrowingTaskGroup(of: (String, [HostSessionSummary]).self) { group in
+            var failure: Error?
+            let previous = self.sessions
+            await withTaskGroup(of: (String, Result<[HostSessionSummary], Error>).self) { group in
                 for project in projects {
-                    group.addTask { (project.id, try await client.rpc("sessions.list", ["projectId": project.id], as: [HostSessionSummary].self)) }
+                    group.addTask {
+                        do {
+                            return (project.id, .success(try await client.rpc("sessions.list", ["projectId": project.id], as: [HostSessionSummary].self)))
+                        } catch {
+                            return (project.id, .failure(error))
+                        }
+                    }
                 }
-                for try await (id, list) in group { sessions[id] = list }
+                for await (id, result) in group {
+                    switch result {
+                    case .success(let list): sessions[id] = list
+                    case .failure(let error):
+                        failure = error
+                        sessions[id] = previous[id] ?? []
+                    }
+                }
             }
+            // The credential and the connection are not a project's fault.
+            if let failure, failure is HostClient.Unauthorized || failure is URLError { throw failure }
             self.projects = projects
             self.sessions = sessions
             accounts = (try? await client.rpc("accounts.list", as: [HostAccountSummary].self)) ?? accounts
@@ -167,8 +206,9 @@ final class AppModel {
             if webApps == nil, can("webApps") {
                 webApps = (try? await client.rpc("webApps.get", as: HostWebApps.self))?.apps
             }
+            pollSucceeded()
         } catch {
-            report(error)
+            reportPoll(error)
         }
     }
 

@@ -15,6 +15,7 @@ import {
   Settings,
   Zap,
   DashboardSquare,
+  CircleAlert,
 } from "../../shared/ui/icons";
 import {
   createContext,
@@ -307,7 +308,7 @@ export function ProjectRail({
     const entry = (path: string) => {
       const key = pathKey(path);
       let value = counts.get(key);
-      if (!value) counts.set(key, (value = { working: 0, done: 0 }));
+      if (!value) counts.set(key, (value = { working: 0, waiting: 0, done: 0 }));
       return value;
     };
     for (const path of busyPaths ?? []) entry(path).working += 1;
@@ -672,9 +673,9 @@ export function ProjectRail({
 
 type SortableHandle = ReturnType<typeof useAnimatedReorder>;
 
-type ProjectStatusCounts = { working: number; done: number };
+type ProjectStatusCounts = { working: number; waiting: number; done: number };
 
-/** Each project's working and done sessions, keyed by folder. A context so
+/** Each project's working, waiting and done sessions, keyed by folder. A context so
  * the counts reach every card without threading through each section. */
 const ProjectStatusContext = createContext<{
   counts: ReadonlyMap<string, ProjectStatusCounts>;
@@ -1009,7 +1010,7 @@ function ProjectCard({
   const deletions = stats?.deletions ?? 0;
   const hasChanges = files > 0 || additions > 0 || deletions > 0;
   const projectStatus = useContext(ProjectStatusContext);
-  const { working = 0, done = 0 } =
+  const { working = 0, waiting = 0, done = 0 } =
     projectStatus.counts.get(pathKey(item.path)) ?? {};
   const remote = remoteProjectFor(item.path);
   const { machines } = useRemoteMachines(!!remote);
@@ -1115,9 +1116,10 @@ function ProjectCard({
             {machine.name}
           </span>
         ) : null}
-        {working > 0 || done > 0 ? (
+        {working > 0 || waiting > 0 || done > 0 ? (
           <ProjectStatusPills
             working={working}
+            waiting={waiting}
             done={done}
             onShowDone={
               projectStatus.onShowDone
@@ -1207,13 +1209,15 @@ function ProjectCard({
   );
 }
 
-/** How many sessions work and how many wait to be checked. */
+/** How many sessions work, wait on you and wait to be checked. */
 function ProjectStatusPills({
   working,
+  waiting,
   done,
   onShowDone,
 }: {
   working: number;
+  waiting: number;
   done: number;
   onShowDone?: () => void;
 }) {
@@ -1234,6 +1238,16 @@ function ProjectStatusPills({
         >
           <span className="size-1.5 rounded-full bg-accent" />
           {working}
+        </span>
+      ) : null}
+      {waiting > 0 ? (
+        <span
+          title={`${waiting} waiting on you`}
+          aria-label={`${waiting} waiting on you`}
+          className="flex items-center gap-0.5 text-amber-400"
+        >
+          <CircleAlert className="size-3" strokeWidth={2.25} />
+          {waiting}
         </span>
       ) : null}
       {done > 0 && onShowDone ? (

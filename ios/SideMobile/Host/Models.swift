@@ -171,6 +171,8 @@ struct Block: Decodable, Identifiable, Equatable {
     let taskList: TaskList?
     let plan: Plan?
     let notice: String?
+    /// An image the agent generated; it stays on the machine that ran it.
+    let image: GeneratedImage?
     /// A Colleague's emoji reaction to this message (`MonoReaction`).
     var monoReaction: String?
 
@@ -183,6 +185,10 @@ struct Block: Decodable, Identifiable, Equatable {
     }
     struct Plan: Decodable, Equatable {
         let status: String?
+    }
+    struct GeneratedImage: Decodable, Equatable {
+        let name: String?
+        let alt: String?
     }
 }
 

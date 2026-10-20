@@ -17,6 +17,8 @@ struct SessionView: View {
     @State private var deleting = false
     /// Follows new output only while the end is on screen.
     @State private var atEnd = true
+    @State private var reading = false
+    @State private var readAgain = false
 
     private var summary: HostSessionSummary? { model.summary(route) }
     private var title: String {
@@ -93,6 +95,7 @@ struct SessionView: View {
                         TranscriptItemView(
                             item: item,
                             cwd: value.meta.cwd,
+                            sessionId: route.sessionId,
                             canDecide: running && value.runId != nil,
                             onDecide: { requestId, decision in
                                 run(["type": "approve", "runId": value.runId ?? "", "requestId": requestId, "decision": decision])
@@ -350,17 +353,30 @@ struct SessionView: View {
         }
     }
 
+    /// One read at a time: two in flight can finish out of order and put an
+    /// older transcript back. One asked for meanwhile, such as after a send,
+    /// runs as soon as the first ends.
     private func refresh() async {
-        guard let client = model.client else { return }
-        do {
-            let next = try await client.sync(route.sessionId, known: value)
-            if next != value {
-                value = next
-                items = TranscriptItem.build(next.blocks, running: next.running)
-            }
-        } catch {
-            model.report(error)
+        if reading {
+            readAgain = true
+            return
         }
+        reading = true
+        defer { reading = false }
+        repeat {
+            readAgain = false
+            guard let client = model.client else { return }
+            do {
+                let next = try await client.sync(route.sessionId, known: value)
+                if next != value {
+                    value = next
+                    items = TranscriptItem.build(next.blocks, running: next.running)
+                }
+                model.pollSucceeded()
+            } catch {
+                model.reportPoll(error)
+            }
+        } while readAgain && !Task.isCancelled
     }
 
     /// Quick while a turn runs, slower when idle, as the web client does.

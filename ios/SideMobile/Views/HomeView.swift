@@ -376,9 +376,13 @@ struct HostHeader: View {
             Text(model.host?.name ?? "sIDE").font(.system(size: 15, weight: .semibold)).lineLimit(1)
             // The app's own version, short enough to stay beside the
             // toolbar's buttons; the host's is in the menu.
-            Text(AppUpdate.installedVersion)
-                .font(Theme.monoSmall)
-                .foregroundStyle(model.update == nil ? Theme.faint : Theme.accent)
+            if model.offline {
+                Image(systemName: "wifi.slash").font(.system(size: 12)).foregroundStyle(Theme.amber)
+            } else {
+                Text(AppUpdate.installedVersion)
+                    .font(Theme.monoSmall)
+                    .foregroundStyle(model.update == nil ? Theme.faint : Theme.accent)
+            }
         }
         .fixedSize()
     }

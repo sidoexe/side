@@ -94,8 +94,9 @@ export type EmployeeInboxMessage = {
   account?: string;
   /** The conversation it goes to, or `new` to start one; the open one when absent. */
   thread?: string;
-  /** `stop` interrupts the turn; `steer` sends the text into it at once. */
-  control?: "stop" | "steer";
+  /** `stop` interrupts the turn; `steer` sends the text into it at once;
+   * `delete` removes the conversation named by `thread`. */
+  control?: "stop" | "steer" | "delete";
   at: number;
   takenBy?: string;
   takenAt?: number;
@@ -448,15 +449,17 @@ export class HostEmployees {
     thread?: unknown,
     control?: unknown,
   ): EmployeeInboxMessage {
-    if (control !== undefined && control !== "stop" && control !== "steer")
+    if (control !== undefined && control !== "stop" && control !== "steer" && control !== "delete")
       throw new Error("Invalid control");
+    if (control === "delete" && (typeof thread !== "string" || thread === "new"))
+      throw new Error("Choose the conversation to delete");
     if (typeof id !== "string" || !ID.test(id)) throw new Error("Invalid employee ID");
     if (thread !== undefined && (typeof thread !== "string" || !THREAD_ID.test(thread)))
       throw new Error("Invalid conversation");
     if (account !== undefined && (typeof account !== "string" || !ACCOUNT_ID.test(account)))
       throw new Error("Invalid account");
     const body = typeof text === "string" ? text : "";
-    if (account === undefined && control !== "stop" && !body.trim())
+    if (account === undefined && control !== "stop" && control !== "delete" && !body.trim())
       throw new Error("Write a message first");
     if (Buffer.byteLength(body) > INBOX_TEXT_MAX) throw new Error("The message is too long");
     if (!this.roster().roster.some((entry) => (entry as { id?: unknown } | null)?.id === id))
@@ -469,7 +472,7 @@ export class HostEmployees {
       text: body,
       ...(account === undefined ? {} : { account: account as string }),
       ...(thread === undefined ? {} : { thread: thread as string }),
-      ...(control === undefined ? {} : { control: control as "stop" | "steer" }),
+      ...(control === undefined ? {} : { control: control as "stop" | "steer" | "delete" }),
       at: this.now(),
     };
     this.saveInbox([...messages, message]);

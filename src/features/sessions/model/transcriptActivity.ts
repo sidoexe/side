@@ -538,84 +538,31 @@ export function groupTurnItems(
 }
 
 /**
- * A Mono keeps its process, including the opening message, in the activity
- * trail. Live prose stays there until the user joins the running turn; replies
- * after a delivered follow-up stay visible even when more work arrives.
- * Settling reveals the trailing reply for uninterrupted turns.
- * Cards, notices and interjections keep their
- * own rows, and work resumed after a yielded reply does not absorb that reply.
+ * A Mono's tool calls and reasoning fold into the activity trail. Its prose
+ * never does: every reply stays in the chat, live or settled, before the
+ * question it waits on as much as after. Cards, notices and interjections keep
+ * their own rows.
  */
-export function groupMonoTurnItems(
-  blocks: Block[],
-  options?: { live?: boolean; undeliveredMessageIds?: ReadonlySet<string> },
-): TurnItem[] {
-  // Read the original order before moving user bubbles above the work. Once
-  // the user joins in, hiding subsequent replies makes a delivered message
-  // look ignored. Queued or failed messages have not reached the agent yet.
-  const followUpReplies = new Set<string>();
-  let interactive = false;
-  for (const block of blocks) {
-    if (
-      block.role === "user" &&
-      block.sentAt != null &&
-      block.startedAt == null &&
-      !block.internal &&
-      !block.draft &&
-      !options?.undeliveredMessageIds?.has(block.id)
-    )
-      interactive = true;
-    if (interactive && isProseBlock(block)) followUpReplies.add(block.id);
-  }
-  // Keep the user's messages together above the work, without mutating history.
-  const items = groupTurnItems([
-    ...blocks.filter((block) => block.role === "user"),
-    ...blocks.filter((block) => block.role !== "user"),
-  ]);
-  const start = items.findIndex(
-    (item) => item.type !== "block" || item.block.role !== "user",
+export function groupMonoTurnItems(blocks: Block[]): TurnItem[] {
+  // Keep the opening messages together above the work, without mutating
+  // history. A message sent after the Mono first answered stays where it was
+  // sent, so it never jumps above a reply it came after.
+  const firstReply = blocks.findIndex(
+    (block) => isProseBlock(block) && !!block.text.trim(),
   );
-  if (start < 0) return items;
-  let end = -1;
-  const boundary = yieldedAt(items);
-  for (let index = start; index < items.length; index += 1) {
-    const item = items[index];
-    // Status pings after an answer are not new work that should absorb it.
-    if (
-      item.type !== "block"
-        ? item.blocks.some(
-            (block) => isToolBlock(block) || isThinkingBlock(block),
-          )
-        : isToolBlock(item.block) || (options?.live && isProseBlock(item.block))
-    )
-      end = index;
-  }
-  if (end < start) return items;
-
-  const grouped: TurnItem[] = [];
-  let work: Block[] = [];
-  const flush = () => {
-    if (work.length) grouped.push({ type: "activity", blocks: work });
-    work = [];
-  };
-  items.forEach((item, index) => {
-    if (
-      index >= start &&
-      index <= end &&
-      !(item.type === "block" && followUpReplies.has(item.block.id)) &&
-      // A reply already delivered before background work resumed stays put.
-      !(boundary < items.length && index === boundary - 1) &&
-      (item.type !== "block" ||
-        isProseBlock(item.block) ||
-        isToolBlock(item.block))
-    ) {
-      work.push(...(item.type === "block" ? [item.block] : item.blocks));
-    } else {
-      flush();
-      grouped.push(item);
-    }
-  });
-  flush();
-  return grouped;
+  const opening = (block: Block, index: number) =>
+    block.role === "user" && (firstReply < 0 || index < firstReply);
+  const items = groupTurnItems([
+    ...blocks.filter((block, index) => opening(block, index)),
+    ...blocks.filter((block, index) => !opening(block, index)),
+  ]);
+  return items.map((item): TurnItem =>
+    item.type === "subagents"
+      ? { type: "activity", blocks: item.blocks }
+      : item.type === "block" && isToolBlock(item.block)
+        ? { type: "activity", blocks: [item.block] }
+        : item,
+  );
 }
 
 /**

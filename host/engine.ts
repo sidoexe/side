@@ -1343,6 +1343,13 @@ export class HostEngine {
     return this.accountSummaries();
   }
 
+  /** Renames an account; the summaries after. */
+  renameAccount(params: Record<string, unknown>) {
+    if (!this.accounts) throw new Error("Named provider accounts are not configured on this host");
+    this.accounts.renameAccount(String(params.accountId ?? ""), String(params.label ?? ""));
+    return this.accountSummaries();
+  }
+
   /**
    * Forgets an account; the summaries after. A conversation still bound to
    * it says so at its next turn, until another account is chosen.

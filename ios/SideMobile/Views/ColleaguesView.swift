@@ -75,8 +75,9 @@ struct ColleaguesView: View {
             if model.can("employees.accounts") {
                 accounts = (try? await model.client?.rpc("employees.accounts", as: ColleagueAccounts?.self)) ?? accounts
             }
+            model.pollSucceeded()
         } catch {
-            model.report(error)
+            model.reportPoll(error)
         }
     }
 }
@@ -102,6 +103,8 @@ struct ColleagueView: View {
     @State private var showsUsage = false
     @State private var wasWorking = false
     @State private var stopping = false
+    /// The conversation asked to be deleted, awaiting confirmation.
+    @State private var deleting: Mono.Thread?
     /// The thread shown: nil follows the open one, `new` starts another.
     @State private var thread: String?
     /// The open thread when a new one was asked for, to notice it start.
@@ -191,7 +194,7 @@ struct ColleagueView: View {
                     }
                     ForEach(inbox.filter(isShown)) { message in
                         VStack(alignment: .trailing, spacing: 4) {
-                            Text(message.account.map { "Switch to \(accountLabel($0))" } ?? (message.control == "stop" ? "Stop" : message.text))
+                            Text(message.account.map { "Switch to \(accountLabel($0))" } ?? pendingLabel(message))
                                 .font(.system(size: 15))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
@@ -289,6 +292,17 @@ struct ColleagueView: View {
         }
     }
 
+    /// What a message still waiting on the host says: a stop or a delete has no text.
+    private func pendingLabel(_ message: InboxMessage) -> String {
+        switch message.control {
+        case "stop": return "Stop"
+        case "delete":
+            let name = mono?.allThreads.first { $0.id == message.thread }.map(title)
+            return name.map { "Delete \"\($0)\"" } ?? "Delete a conversation"
+        default: return message.text
+        }
+    }
+
     private func waiting(_ message: InboxMessage) -> String {
         if message.takenBy != nil { return "Sending from a desktop…" }
         if now.timeIntervalSince1970 * 1000 - message.at > 10_000 {
@@ -303,10 +317,10 @@ struct ColleagueView: View {
         do { try await post("", control: "stop") } catch { model.report(error) }
     }
 
-    private func post(_ text: String, control: String? = nil) async throws {
+    private func post(_ text: String, control: String? = nil, thread target: String? = nil) async throws {
         guard let client = model.client else { return }
         var params: [String: Any] = ["mono": id, "text": text]
-        if let thread { params["thread"] = thread }
+        if let thread = target ?? thread { params["thread"] = thread }
         if let control { params["control"] = control }
         let message = try await client.rpc("employees.post", params, as: InboxMessage.self)
         if thread == Self.newThread { newSent = true }
@@ -345,6 +359,14 @@ struct ColleagueView: View {
                         else { Text(working ? "\(title(entry)) · working" : title(entry)) }
                     }
                 }
+                if mono.allThreads.count > 1 {
+                    Divider()
+                    Menu {
+                        ForEach(mono.allThreads) { entry in
+                            Button(role: .destructive) { deleting = entry } label: { Text(title(entry)) }
+                        }
+                    } label: { Label("Delete a thread", systemImage: "trash") }
+                }
             } label: {
                 HStack(spacing: 3) {
                     Text(thread == Self.newThread ? "New thread" : mono.allThreads.first { $0.id == shownThread }.map(title) ?? "New conversation")
@@ -356,7 +378,27 @@ struct ColleagueView: View {
                 .foregroundStyle(Theme.muted)
             }
             .buttonStyle(.plain)
+            .confirmationDialog(
+                "Delete \"\(deleting.map(title) ?? "")\"?",
+                isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    guard let entry = deleting else { return }
+                    deleting = nil
+                    Task { await delete(entry) }
+                }
+            } message: {
+                Text("The conversation is deleted on the desktop that runs this colleague, so it needs sIDE open there.")
+            }
         }
+    }
+
+    private func delete(_ entry: Mono.Thread) async {
+        do {
+            try await post("", control: "delete", thread: entry.id)
+            if shownThread == entry.id { select(nil) }
+        } catch { model.report(error) }
     }
 
     private func select(_ next: String?) {
@@ -379,6 +421,11 @@ struct ColleagueView: View {
                 // that takes it; the roster then names it.
                 // Read each time: its threads and their names change.
                 mono = try await client.rpc("employees.roster", as: MonoRoster.self).roster.first { $0.id == id } ?? mono
+                // A thread deleted on a desktop leaves the roster: follow the open one.
+                if let chosen = thread, chosen != Self.newThread, let mono,
+                   !mono.allThreads.isEmpty, !mono.allThreads.contains(where: { $0.id == chosen }) {
+                    select(nil)
+                }
                 // The new thread started on the desktop: follow it.
                 if thread == Self.newThread, newSent, let open = mono?.sessionId, open != newFrom,
                    !inbox.contains(where: { $0.thread == Self.newThread }) {
@@ -405,8 +452,9 @@ struct ColleagueView: View {
                     accounts = (try? await client.rpc("employees.accounts", as: ColleagueAccounts?.self)) ?? accounts
                 }
                 now = Date()
+                model.pollSucceeded()
             } catch {
-                model.report(error)
+                model.reportPoll(error)
             }
             // Closer while it works, so its steps follow the desktop's.
             try? await Task.sleep(for: wasWorking ? .seconds(1.2) : .seconds(2.5))

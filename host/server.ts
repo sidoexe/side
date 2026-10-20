@@ -425,6 +425,7 @@ export function createHostServer(
                 "accounts.refresh",
                 "accounts.balance",
                 "accounts.remove",
+                "accounts.rename",
                 ...(engine.accountLogins ? ["accounts.login", "accounts.import", "accounts.login.codex"] : []),
               ],
             };
@@ -443,6 +444,9 @@ export function createHostServer(
             break;
           case "accounts.remove":
             result = engine.removeAccount(params);
+            break;
+          case "accounts.rename":
+            result = engine.renameAccount(params);
             break;
           case "accounts.login":
             result = await accountLogins().start(params);

@@ -555,6 +555,17 @@ pub(crate) fn delete_claude_keychain_credentials(
 }
 
 #[cfg(target_os = "macos")]
+pub(crate) fn delete_default_claude_keychain_credentials() -> Result<(), String> {
+    let args = vec![
+        "delete-generic-password".into(),
+        "-s".into(),
+        claude_keychain_service(None),
+    ];
+    security_delete(&args)
+        .map_err(|error| format!("Could not remove the Claude credentials from Keychain: {error}"))
+}
+
+#[cfg(target_os = "macos")]
 fn keychain_user() -> String {
     let user = std::env::var("USER")
         .or_else(|_| std::env::var("USERNAME"))

@@ -1088,6 +1088,23 @@ pub(crate) fn provider_account_dir(
     Ok(Some(dir))
 }
 
+/// The profile folder the provider CLI itself uses when no account is chosen.
+fn default_provider_dir(provider: &str) -> Result<PathBuf, String> {
+    let (var, folder) = match provider {
+        "claude" => ("CLAUDE_CONFIG_DIR", ".claude"),
+        "codex" => ("CODEX_HOME", ".codex"),
+        _ => return Err("Provider account profiles are not supported for this provider".into()),
+    };
+    if let Some(dir) = std::env::var_os(var).filter(|dir| !dir.is_empty()) {
+        return Ok(PathBuf::from(dir));
+    }
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .filter(|home| !home.is_empty())
+        .ok_or("Could not find the home folder")?;
+    Ok(PathBuf::from(home).join(folder))
+}
+
 pub(crate) fn provider_account_path(
     app: &AppHandle,
     provider: &str,
@@ -1123,12 +1140,23 @@ pub fn provider_account_remove(
     provider: String,
     account_id: String,
 ) -> Result<(), String> {
-    let dir = provider_account_path(&app, &provider, &account_id)?;
+    let default_account = account_id == DEFAULT_PROVIDER_ACCOUNT_ID;
+    let dir = if default_account {
+        default_provider_dir(&provider)?
+    } else {
+        provider_account_path(&app, &provider, &account_id)?
+    };
     host.kill_account(&provider, &account_id);
 
     #[cfg(target_os = "macos")]
     if provider == "claude" {
-        crate::rate_limits::delete_claude_keychain_credentials(&dir)?;
+        // Claude keeps the default profile's credential under the unsuffixed
+        // service unless CLAUDE_CONFIG_DIR points it elsewhere.
+        if default_account && std::env::var_os("CLAUDE_CONFIG_DIR").is_none() {
+            crate::rate_limits::delete_default_claude_keychain_credentials()?;
+        } else {
+            crate::rate_limits::delete_claude_keychain_credentials(&dir)?;
+        }
     }
 
     let metadata = match std::fs::symlink_metadata(&dir) {

@@ -112,6 +112,22 @@ actor HostClient {
     // MARK: Attachments
 
     private struct Offset: Decodable { let offset: Int }
+    private struct ImageChunk: Decodable { let data: String; let offset: Int }
+
+    /// An image sent in a session's messages, read in the chunks the host serves.
+    func image(sessionId: String, attachment: Attachment) async throws -> Data {
+        var bytes = Data()
+        var offset = 0
+        while offset < attachment.size {
+            let chunk = try await rpc("attachments.read", ["sessionId": sessionId, "id": attachment.id, "offset": offset], as: ImageChunk.self)
+            guard chunk.offset > offset, let piece = Data(base64Encoded: chunk.data) else {
+                throw HostError(message: "Could not read \(attachment.name)")
+            }
+            bytes.append(piece)
+            offset = chunk.offset
+        }
+        return bytes
+    }
 
     /// Uploads to the host's attachment store in chunks, as the desktop does.
     func upload(data: Data, name: String, mimeType: String) async throws -> Attachment {

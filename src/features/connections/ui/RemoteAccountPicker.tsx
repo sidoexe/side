@@ -12,7 +12,7 @@ import { barClass, UsageMeter } from "../../providers/ui/ProviderAccountUsage";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowDownCircle, ArrowLeft, Check, Plus, RefreshCw, RotateCcw, Trash2 } from "../../../shared/ui/icons";
+import { ArrowDownCircle, ArrowLeft, Check, Plus, Pencil, RefreshCw, RotateCcw, Trash2 } from "../../../shared/ui/icons";
 import { Popover, type PopoverDismissReason } from "../../../shared/ui/Popover";
 import { remoteRequest } from "../model/connections";
 import {
@@ -20,7 +20,10 @@ import {
   refreshHostAccounts,
   reloadHostAccounts,
   removeHostAccount,
+  renameHostAccount,
+  hostDefaultHidden,
   setHostAccountBalanced,
+  setHostDefaultHidden,
 } from "../model/hostAccounts";
 import type { HostAccountSummary, RemoteProvider } from "../model/protocol";
 import { useRemoteAccountSlot } from "./remoteAccountSlot";
@@ -170,6 +173,7 @@ function AccountActions({
   toggling,
   onToggleBalanced,
   onReconnect,
+  onRename,
   onRemove,
 }: {
   account: HostAccountSummary;
@@ -177,6 +181,7 @@ function AccountActions({
   toggling: boolean;
   onToggleBalanced: () => void;
   onReconnect?: () => void;
+  onRename?: () => void;
   onRemove?: () => void;
 }) {
   const balanced = !!account.balanced;
@@ -214,6 +219,20 @@ function AccountActions({
           onClick={onReconnect}
         >
           <RotateCcw className="size-3" strokeWidth={1.75} aria-hidden />
+        </button>
+      ) : null}
+      {onRename ? (
+        <button
+          type="button"
+          role="menuitem"
+          aria-label={`Rename ${account.label}`}
+          title="Rename account"
+          disabled={toggling}
+          className="grid size-5 place-items-center rounded-md text-content/35 hover:bg-content/10 hover:text-content disabled:opacity-50"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onRename}
+        >
+          <Pencil className="size-3" strokeWidth={1.75} aria-hidden />
         </button>
       ) : null}
       {onRemove ? (
@@ -473,6 +492,7 @@ export function RemoteAccountPicker({
   canRefresh = false,
   canBalance = false,
   canRemove = false,
+  canRename = false,
   accounts,
   value,
   disabled,
@@ -493,6 +513,8 @@ export function RemoteAccountPicker({
   canBalance?: boolean;
   /** The host can forget one of its accounts. */
   canRemove?: boolean;
+  /** The host can rename its accounts. */
+  canRename?: boolean;
   accounts: HostAccountSummary[];
   value: string | undefined;
   disabled?: boolean;
@@ -510,6 +532,7 @@ export function RemoteAccountPicker({
   const [toggling, setToggling] = useState<string>();
   const [balanceError, setBalanceError] = useState<string>();
   const [now, setNow] = useState(() => Date.now());
+  const [, setHiddenVersion] = useState(0);
   const refresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
@@ -538,13 +561,17 @@ export function RemoteAccountPicker({
   const activeLabel = active?.label ?? (removed ? REMOVED_LABEL : DEFAULT_LABEL);
   const provider = harness;
   const named = accounts.filter((account) => account.id !== AUTO_HOST_ACCOUNT);
+  // Hidden only while a named account is there to run on instead.
+  const defaultHidden = hostDefaultHidden(machineId, harness) && named.length > 0;
   const options = [
     ...accounts.map((account) => ({
       id: account.id,
       label: account.label,
       account: account.id === AUTO_HOST_ACCOUNT ? undefined : account,
     })),
-    { id: DEFAULT, label: DEFAULT_LABEL, account: undefined },
+    ...(defaultHidden && selected !== DEFAULT
+      ? []
+      : [{ id: DEFAULT, label: DEFAULT_LABEL, account: undefined }]),
   ];
 
   const adopt = async (entry: Found) => {
@@ -573,6 +600,32 @@ export function RemoteAccountPicker({
     } finally {
       setToggling(undefined);
     }
+  };
+
+  const rename = async (account: HostAccountSummary) => {
+    if (toggling) return;
+    const label = window.prompt(`Rename “${account.label}”`, account.label)?.trim();
+    if (!label || label === account.label) return;
+    setToggling(account.id);
+    setBalanceError(undefined);
+    try {
+      await renameHostAccount(machineId, account.id, label);
+    } catch (error) {
+      setBalanceError(message(error));
+    } finally {
+      setToggling(undefined);
+    }
+  };
+
+  const removeDefault = () => {
+    if (
+      !window.confirm(
+        `Remove the host's own ${harness === "codex" ? "Codex" : "Claude"} sign-in from this list? The host keeps it, and conversations still on it keep running.`,
+      )
+    )
+      return;
+    setHostDefaultHidden(machineId, harness, true);
+    setHiddenVersion((value) => value + 1);
   };
 
   const remove = async (account: HostAccountSummary) => {
@@ -731,8 +784,23 @@ export function RemoteAccountPicker({
                   toggling={toggling === option.account.id}
                   onToggleBalanced={() => void toggleBalanced(option.account!)}
                   onReconnect={signIn ? () => setView({ signIn: option.account }) : undefined}
+                  onRename={canRename ? () => void rename(option.account!) : undefined}
                   onRemove={canRemove ? () => void remove(option.account!) : undefined}
                 />
+              ) : option.id === DEFAULT && named.length > 0 ? (
+                <span className="absolute right-1 top-1 flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-label={`Remove ${option.label}`}
+                    title="Remove from this list"
+                    className="grid size-5 place-items-center rounded-md text-content/35 hover:bg-content/10 hover:text-red-600 dark:hover:text-red-300"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={removeDefault}
+                  >
+                    <Trash2 className="size-3" strokeWidth={1.75} aria-hidden />
+                  </button>
+                </span>
               ) : null}
             </div>
           ))}

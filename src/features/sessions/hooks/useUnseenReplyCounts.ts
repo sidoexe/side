@@ -3,7 +3,7 @@ import { nextUnseenReplyCounts } from "../model/sessionDone";
 
 /**
  * Replies each tracked session finished while unfocused, plus any noted
- * from elsewhere (a habit's post), cleared once the session is focused.
+ * from elsewhere (a habit's post), cleared once the session is focused or checked.
  */
 export function useUnseenReplyCounts(
   trackedIds: ReadonlySet<string>,
@@ -12,6 +12,8 @@ export function useUnseenReplyCounts(
 ): {
   counts: ReadonlyMap<string, number>;
   noteReply: (sessionId: string) => void;
+  /** The user checked the replies without opening the session. */
+  clear: (sessionId: string) => void;
 } {
   const [, rerender] = useReducer((tick: number) => tick + 1, 0);
   const busyRef = useRef(busySessionIds);
@@ -42,5 +44,12 @@ export function useUnseenReplyCounts(
     countsRef.current = next;
     rerender();
   }, []);
-  return { counts: countsRef.current, noteReply };
+  const clear = useCallback((sessionId: string) => {
+    if (!countsRef.current.has(sessionId)) return;
+    const next = new Map(countsRef.current);
+    next.delete(sessionId);
+    countsRef.current = next;
+    rerender();
+  }, []);
+  return { counts: countsRef.current, noteReply, clear };
 }

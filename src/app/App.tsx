@@ -553,7 +553,12 @@ import {
   TranscriptPoolOutlet,
 } from "../features/sessions/ui/TranscriptPool";
 import { syncDockBadge } from "../features/notifications/model/dockBadge";
-import { liveAgentsFromSessions } from "../features/sessions/model/liveAgents";
+import {
+  liveAgentsFromSessions,
+  type LiveAgent,
+} from "../features/sessions/model/liveAgents";
+import { noteSessionsChecked } from "../features/sessions/model/sessionChecked";
+import { colleagueChatAgents } from "../features/monos/model/colleagueChats";
 import { forgetCheckedSessions } from "../features/sessions/model/sessionChecked";
 import { useStoredDoneAgents } from "../features/sessions/hooks/useStoredDoneAgents";
 import { hiddenApprovalNotices } from "../features/notifications/model/approvalToast";
@@ -2250,7 +2255,9 @@ function Workspace({
   const monoSessionIds = useMemo(
     () =>
       new Set(
-        listMonos().flatMap((mono) => (mono.sessionId ? [mono.sessionId] : [])),
+        listMonos().flatMap((mono) =>
+          monoThreads(mono).map((thread) => thread.id),
+        ),
       ),
     // The roster is read through its snapshot.
     [monosSnap],
@@ -2277,10 +2284,13 @@ function Workspace({
       ...liveAgentsFromSessions(
         promptableSessions,
         unseenFinishedIds,
+        // With Colleagues off nothing else lists their chats.
         new Set(
-          listMonos().flatMap((mono) =>
-            mono.sessionId ? [mono.sessionId] : [],
-          ),
+          monosEnabled
+            ? listMonos().flatMap((mono) =>
+                monoThreads(mono).map((thread) => thread.id),
+              )
+            : [],
         ),
       ),
       // Done before this launch and not opened since.
@@ -2320,25 +2330,28 @@ function Workspace({
   ]);
   // Rebuilt for every streamed batch; identity only moves when a row does.
   const liveAgents = useStableValue(liveAgentRows);
-  // A colleague's own chat while it works: the board lists it under Working,
-  // where the rail shows it as the colleague.
+  // A colleague's own chat: the board lists it under Working while it works
+  // and under To review when it asks the user something.
   const colleagueChatRows = useMemo(() => {
     if (!liveAgentsEnabled || !monosEnabled) return [];
-    const monos = listMonos().flatMap((mono) =>
-      mono.sessionId ? [{ mono, sessionId: mono.sessionId }] : [],
+    return colleagueChatAgents(
+      promptableSessions,
+      listMonos().map((mono) => ({
+        id: mono.id,
+        name: monoLook(mono).name,
+        threadIds: monoThreads(mono).map((thread) => thread.id),
+      })),
+      monoReplies.counts,
     );
-    const bySession = new Map(monos.map((entry) => [entry.sessionId, entry]));
-    return liveAgentsFromSessions(
-      promptableSessions.filter((session) => bySession.has(session.id)),
-    ).flatMap((row) => {
-      const entry = bySession.get(row.id);
-      if (!entry || row.needsApproval || row.done) return [];
-      const { name } = monoLook(entry.mono);
-      return [{ ...row, colleague: { id: entry.mono.id, name } }];
-    });
     // The roster is read through its snapshot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveAgentsEnabled, monosEnabled, promptableSessions, monosSnap]);
+  }, [
+    liveAgentsEnabled,
+    monosEnabled,
+    promptableSessions,
+    monosSnap,
+    monoReplies.counts,
+  ]);
   const colleagueChats = useStableValue(colleagueChatRows);
   const recentPaths = useMemo(
     () => recents.map((item) => item.path),
@@ -2601,15 +2614,15 @@ function Workspace({
         persistSession(session);
       }
       // A Colleague's chat is read on the phone from its home machine. While
-      // it works, it is written every few seconds, so the phone sees its
-      // steps as they come rather than only the finished reply.
+      // it works, it is written every second and a half, so the phone sees
+      // its steps as they come rather than only the finished reply.
       if (
         session.busy &&
         isMonoSession(session.id) &&
         shouldPersistSession(session)
       ) {
         const now = Date.now();
-        if (now - (busyMonoPersistAt.current.get(session.id) ?? 0) >= 4_000) {
+        if (now - (busyMonoPersistAt.current.get(session.id) ?? 0) >= 1_500) {
           busyMonoPersistAt.current.set(session.id, now);
           persistSession(session);
         }
@@ -9003,6 +9016,9 @@ function Workspace({
     (sessionId: string, accountId: string) => Promise<boolean>
   >(async () => false);
   const onStopRef = useRef<(sessionId: string) => void>(() => undefined);
+  const deleteMonoThreadRef = useRef<
+    (monoId: string, threadId: string) => Promise<void>
+  >(async () => undefined);
   // Where the browser app may move each colleague, from this desktop's
   // accounts and the ones its colleagues run on.
   const colleagueAccounts = () => ({
@@ -9078,6 +9094,13 @@ function Workspace({
     return startColleagueInbox(
       async (monoId, text, account, thread, control) => {
         const mono = findMono(monoId);
+        // The phone deleting one of its conversations, as the thread menu does.
+        if (control === "delete") {
+          if (!mono || !thread || thread === MONO_NEW_THREAD) return false;
+          if (monoThreads(mono).some((entry) => entry.id === thread))
+            await deleteMonoThreadRef.current(monoId, thread);
+          return true;
+        }
         // A stop interrupts the turn; a steer goes into it at once, as the
         // composer's own steer does. Anything else follows the user's setting.
         const send = async (sessionId: string): Promise<boolean> => {
@@ -9095,20 +9118,28 @@ function Workspace({
             control === "steer" ? { followUpBehavior: "steer" } : undefined,
           ));
         };
+        // A conversation deleted here since the phone chose it no longer
+        // exists: a stop has nothing left to stop, and a message goes to the
+        // open conversation rather than waiting for a thread that never comes.
+        const gone =
+          !!mono &&
+          !!thread &&
+          thread !== MONO_NEW_THREAD &&
+          !monoThreads(mono).some((entry) => entry.id === thread);
+        if (gone && control === "stop") return true;
+        const target = gone ? undefined : thread;
         // Another of its threads takes the message in place of the open one.
         if (
           mono &&
-          thread &&
-          thread !== MONO_NEW_THREAD &&
-          thread !== mono.sessionId
+          target &&
+          target !== MONO_NEW_THREAD &&
+          target !== mono.sessionId
         ) {
-          if (!monoThreads(mono).some((entry) => entry.id === thread))
-            return false;
-          const other = await ensureOpenSessionRef.current(thread);
+          const other = await ensureOpenSessionRef.current(target);
           if (!other) return false;
           return await send(other.id);
         }
-        if (mono && thread === MONO_NEW_THREAD) startMonoThread(monoId);
+        if (mono && target === MONO_NEW_THREAD) startMonoThread(monoId);
         const session = await ensureMonoSession(monoId, {
           home: homeDir,
           load: (id) => ensureOpenSessionRef.current(id),
@@ -10778,6 +10809,7 @@ function Workspace({
     [flushHarnessEvents],
   );
   onStopRef.current = onStop;
+  deleteMonoThreadRef.current = onDeleteMonoThread;
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
@@ -11962,8 +11994,11 @@ function Workspace({
       setAutomationsViewOpen(false);
       setBoardViewOpen(false);
       setWebViewOpen(false);
-      const chatOf = listMonos().find((mono) => mono.sessionId === sessionId);
-      if (chatOf) return void onOpenMono(chatOf.id);
+      const chatOf = monoForSession(sessionId);
+      if (chatOf) {
+        switchMonoThread(chatOf.id, sessionId);
+        return void onOpenMono(chatOf.id);
+      }
       // A colleague's session this window does not hold, such as a habit's
       // run, opens over that colleague, as from its strip.
       const held = sessionsRef.current.find((s) => s.id === sessionId);
@@ -11984,12 +12019,21 @@ function Workspace({
     },
     [onSelectRemoteSession],
   );
+  // Checking a Colleague's reply from the board reads it without opening it.
+  const onCheckColleagueChat = useCallback(
+    ({ id, cwd, title, harness }: LiveAgent) => {
+      monoReplies.clear(id);
+      noteSessionsChecked([{ id, cwd, title, harness }]);
+    },
+    [monoReplies.clear],
+  );
   const sessionBoard = useSessionBoard(
     liveAgents,
     recentPaths,
     onSelectLiveAgent,
     onSelectBoardRemoteSession,
     colleagueChats,
+    onCheckColleagueChat,
   );
 
   const nextTitleTabs: TitleTab[] = deckProjectTabs.map((tab) =>

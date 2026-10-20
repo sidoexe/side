@@ -39,6 +39,39 @@ export async function removeHostAccount(machineId: string, accountId: string): P
   reloadHostAccounts(machineId);
 }
 
+/** Gives a host account a new name. */
+export async function renameHostAccount(machineId: string, accountId: string, label: string): Promise<void> {
+  const value = await remoteRequest<HostAccountSummary[]>(machineId, "accounts.rename", { accountId, label });
+  if (Array.isArray(value)) cached.set(machineId, value);
+  reloadHostAccounts(machineId);
+}
+
+const HIDDEN_DEFAULT_KEY = "side.hostDefaultHidden.v1";
+
+/** Whether this desktop hides a host's own sign-in from its account picker. */
+export function hostDefaultHidden(machineId: string, provider: RemoteProvider): boolean {
+  try {
+    const stored = JSON.parse(localStorage.getItem(HIDDEN_DEFAULT_KEY) ?? "{}") as Record<string, boolean>;
+    return stored[`${machineId}:${provider}`] === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Hides or shows a host's own sign-in; the host's profile folder is left alone. */
+export function setHostDefaultHidden(machineId: string, provider: RemoteProvider, hidden: boolean): void {
+  let stored: Record<string, boolean> = {};
+  try {
+    stored = JSON.parse(localStorage.getItem(HIDDEN_DEFAULT_KEY) ?? "{}") as Record<string, boolean>;
+  } catch {
+    /* start again */
+  }
+  if (hidden) stored[`${machineId}:${provider}`] = true;
+  else delete stored[`${machineId}:${provider}`];
+  localStorage.setItem(HIDDEN_DEFAULT_KEY, JSON.stringify(stored));
+  reloadHostAccounts(machineId);
+}
+
 /** The accounts a host offers, for hosts that advertise them. */
 export function useHostAccounts(
   machineId: string,

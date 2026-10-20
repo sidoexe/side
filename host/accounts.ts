@@ -158,6 +158,22 @@ export class HostAccounts {
     });
   }
 
+  /** Gives an account a new name, as the desktop's Settings does for its own. */
+  renameAccount(id: string, label: string): void {
+    const next = label.replace(/\s+/g, " ").trim().slice(0, 80);
+    if (!next) throw new Error("An account needs a name");
+    if (!this.config().accounts.some((account) => account.id === id))
+      throw new Error(`Unknown account "${id}" on this host`);
+    this.edit((raw) => ({
+      ...raw,
+      accounts: (Array.isArray(raw.accounts) ? raw.accounts : []).map((entry: unknown) =>
+        entry && typeof entry === "object" && (entry as { id?: unknown }).id === id
+          ? { ...(entry as object), label: next }
+          : entry,
+      ),
+    }));
+  }
+
   /**
    * Forgets an account: out of the file and the balanced pool, its readings
    * dropped. Its profile folder stays on disk, so a Claude one is offered for

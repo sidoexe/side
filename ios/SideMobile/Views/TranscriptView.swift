@@ -100,6 +100,8 @@ extension Block {
 struct TranscriptItemView: View {
     let item: TranscriptItem
     var cwd = ""
+    /// The session the blocks belong to, to read the images sent in them.
+    var sessionId = ""
     var canDecide = false
     var onDecide: (Int, String) -> Void = { _, _ in }
     var editableId: String?
@@ -109,7 +111,7 @@ struct TranscriptItemView: View {
     var body: some View {
         switch item {
         case .block(let block):
-            BlockView(block: block, canDecide: canDecide, onDecide: onDecide, editable: block.id == editableId, onEdit: onEdit, onBuild: onBuild)
+            BlockView(block: block, sessionId: sessionId, canDecide: canDecide, onDecide: onDecide, editable: block.id == editableId, onEdit: onEdit, onBuild: onBuild)
         case .activity(_, let blocks, let worked, let live):
             ActivityView(blocks: blocks, cwd: cwd, worked: worked, live: live)
         }
@@ -118,6 +120,7 @@ struct TranscriptItemView: View {
 
 struct BlockView: View {
     let block: Block
+    var sessionId = ""
     let canDecide: Bool
     let onDecide: (Int, String) -> Void
     var editable = false
@@ -132,8 +135,12 @@ struct BlockView: View {
                     Text(block.text).font(.system(size: 15)).textSelection(.enabled)
                 }
                 if let attachments = block.attachments, !attachments.isEmpty {
+                    // Images show as the desktop shows them; the rest by name.
+                    ForEach(attachments.filter { $0.kind == "image" && !sessionId.isEmpty }, id: \.id) { attachment in
+                        AttachmentImage(sessionId: sessionId, attachment: attachment)
+                    }
                     HStack(spacing: 6) {
-                        ForEach(attachments, id: \.id) { attachment in
+                        ForEach(attachments.filter { !($0.kind == "image" && !sessionId.isEmpty) }, id: \.id) { attachment in
                             Label(attachment.name, systemImage: attachment.kind == "image" ? "photo" : "doc").lineLimit(1)
                         }
                     }
@@ -207,8 +214,54 @@ struct BlockView: View {
                     Text(block.text).font(.system(size: 13)).foregroundStyle(Theme.muted)
                 }
             }
+        case "image":
+            // The file stays on the machine that made it; say that it exists.
+            Label(block.image?.alt ?? block.image?.name ?? "Generated image", systemImage: "photo")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.muted)
+                .lineLimit(2)
         default:
             EmptyView()
+        }
+    }
+}
+
+/// An image sent in a session, read from the host once and kept.
+struct AttachmentImage: View {
+    @Environment(AppModel.self) private var model
+    let sessionId: String
+    let attachment: Attachment
+    @State private var image: UIImage?
+    @State private var failed = false
+
+    private static let cache = NSCache<NSString, UIImage>()
+    private var key: NSString { "\(sessionId)/\(attachment.id)" as NSString }
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: 240, alignment: .leading)
+                    .clipShape(.rect(cornerRadius: 6))
+            } else if failed {
+                Label(attachment.name, systemImage: "photo").lineLimit(1).font(Theme.meta).foregroundStyle(Theme.muted)
+            } else {
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 60)
+            }
+        }
+        .task(id: attachment.id) {
+            if let cached = Self.cache.object(forKey: key) { return image = cached }
+            guard let client = model.client else { return }
+            do {
+                let data = try await client.image(sessionId: sessionId, attachment: attachment)
+                guard let decoded = UIImage(data: data) else { return failed = true }
+                Self.cache.setObject(decoded, forKey: key)
+                image = decoded
+            } catch {
+                failed = true
+            }
         }
     }
 }

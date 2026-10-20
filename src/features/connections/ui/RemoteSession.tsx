@@ -1546,6 +1546,7 @@ function ConnectedRemoteSession({
           canRefresh={!!descriptor?.capabilities.includes("accounts.refresh")}
           canBalance={!!descriptor?.capabilities.includes("accounts.balance")}
           canRemove={!!descriptor?.capabilities.includes("accounts.remove")}
+          canRename={!!descriptor?.capabilities.includes("accounts.rename")}
           accounts={accountsFor(hostAccounts, configuration.harness)}
           value={configuration.account}
           disabled={!online || busy}

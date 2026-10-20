@@ -28,19 +28,29 @@ describe("remote project status", () => {
         summary({ toReview: true, archived: true }),
         summary({}),
       ]),
-    ).toEqual({ working: 1, done: 2 });
+    ).toEqual({ working: 1, waiting: 0, done: 2 });
   });
 
   it("counts a session that works again as working, not done", () => {
     expect(
       remoteProjectStatus([summary({ status: "running", toReview: true })]),
-    ).toEqual({ working: 1, done: 0 });
+    ).toEqual({ working: 1, waiting: 0, done: 0 });
   });
 
   it("counts a session waiting on the user as waiting, not done", () => {
     expect(
       remoteProjectStatus([summary({ toReview: true, needsInput: true })]),
-    ).toEqual({ working: 0, done: 0 });
+    ).toEqual({ working: 0, waiting: 1, done: 0 });
+  });
+
+  it("counts a running session that waits on a question as waiting, not working", () => {
+    expect(
+      remoteProjectStatus([
+        summary({ status: "running", needsInput: true }),
+        summary({ status: "running" }),
+        summary({ status: "running", needsInput: true, archived: true }),
+      ]),
+    ).toEqual({ working: 1, waiting: 1, done: 0 });
   });
 });
 
@@ -63,6 +73,16 @@ describe("remote review rows", () => {
       done: false,
     });
     expect(rows[1]).toMatchObject({ activity: "Done", done: true });
+  });
+
+  it("lists a running session that waits on a question, as a host keeps it running", () => {
+    const rows = remoteReviewAgents("remote://box/app", [
+      summary({ id: "done", toReview: true, updatedAt: 3 }),
+      summary({ id: "ask", status: "running", needsInput: true, updatedAt: 1 }),
+    ]);
+
+    expect(rows.map((row) => row.id)).toEqual(["ask", "done"]);
+    expect(rows[0]).toMatchObject({ activity: "Needs input", needsApproval: true });
   });
 
   it("puts a failed turn after those asking for input and before finished ones", () => {

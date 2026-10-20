@@ -3,6 +3,7 @@ import { isInFlightSession } from "./inFlight";
 import { displayPath } from "../../../shared/lib/paths";
 import {
   sessionDisplayTitle,
+  sessionNeedsInput,
   type Block,
   type HarnessId,
   type Session,
@@ -26,7 +27,8 @@ export type LiveAgent = {
 };
 
 /** Inbox discussions and orchestration workers have their own panels and
- * never appear as live agents. */
+ * never appear as live agents, except a worker that waits on the user: that
+ * one is opened through its lead, and would otherwise show nowhere. */
 export function isLiveAgentSession(
   session: Pick<Session, "inboxAsk" | "orchestrationLeadId">,
 ): boolean {
@@ -42,8 +44,9 @@ export function liveAgentsFromSessions(
     .filter(
       (session) =>
         !excludedIds.has(session.id) &&
-        isLiveAgentSession(session) &&
-        (isInFlightSession(session) || unseenFinishedIds.has(session.id)),
+        (isLiveAgentSession(session)
+          ? isInFlightSession(session) || unseenFinishedIds.has(session.id)
+          : !session.inboxAsk && sessionNeedsInput(session)),
     )
     .map((session) =>
       toLiveAgent(session, unseenFinishedIds.has(session.id)),

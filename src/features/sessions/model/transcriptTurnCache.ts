@@ -52,36 +52,22 @@ export class TranscriptTurnCache {
     {
       managed = false,
       inlineWork = false,
-      undeliveredMessageIds,
     }: {
       managed?: boolean;
       inlineWork?: boolean;
-      undeliveredMessageIds?: ReadonlySet<string>;
     } = {},
   ): TurnItem[] {
     let variants = this.items.get(turn);
-    const undelivered =
-      inlineWork && undeliveredMessageIds?.size
-        ? turn
-            .filter((block) => undeliveredMessageIds?.has(block.id))
-            .map((block) => block.id)
-        : [];
-    const key = JSON.stringify([settled, managed, inlineWork, undelivered]);
+    const key = JSON.stringify([settled, managed, inlineWork]);
     const previous = variants?.get(key);
     if (previous) return previous;
     const visible = (blocks: Block[]) =>
       blocks.filter(
         (block) => !block.orchestration && (managed || !block.internal),
       );
-    // Each run in a merged Mono turn folds on its own: an earlier answer is
-    // not narration for the work that the next run went on to do.
+    // Each run in a merged Mono turn groups on its own.
     const items = inlineWork
-      ? monoTurnRuns(turn).flatMap((run, index, runs) =>
-          groupMonoTurnItems(visible(run), {
-            live: !settled && index === runs.length - 1,
-            undeliveredMessageIds,
-          }),
-        )
+      ? monoTurnRuns(turn).flatMap((run) => groupMonoTurnItems(visible(run)))
       : groupTurnItems(visible(turn), { settled });
     if (!variants) {
       variants = new Map();
