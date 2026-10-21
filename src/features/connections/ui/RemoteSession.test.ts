@@ -314,6 +314,7 @@ beforeEach(() => {
 afterEach(() => {
   setRemoteAccountSlot(undefined);
   localStorage.removeItem("monocode.followUpBehavior");
+  localStorage.removeItem("monocode.personalInstructions");
   act(() => root.unmount());
   container.remove();
   document.body.innerHTML = "";
@@ -1325,4 +1326,14 @@ it("hands a message typed during a turn to the host's running agent, as locally"
   expect(queued).toMatchObject({ type: "queue", text: "Also check the tests" });
   // The host names the queued message after the command that queued it.
   expect(commands.at(-1)).toMatchObject({ messageId: queued.commandId });
+});
+
+it("gives a new host conversation the personal instructions once, as locally", async () => {
+  localStorage.setItem("monocode.personalInstructions", "Answer in French.");
+  await render();
+  await send("Fix the tests");
+  expect(commands[1]).toMatchObject({ type: "send", text: "Fix the tests" });
+  const prompt = (commands[1] as { prompt?: string }).prompt ?? "";
+  expect(prompt).toContain("<personal_instructions>");
+  expect(prompt).toContain("Answer in French.");
 });

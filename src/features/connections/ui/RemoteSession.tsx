@@ -37,6 +37,7 @@ import { openRemotePreview } from "../model/remotePreviews";
 import { CONTINUE_PROMPT } from "../../sessions/model/inFlight";
 import { canSteerHarness, isLiveHarness } from "../../../integrations/harness/core/registry";
 import { loadFollowUpBehavior } from "../../settings/model/settings";
+import { personalInstructionsContext } from "../../settings/model/personalInstructions";
 import {
   clearPendingRemoteCommand,
   loadRemoteSession,
@@ -773,6 +774,8 @@ function ConnectedRemoteSession({
     command: C,
     cwd: string,
     harness: HarnessId,
+    /** The provider has no context yet: it hears the personal instructions. */
+    fresh: boolean,
   ): Promise<C> => {
     if (command.type !== "send") return command;
     const operator = operatorTurn(command.text);
@@ -780,7 +783,9 @@ function ConnectedRemoteSession({
       harness,
       cwd: remotePath(machine.environmentId, cwd),
     }).catch(() => operator.text);
-    const full = operator.context ? `${prompt}\n\n${operator.context}` : prompt;
+    // What the app adds to the message, as on a local session's first turn.
+    const appContext = [fresh ? personalInstructionsContext() : undefined, operator.context].filter(Boolean);
+    const full = appContext.length ? `${prompt}\n\n${appContext.join("\n\n")}` : prompt;
     return {
       ...command,
       text: operator.text,
@@ -820,6 +825,7 @@ function ConnectedRemoteSession({
           ),
       executionCwd,
       configuration.harness,
+      !hostSession?.providerSessionId,
     );
     if (!alive.current || version !== bindingVersion.current) return undefined;
     return run(command, turn);
@@ -870,6 +876,7 @@ function ConnectedRemoteSession({
           : message("", turn.text, turn.commandId, uploaded, turn.intent, turn.draftBlockId, turn.planBlockId),
         worktreeCwd,
         draft.harness,
+        true,
       );
       if (version !== bindingVersion.current) return;
       const receipt = await run({
