@@ -47,6 +47,7 @@ import {
 import type { HostPush } from "./push";
 import type { HostRail } from "./rail";
 import type { HostWebApps } from "./webApps";
+import type { HostMachines } from "./machines";
 import type { HostPreviews } from "./previews";
 import type { HostAccountLogins } from "./account-login";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments";
@@ -353,6 +354,8 @@ export class HostEngine {
   webApps?: HostWebApps;
   /** This machine's local web servers, opened on the tailnet. */
   previews?: HostPreviews;
+  /** The other machines the browser app reaches through this host. */
+  machines?: HostMachines;
 
   /** Whether a turn of this session is running now. */
   isRunning(sessionId: string): boolean {

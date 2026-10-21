@@ -7,11 +7,11 @@ import { Chip } from "./composer";
 
 /** The account chip of a session, as the desktop's host account picker:
  * "Default" or a host account, each with its usage, and the accounts sheet. */
-export function AccountChip({ harness, current, onChange }: { harness: string; current?: string; onChange: (id: string) => void }) {
+export function AccountChip({ machineId, harness, current, onChange }: { machineId: string; harness: string; current?: string; onChange: (id: string) => void }) {
   const model = useModel();
-  const accounts = model.state.accounts.filter((account) => account.provider === harness);
+  const accounts = (model.machine(machineId)?.accounts ?? []).filter((account) => account.provider === harness);
   const selected = current && current !== "default" ? current : undefined;
-  if (!accounts.length && !model.canSignIn(harness)) return null;
+  if (!accounts.length && !model.canSignIn(machineId, harness)) return null;
   const items = (): MenuItem[] => [
     { label: "Default", checked: !selected, run: () => onChange("default") },
     ...accounts.map(
@@ -23,39 +23,40 @@ export function AccountChip({ harness, current, onChange }: { harness: string; c
       }),
     ),
     { kind: "divider" },
-    { label: "Accounts…", icon: "person", run: () => model.set({ sheet: { kind: "accounts", provider: harness } }) },
+    { label: "Accounts…", icon: "person", run: () => model.set({ sheet: { kind: "accounts", machineId, provider: harness } }) },
   ];
   return (
     <Chip
       label={accounts.find((account) => account.id === selected)?.label ?? "Default"}
       items={items}
-      onOpen={() => void model.refreshAccounts()}
+      onOpen={() => void model.refreshAccounts(machineId)}
     />
   );
 }
 
-type SignIn = { provider: string; account?: HostAccountSummary };
+type SignIn = { machineId: string; provider: string; account?: HostAccountSummary };
 type Found = { configDir: string; label: string };
 
 /** The host's accounts: usage, sign-in errors, the Balanced pool, and
  * signing one in again or adding one, as the desktop's account menu. */
-export function HostAccountsSheet({ provider, onDone, embedded }: { provider?: string; onDone: () => void; embedded?: boolean }) {
+export function HostAccountsSheet({ machineId, provider, onDone, embedded }: { machineId: string; provider?: string; onDone: () => void; embedded?: boolean }) {
   const model = useModel();
   const [signIn, setSignIn] = useState<SignIn>();
   const [found, setFound] = useState<Found[]>([]);
   const [importing, setImporting] = useState<string>();
   const [refreshing, setRefreshing] = useState(false);
-  const accounts = model.state.accounts.filter((account) => !provider || account.provider === provider);
+  const all = model.machine(machineId)?.accounts ?? [];
+  const accounts = all.filter((account) => !provider || account.provider === provider);
   const claude = !provider || provider === "claude";
-  const addable = ["claude", "codex"].filter((item) => (!provider || provider === item) && model.canSignIn(item));
+  const addable = ["claude", "codex"].filter((item) => (!provider || provider === item) && model.canSignIn(machineId, item));
 
   /** Signed-in Claude profiles no account declares yet, to import. */
   const loadFound = async () => {
-    if (!claude || !model.can("accounts.import")) return;
-    setFound(await rpc<Found[]>("accounts.found").catch(() => []));
+    if (!claude || !model.can("accounts.import", machineId)) return;
+    setFound(await rpc<Found[]>("accounts.found", {}, machineId).catch(() => []));
   };
   useEffect(() => {
-    void model.refreshAccounts();
+    void model.refreshAccounts(machineId);
     void loadFound();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -65,9 +66,9 @@ export function HostAccountsSheet({ provider, onDone, embedded }: { provider?: s
   const adopt = async (entry: Found) => {
     setImporting(entry.configDir);
     try {
-      await rpc("accounts.import", { configDir: entry.configDir });
+      await rpc("accounts.import", { configDir: entry.configDir }, machineId);
       setFound((list) => list.filter((item) => item.configDir !== entry.configDir));
-      await model.refreshAccounts(true);
+      await model.refreshAccounts(machineId, true);
     } catch (error) {
       model.report(error);
     } finally {
@@ -82,7 +83,7 @@ export function HostAccountsSheet({ provider, onDone, embedded }: { provider?: s
         title: `Remove "${account.label}" from the host's accounts?`,
         action: "Remove",
         run: async () => {
-          await model.changeAccounts("accounts.remove", { accountId: account.id });
+          await model.changeAccounts(machineId, "accounts.remove", { accountId: account.id });
           await loadFound();
         },
       },
@@ -92,17 +93,17 @@ export function HostAccountsSheet({ provider, onDone, embedded }: { provider?: s
     <>
       <NavBar
         sidebar
-        title="Host accounts"
+        title={model.multi() ? `${model.machine(machineId)?.name ?? "Host"} accounts` : "Host accounts"}
         back={embedded ? onDone : undefined}
         leading={
-          model.can("accounts.refresh") && !embedded ? (
+          model.can("accounts.refresh", machineId) && !embedded ? (
             <button
               className="bar-button"
               aria-label="Refresh"
               disabled={refreshing}
               onClick={async () => {
                 setRefreshing(true);
-                await model.refreshAccounts(true);
+                await model.refreshAccounts(machineId, true);
                 setRefreshing(false);
               }}
             >
@@ -122,9 +123,9 @@ export function HostAccountsSheet({ provider, onDone, embedded }: { provider?: s
         <div className="accounts">
           {!accounts.length ? <p className="hint">No named accounts on this host. Sessions run on its own sign-in.</p> : null}
           {accounts.map((account) => (
-            <AccountCard key={account.id} account={account} onSignIn={() => setSignIn({ provider: account.provider, account })} onRemove={() => remove(account)} />
+            <AccountCard key={account.id} account={account} machineId={machineId} onSignIn={() => setSignIn({ machineId, provider: account.provider, account })} onRemove={() => remove(account)} />
           ))}
-          {claude && model.can("accounts.import") && found.length ? (
+          {claude && model.can("accounts.import", machineId) && found.length ? (
             <>
               <SectionLabel text="Signed in on the host" />
               {found.map((entry) => (
@@ -140,7 +141,7 @@ export function HostAccountsSheet({ provider, onDone, embedded }: { provider?: s
           {addable.length ? (
             <div className="button-row">
               {addable.map((item) => (
-                <Button key={item} icon="plus" onClick={() => setSignIn({ provider: item })}>
+                <Button key={item} icon="plus" onClick={() => setSignIn({ machineId, provider: item })}>
                   {addable.length > 1 ? `Add ${item === "codex" ? "Codex" : "Claude"} account` : "Add account"}
                 </Button>
               ))}
@@ -152,7 +153,7 @@ export function HostAccountsSheet({ provider, onDone, embedded }: { provider?: s
   );
 }
 
-function AccountCard({ account, onSignIn, onRemove }: { account: HostAccountSummary; onSignIn: () => void; onRemove: () => void }) {
+function AccountCard({ machineId, account, onSignIn, onRemove }: { machineId: string; account: HostAccountSummary; onSignIn: () => void; onRemove: () => void }) {
   const model = useModel();
   const until = limitedUntil(account);
   const updatedAt = account.usage?.updatedAt;
@@ -165,7 +166,7 @@ function AccountCard({ account, onSignIn, onRemove }: { account: HostAccountSumm
         {account.usage?.error ? <Pill text="Sign-in needed" color="var(--del-fg)" /> : until ? <Pill text="Limited" /> : null}
       </div>
       {account.pool ? (
-        <div className="meta muted">{accountStatus(account, model.state.accounts)} · starts on the most weekly room, moves on at a limit</div>
+        <div className="meta muted">{accountStatus(account, model.machine(machineId)?.accounts ?? [])} · starts on the most weekly room, moves on at a limit</div>
       ) : (
         <>
           {account.usage?.fiveHour ? <WindowRow label="5h" window={account.usage.fiveHour} /> : null}
@@ -173,7 +174,7 @@ function AccountCard({ account, onSignIn, onRemove }: { account: HostAccountSumm
           {until ? <div className="meta amber">Limited until {resetTime(until)}</div> : null}
           {account.usage?.error ? <div className="meta del clamp-3">{account.usage.error}</div> : null}
           {updatedAt ? <div className="meta faint">Updated {Date.now() - updatedAt < 60_000 ? "just now" : `${ago(updatedAt)} ago`}</div> : null}
-          {account.balanced !== undefined && model.can("accounts.balance") ? (
+          {account.balanced !== undefined && model.can("accounts.balance", machineId) ? (
             <div className="toggle-row">
               <div>
                 <div className="small">Use in Balanced</div>
@@ -182,17 +183,17 @@ function AccountCard({ account, onSignIn, onRemove }: { account: HostAccountSumm
               <Switch
                 on={account.balanced}
                 label="Use in Balanced"
-                onChange={(on) => void model.changeAccounts("accounts.balance", { accountId: account.id, balanced: on })}
+                onChange={(on) => void model.changeAccounts(machineId, "accounts.balance", { accountId: account.id, balanced: on })}
               />
             </div>
           ) : null}
           <div className="button-row">
-            {model.canSignIn(account.provider) ? (
+            {model.canSignIn(machineId, account.provider) ? (
               <Button primary={!!account.usage?.error} onClick={onSignIn}>
                 Sign in again
               </Button>
             ) : null}
-            {model.can("accounts.remove") ? (
+            {model.can("accounts.remove", machineId) ? (
               <Button danger onClick={onRemove}>
                 Remove
               </Button>
@@ -233,7 +234,7 @@ type Step =
  * `claude auth login` offers a link, and the code the page shows goes back.
  * Codex: the host offers a link and a device code to enter there, and the
  * page waits for the host to see the sign-in through. */
-function HostSignIn({ provider, account, onDone }: SignIn & { onDone: () => void }) {
+function HostSignIn({ machineId, provider, account, onDone }: SignIn & { onDone: () => void }) {
   const model = useModel();
   const [step, setStep] = useState<Step>({ kind: "starting" });
   const [code, setCode] = useState("");
@@ -254,6 +255,7 @@ function HostSignIn({ provider, account, onDone }: SignIn & { onDone: () => void
       const started = await rpc<{ loginId: string; url: string; userCode?: string }>(
         "accounts.login",
         account ? { accountId: account.id, provider: account.provider } : { provider },
+        machineId,
       );
       if (!started.url) throw new Error("The host offered no sign-in link");
       loginId.current = started.loginId;
@@ -262,11 +264,11 @@ function HostSignIn({ provider, account, onDone }: SignIn & { onDone: () => void
         await copyText(started.userCode).then(() => setCopied(true), () => undefined);
         // Each `accounts.loginStatus` waits up to about 10 seconds on the host.
         while (current === attempt.current) {
-          const status = await rpc<{ pending?: boolean; accountId?: string }>("accounts.loginStatus", { loginId: started.loginId });
+          const status = await rpc<{ pending?: boolean; accountId?: string }>("accounts.loginStatus", { loginId: started.loginId }, machineId);
           if (current !== attempt.current) return;
           if (status.pending) continue;
           finished.current = true;
-          await model.refreshAccounts(true);
+          await model.refreshAccounts(machineId, true);
           return onDone();
         }
       } else {
@@ -282,7 +284,7 @@ function HostSignIn({ provider, account, onDone }: SignIn & { onDone: () => void
     return () => {
       attempt.current += 1;
       // Leaving midway ends the host's sign-in, as the desktop does.
-      if (!finished.current && loginId.current) void rpc("accounts.loginCancel", { loginId: loginId.current }).catch(() => undefined);
+      if (!finished.current && loginId.current) void rpc("accounts.loginCancel", { loginId: loginId.current }, machineId).catch(() => undefined);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -292,9 +294,9 @@ function HostSignIn({ provider, account, onDone }: SignIn & { onDone: () => void
     if (step.kind !== "code" || busy || !value) return;
     setBusy(true);
     try {
-      await rpc("accounts.loginCode", { loginId: step.loginId, code: value });
+      await rpc("accounts.loginCode", { loginId: step.loginId, code: value }, machineId);
       finished.current = true;
-      await model.refreshAccounts(true);
+      await model.refreshAccounts(machineId, true);
       onDone();
     } catch (error) {
       // The host ends the sign-in on a failed code; it starts over.

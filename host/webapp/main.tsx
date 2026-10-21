@@ -1,8 +1,8 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { login } from "./api";
+import { LOCAL, login } from "./api";
 import { HostAccountsSheet } from "./accounts";
-import { NowView, ProjectsView, UsageSheet } from "./home";
+import { MachinesSheet, NowView, ProjectsView, UsageSheet } from "./home";
 import { FolderBrowserView, NewSessionView } from "./newSession";
 import { SessionView } from "./session";
 import { model, useModel, type HomeTab, type Route } from "./store";
@@ -16,7 +16,7 @@ function Root() {
   // The host, its projects and their sessions, every 5 seconds.
   usePoll(() => (app.state.signedIn === false ? undefined : app.refresh()), () => 5000, [app.state.signedIn === false]);
   if (app.state.signedIn === false) return <ConnectView />;
-  if (!app.state.host)
+  if (!app.machine(LOCAL)?.host)
     return (
       <div className="screen loading">
         <Spinner />
@@ -56,16 +56,20 @@ function TabStack({ tab }: { tab: HomeTab }) {
 }
 
 const key = (route: Route) =>
-  route.kind === "session" ? `s:${route.sessionId}` : route.kind === "new" ? `n:${route.projectId}` : route.kind;
+  route.kind === "session"
+    ? `s:${route.machineId}:${route.sessionId}`
+    : route.kind === "new"
+      ? `n:${route.machineId}:${route.projectId}`
+      : `b:${route.machineId}`;
 
 function Screen({ route }: { route: Route }) {
   switch (route.kind) {
     case "session":
-      return <SessionView projectId={route.projectId} sessionId={route.sessionId} />;
+      return <SessionView machineId={route.machineId} projectId={route.projectId} sessionId={route.sessionId} />;
     case "new":
-      return <NewSessionView projectId={route.projectId} />;
+      return <NewSessionView machineId={route.machineId} projectId={route.projectId} />;
     case "browse":
-      return <FolderBrowserView />;
+      return <FolderBrowserView machineId={route.machineId} />;
   }
 }
 
@@ -98,7 +102,13 @@ function SheetHost() {
   const close = () => app.set({ sheet: undefined });
   return (
     <Sheet onClose={close}>
-      {sheet.kind === "usage" ? <UsageSheet /> : <HostAccountsSheet provider={sheet.provider} onDone={close} />}
+      {sheet.kind === "usage" ? (
+        <UsageSheet />
+      ) : sheet.kind === "machines" ? (
+        <MachinesSheet />
+      ) : (
+        <HostAccountsSheet machineId={sheet.machineId} provider={sheet.provider} onDone={close} />
+      )}
     </Sheet>
   );
 }

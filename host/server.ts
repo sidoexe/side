@@ -198,6 +198,10 @@ export function createHostServer(
     if (!engine.rail) throw new Error("The project rail is unavailable on this host");
     return engine.rail;
   };
+  const machines = () => {
+    if (!engine.machines) throw new Error("Other machines are unavailable on this host");
+    return engine.machines;
+  };
   const webApps = () => {
     if (!engine.webApps) throw new Error("Web apps are unavailable on this host");
     return engine.webApps;
@@ -273,6 +277,33 @@ export function createHostServer(
           if (!response.destroyed)
             response.writeHead(400).end(JSON.stringify({ ok: false, error: "Invalid control request" }));
         }
+        return;
+      }
+      // The browser app's calls to another machine: checked as its own, then
+      // passed on unchanged with the credential this host keeps for it.
+      const relayed = request.url?.match(/^\/web\/machines\/([0-9a-f-]{36})\/rpc$/);
+      if (relayed && engine.machines) {
+        webSecurityHeaders(response);
+        response.setHeader("Content-Type", "application/json");
+        response.setHeader("Cache-Control", "no-store");
+        const token = webToken(request);
+        if (request.method !== "POST" || !sameOrigin(request)) {
+          response.writeHead(403).end(JSON.stringify({ error: "Unsupported request origin or route" }));
+          return;
+        }
+        if (!token || !engine.store.authenticated(token)) {
+          response.writeHead(401).end(JSON.stringify({ error: "Device credential is invalid or revoked" }));
+          return;
+        }
+        let input: Record<string, unknown>;
+        try {
+          input = await body(request);
+        } catch {
+          response.writeHead(400).end(JSON.stringify({ error: "Invalid request" }));
+          return;
+        }
+        const reply = await engine.machines.relay(relayed[1], input);
+        if (!response.destroyed) response.writeHead(reply.status).end(reply.text);
         return;
       }
       // The browser app reaches the same methods at /web/rpc, from its own
@@ -435,6 +466,7 @@ export function createHostServer(
                 ...(engine.push?.apnsEnabled() ? ["push.apns"] : []),
                 ...(engine.rail ? ["projects.rail"] : []),
                 ...(engine.webApps ? ["webApps"] : []),
+                ...(engine.machines ? ["machines"] : []),
                 ...(engine.previews ? ["previews"] : []),
                 "accounts",
                 "accounts.refresh",
@@ -860,6 +892,18 @@ export function createHostServer(
           case "previews.open":
             if (!engine.previews) throw new Error("Previews need Tailscale on this host");
             result = await engine.previews.open(params);
+            break;
+          case "machines.list":
+            result = machines().list();
+            break;
+          case "machines.add":
+            result = await machines().add(params.address, params.token, params.name);
+            break;
+          case "machines.rename":
+            result = machines().rename(params.machineId, params.name);
+            break;
+          case "machines.remove":
+            result = machines().remove(params.machineId);
             break;
           case "webApps.get":
             result = webApps().get();

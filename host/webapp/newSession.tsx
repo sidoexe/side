@@ -9,18 +9,19 @@ const remembered = (key: string, fallback: string) => localStorage.getItem(key) 
 
 /** The IDE's empty session: the project's name over a composer whose chips
  * pick the project, agent and model, permissions and account. */
-export function NewSessionView({ projectId }: { projectId: string }) {
+export function NewSessionView({ machineId, projectId }: { machineId: string; projectId: string }) {
   const model = useModel();
-  const [current, setCurrent] = useState(projectId);
+  const [current, setCurrent] = useState({ machineId, projectId });
   const [harness, setHarnessState] = useState(() => remembered("new.harness", "claude"));
   const [modelId, setModelState] = useState(() => remembered("new.model", ""));
   const [mode, setModeState] = useState(() => remembered("new.mode", "supervised"));
   const [account, setAccount] = useState("");
   const [catalog, setCatalog] = useState<HostModelCatalog>();
-  const project = model.project(current);
-  const harnesses = (model.state.host?.providers ?? []).filter((provider) => catalog?.models[provider]?.length);
+  const project = model.project(current.machineId, current.projectId);
+  const machine = model.machine(current.machineId);
+  const harnesses = (machine?.host?.providers ?? []).filter((provider) => catalog?.models[provider]?.length);
   const selected = catalog?.models[harness]?.find((item) => item.id === modelId);
-  const accounts = model.state.accounts.filter((item) => item.provider === harness);
+  const accounts = (machine?.accounts ?? []).filter((item) => item.provider === harness);
 
   const setHarness = (value: string) => {
     localStorage.setItem("new.harness", value);
@@ -38,16 +39,16 @@ export function NewSessionView({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (!project) return;
     let live = true;
-    rpc<HostModelCatalog>("models.list", { projectId: project.id }).then(
+    rpc<HostModelCatalog>("models.list", { projectId: project.id }, project.machineId).then(
       (loaded) => {
         if (!live) return;
         setCatalog(loaded);
-        const available = (model.state.host?.providers ?? []).filter((provider) => loaded.models[provider]?.length);
+        const available = (model.machine(project.machineId)?.host?.providers ?? []).filter((provider) => loaded.models[provider]?.length);
         const nextHarness = available.includes(harness) ? harness : available.includes("claude") ? "claude" : (available[0] ?? harness);
         if (nextHarness !== harness) setHarness(nextHarness);
         const models = loaded.models[nextHarness] ?? [];
         if (!models.some((item) => item.id === modelId)) setModel(models[0]?.id ?? "");
-        const own = model.state.accounts.filter((item) => item.provider === nextHarness);
+        const own = (model.machine(project.machineId)?.accounts ?? []).filter((item) => item.provider === nextHarness);
         if (!own.some((item) => item.id === account)) setAccount(own.find((item) => item.pool)?.id ?? "");
       },
       (error: unknown) => live && model.report(error),
@@ -56,12 +57,12 @@ export function NewSessionView({ projectId }: { projectId: string }) {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.id]);
+  }, [project?.machineId, project?.id]);
 
   const create = async (outgoing: Outgoing) => {
     if (!project || !modelId) return;
     try {
-      const receipt = await command({
+      const receipt = await command(project.machineId, {
         type: "create",
         projectId: project.id,
         harness,
@@ -69,7 +70,7 @@ export function NewSessionView({ projectId }: { projectId: string }) {
         runtimeMode: mode,
         ...(account ? { providerAccountId: account } : {}),
       });
-      await command({
+      await command(project.machineId, {
         type: "send",
         sessionId: receipt.sessionId,
         text: outgoing.text,
@@ -78,14 +79,14 @@ export function NewSessionView({ projectId }: { projectId: string }) {
       });
       await model.refresh();
       // The new session replaces this screen, as on the desktop.
-      model.replace({ kind: "session", projectId: project.id, sessionId: receipt.sessionId });
+      model.replace({ kind: "session", machineId: project.machineId, projectId: project.id, sessionId: receipt.sessionId });
     } catch (error) {
       model.report(error);
       throw error;
     }
   };
 
-  const projects = model.visibleProjects();
+  const projects = model.allProjects();
   const modelItems = (): MenuItem[] =>
     harnesses.flatMap((provider): MenuItem[] => [
       { kind: "section", label: HARNESS_TITLES[provider] ?? provider },
@@ -111,11 +112,13 @@ export function NewSessionView({ projectId }: { projectId: string }) {
           <div className="new-title">
             <Mascot seed={folderName(project.cwd)} size={18} />
             <span className="ellipsis">{project.name}</span>
+            {model.multi() ? <span className="new-machine ellipsis">{machine?.name}</span> : null}
           </div>
         ) : null}
         <Composer
+          machineId={current.machineId}
           disabled={!selected}
-          canPlan={model.can("sessions.plan")}
+          canPlan={model.can("sessions.plan", current.machineId)}
           onSend={create}
           context={project ? <span className="mono ellipsis rtl"><bdi>{tilde(project.cwd)}</bdi></span> : null}
           tools={
@@ -124,7 +127,18 @@ export function NewSessionView({ projectId }: { projectId: string }) {
                 <Chip
                   icon={<Mascot seed={folderName(project.cwd)} size={11} />}
                   label={project.name}
-                  items={projects.map((item) => ({ label: item.name, checked: item.id === project.id, run: () => setCurrent(item.id) }))}
+                  items={model.state.machines.flatMap((m): MenuItem[] => {
+                    const own = projects.filter((item) => item.machineId === m.id);
+                    if (!own.length) return [];
+                    return [
+                      ...(model.multi() ? [{ kind: "section", label: m.name } as MenuItem] : []),
+                      ...own.map((item): MenuItem => ({
+                        label: item.name,
+                        checked: item.id === project.id && item.machineId === project.machineId,
+                        run: () => setCurrent({ machineId: item.machineId, projectId: item.id }),
+                      })),
+                    ];
+                  })}
                 />
               ) : null}
               <Chip
@@ -157,18 +171,19 @@ export function NewSessionView({ projectId }: { projectId: string }) {
 }
 
 /** Picks a folder of the host and opens it as a project. */
-export function FolderBrowserView() {
+export function FolderBrowserView({ machineId }: { machineId: string }) {
   const model = useModel();
   const [directory, setDirectory] = useState<HostDirectory>();
   const [opening, setOpening] = useState(false);
   const load = (path?: string) =>
-    rpc<HostDirectory>("projects.browse", path ? { path } : {}).then(setDirectory, (error: unknown) => model.report(error));
+    rpc<HostDirectory>("projects.browse", path ? { path } : {}, machineId).then(setDirectory, (error: unknown) => model.report(error));
   useEffect(() => void load(), []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="screen">
       <NavBar
         back={() => model.pop()}
         title="Open folder"
+        subtitle={model.multi() ? model.machine(machineId)?.name : undefined}
         trailing={
           <button
             className="bar-text strong"
@@ -176,9 +191,9 @@ export function FolderBrowserView() {
             onClick={async () => {
               if (!directory) return;
               setOpening(true);
-              const project = await model.openProject(directory.path);
+              const project = await model.openProject(machineId, directory.path);
               setOpening(false);
-              if (project) model.reset([{ kind: "new", projectId: project.id }]);
+              if (project) model.reset([{ kind: "new", machineId, projectId: project.id }]);
             }}
           >
             Open

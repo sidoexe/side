@@ -9,6 +9,7 @@ export type Outgoing = { text: string; attachments: Attachment[]; plan: boolean 
 /** The IDE's composer: a box with the working copy above the text, and a bar
  * of chips (model, effort, permissions, account) beside the send button. */
 export function Composer({
+  machineId,
   placeholder = "Ask, build, plan…",
   running = false,
   disabled = false,
@@ -21,6 +22,8 @@ export function Composer({
   context,
   tools,
 }: {
+  /** The machine the files go to, with the message. */
+  machineId: string;
   placeholder?: string;
   running?: boolean;
   disabled?: boolean;
@@ -82,7 +85,7 @@ export function Composer({
     for (const file of Array.from(list ?? [])) {
       setUploading((n) => n + 1);
       try {
-        const attachment = await uploadAttachment(file, file.name || `photo-${attachments.length + 1}.jpg`);
+        const attachment = await uploadAttachment(machineId, file, file.name || `photo-${attachments.length + 1}.jpg`);
         setAttachments((items) => [...items, attachment]);
       } catch (error) {
         setFailure(error instanceof Error ? error.message : String(error));

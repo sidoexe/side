@@ -132,6 +132,12 @@ const ICONS: Record<string, ReactNode> = {
   ),
   compress: <path d="M4 4h16M4 20h16M12 7v4M9 9l3 2.5L15 9M12 17v-4M9 15l3-2.5 3 2.5" />,
   parent: <path d="M9 4 4 9l5 5M4 9h10a6 6 0 0 1 6 6v5" />,
+  desktop: (
+    <>
+      <rect x="3" y="4" width="18" height="12" rx="1.5" />
+      <path d="M9 20h6M12 16v4" />
+    </>
+  ),
   exclamation: <path d="M12 4v11M12 19.5v.5" strokeWidth={3.2} />,
 };
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { LOCAL } from "./api";
 import {
   ago,
   displayTitle,
@@ -11,17 +12,16 @@ import {
   resetTime,
   tilde,
   type HostAccountSummary,
-  type HostProject,
-  type HostSessionSummary,
 } from "./model";
-import { model as appModel, useModel, type Route } from "./store";
-import { HarnessIcon, Icon, Mascot, Menu, NavBar, Pill, SectionLabel, useContextMenu, type MenuItem } from "./ui";
+import { model as appModel, useModel, type MachineProject, type MachineSession, type MachineState, type Route } from "./store";
+import { Button, HarnessIcon, Icon, Mascot, Menu, NavBar, Pill, SectionLabel, Spinner, useContextMenu, type MenuItem } from "./ui";
 import { useNotifications } from "./push";
 import { HostAccountsSheet } from "./accounts";
 
-const sessionRoute = (s: HostSessionSummary): Route => ({ kind: "session", projectId: s.projectId, sessionId: s.id });
+const sessionRoute = (s: MachineSession): Route => ({ kind: "session", machineId: s.machineId, projectId: s.projectId, sessionId: s.id });
+const rowKey = (s: { machineId: string; id: string }) => `${s.machineId}:${s.id}`;
 
-/** What needs you, across every project: to review, working, checked. */
+/** What needs you, across every machine and project: to review, working, checked. */
 export function NowView() {
   const model = useModel();
   const [checkedOpen, setCheckedOpen] = useState(false);
@@ -41,9 +41,10 @@ export function NowView() {
         }
       />
       <div className="scroll">
+        <OfflineMachines />
         {toReview.length ? <SectionLabel text="To review" /> : null}
         {toReview.map((session) => (
-          <div key={session.id} className="review-row">
+          <div key={rowKey(session)} className="review-row">
             <SessionLink session={session} showProject />
             {isDone(session) ? (
               <button className="check-button" aria-label="Mark checked" onClick={() => void model.markChecked(session)}>
@@ -54,9 +55,9 @@ export function NowView() {
         ))}
         {working.length ? <SectionLabel text="Working" /> : null}
         {working.map((session) => (
-          <SessionLink key={session.id} session={session} showProject />
+          <SessionLink key={rowKey(session)} session={session} showProject />
         ))}
-        {model.state.host && !toReview.length && !working.length ? (
+        {model.machine(LOCAL)?.host && !toReview.length && !working.length ? (
           <div className="empty">
             <Icon name="checkCircle" size={30} />
             <span>Nothing waits on you</span>
@@ -72,7 +73,7 @@ export function NowView() {
             </button>
             {checkedOpen
               ? checked.map((session) => (
-                  <div key={session.id} className="faded">
+                  <div key={rowKey(session)} className="faded">
                     <SessionLink session={session} showProject />
                   </div>
                 ))
@@ -84,12 +85,43 @@ export function NowView() {
   );
 }
 
-/** Every project of the rail, folded to its counts until opened. */
+/** Machines that could not be read: their sessions are the last ones known. */
+function OfflineMachines() {
+  const model = useModel();
+  const offline = model.state.machines.filter((m) => m.id !== LOCAL && m.offline);
+  if (!offline.length) return null;
+  return (
+    <div className="machine-warning">
+      <Icon name="offline" size={14} className="amber" />
+      <span className="small">
+        {offline.map((m) => m.name).join(", ")} {offline.length === 1 ? "is" : "are"} unreachable; showing the last sessions known.
+      </span>
+    </div>
+  );
+}
+
+/** Every machine's projects of the rail, folded to their counts until opened. */
 export function ProjectsView() {
   const model = useModel();
   const [filter, setFilter] = useState("");
   const query = filter.trim().toLowerCase();
-  const { host, projects } = model.state;
+  const browsable = model.state.machines.filter((m) => model.can("projects.browse", m.id));
+  const browse = browsable.length > 1
+    ? (
+        <Menu
+          ariaLabel="Open folder"
+          label={<Icon name="folderPlus" size={21} />}
+          items={[{ kind: "section", label: "Open a folder of" }, ...browsable.map((m): MenuItem => ({ label: m.name, run: () => model.push({ kind: "browse", machineId: m.id }) }))]}
+        />
+      )
+    : browsable.length === 1
+      ? (
+          <button className="bar-button" aria-label="Open folder" onClick={() => model.push({ kind: "browse", machineId: browsable[0].id })}>
+            <Icon name="folderPlus" size={21} />
+          </button>
+        )
+      : null;
+  const local = model.machine(LOCAL);
   return (
     <div className="screen sidebar">
       <NavBar
@@ -97,11 +129,7 @@ export function ProjectsView() {
         title="Projects"
         trailing={
           <>
-            {model.can("projects.browse") ? (
-              <button className="bar-button" aria-label="Open folder" onClick={() => model.push({ kind: "browse" })}>
-                <Icon name="folderPlus" size={21} />
-              </button>
-            ) : null}
+            {browse}
             <NewSessionButton />
             <HomeMenu />
           </>
@@ -119,58 +147,72 @@ export function ProjectsView() {
             onChange={(event) => setFilter(event.target.value)}
           />
         </label>
-        {model.visibleProjects().map((project) => (
-          <ProjectSection key={project.id} project={project} query={query} />
+        {model.state.machines.map((machine) => (
+          <MachineProjects key={machine.id} machine={machine} query={query} />
         ))}
-        {host && !projects.length ? <p className="hint pad">No projects yet. Open a folder of the host with the folder button.</p> : null}
+        {local?.host && !model.allProjects().length ? <p className="hint pad">No projects yet. Open a folder of a machine with the folder button.</p> : null}
       </div>
     </div>
   );
 }
 
-function ProjectSection({ project, query }: { project: HostProject; query: string }) {
+/** One machine's projects, under its name when several are shown. */
+function MachineProjects({ machine, query }: { machine: MachineState; query: string }) {
   const model = useModel();
-  const all = model.state.sessions[project.id] ?? [];
+  const projects = model.visibleProjects(machine.id);
+  if (!model.multi()) return projects.map((project) => <ProjectSection key={project.id} project={project} query={query} />);
+  return (
+    <>
+      <div className="machine-label">
+        <Icon name={machine.offline ? "offline" : "desktop"} size={13} className={machine.offline ? "amber" : "faint"} />
+        <span className="ellipsis">{machine.name}</span>
+        {machine.offline ? <span className="meta amber">unreachable</span> : null}
+      </div>
+      {projects.map((project) => (
+        <ProjectSection key={project.id} project={project} query={query} />
+      ))}
+      {!projects.length && machine.host ? <div className="no-sessions">No projects</div> : null}
+    </>
+  );
+}
+
+function ProjectSection({ project, query }: { project: MachineProject; query: string }) {
+  const model = useModel();
+  const all = model.machine(project.machineId)?.sessions[project.id] ?? [];
   const list = all
     .filter((s) => !isDraftOnly(s) && (model.state.showArchived || !s.archived))
-    .filter(
-      (s) =>
-        !query ||
-        displayTitle(s.title, s.harness).toLowerCase().includes(query) ||
-        project.name.toLowerCase().includes(query),
-    )
+    .filter((s) => !query || displayTitle(s.title, s.harness).toLowerCase().includes(query) || project.name.toLowerCase().includes(query))
     .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true) || b.updatedAt - a.updatedAt);
   if (query && !list.length) return null;
-  const open = model.state.openProjects.includes(project.id) || !!query;
+  const open = model.isProjectOpen(project) || !!query;
+  const newSession = () => model.push({ kind: "new", machineId: project.machineId, projectId: project.id });
   const menu: MenuItem[] = [
-    { label: "New session", icon: "plus", run: () => model.push({ kind: "new", projectId: project.id }) },
+    { label: "New session", icon: "plus", run: newSession },
     { kind: "text", label: tilde(project.cwd) },
-    ...(model.can("projects.rail")
-      ? [{ label: "Remove from list", danger: true, run: () => void model.hide(project) } satisfies MenuItem]
-      : []),
+    ...(model.can("projects.rail", project.machineId) ? [{ label: "Remove from list", danger: true, run: () => void model.hide(project) } satisfies MenuItem] : []),
   ];
   return (
     <>
       <div className="project-row">
-        <button className="project-toggle" aria-label={`${project.name}, ${open ? "open" : "folded"}`} onClick={() => model.toggleProject(project.id)}>
+        <button className="project-toggle" aria-label={`${project.name}, ${open ? "open" : "folded"}`} onClick={() => model.toggleProject(project)}>
           <Icon name={open ? "chevronDown" : "chevronRight"} size={11} className="faint" />
           <Mascot seed={folderName(project.cwd)} active={list.some(isRunning)} />
           <span className="project-name ellipsis">{project.name}</span>
           <ProjectStatusCounts sessions={all} />
         </button>
         <Menu className="row-button" ariaLabel={`${project.name} options`} label={<Icon name="ellipsis" size={15} />} items={menu} />
-        <button className="row-button" aria-label="New session" onClick={() => model.push({ kind: "new", projectId: project.id })}>
+        <button className="row-button" aria-label="New session" onClick={newSession}>
           <Icon name="plus" size={15} />
         </button>
       </div>
-      {open ? list.map((session) => <SessionLink key={session.id} session={session} />) : null}
+      {open ? list.map((session) => <SessionLink key={rowKey(session)} session={session} />) : null}
       {open && !list.length ? <div className="no-sessions">No sessions</div> : null}
     </>
   );
 }
 
 /** A project's working and done sessions, beside its name. */
-function ProjectStatusCounts({ sessions }: { sessions: HostSessionSummary[] }) {
+function ProjectStatusCounts({ sessions }: { sessions: MachineSession[] }) {
   const live = sessions.filter((s) => !s.archived && !isDraftOnly(s));
   const working = live.filter((s) => isRunning(s) && s.needsInput !== true).length;
   const waiting = live.filter((s) => s.needsInput === true).length;
@@ -200,7 +242,7 @@ function ProjectStatusCounts({ sessions }: { sessions: HostSessionSummary[] }) {
 }
 
 /** The actions of a session, from a long press on its row or its screen's menu. */
-export function sessionActions(session: HostSessionSummary, options: { rename: boolean; onArchived?: () => void }): MenuItem[] {
+export function sessionActions(session: MachineSession, options: { rename: boolean; onArchived?: () => void }): MenuItem[] {
   const model = appModel;
   const name = displayTitle(session.title, session.harness);
   const rename: MenuItem = {
@@ -223,7 +265,7 @@ export function sessionActions(session: HostSessionSummary, options: { rename: b
   ];
 }
 
-export function deleteAction(session: HostSessionSummary): MenuItem {
+export function deleteAction(session: MachineSession): MenuItem {
   const model = appModel;
   const name = displayTitle(session.title, session.harness);
   return {
@@ -234,7 +276,7 @@ export function deleteAction(session: HostSessionSummary): MenuItem {
       model.set({
         dialog: {
           kind: "confirm",
-          title: `Delete "${name}"? Its transcript is removed from the host.`,
+          title: `Delete "${name}"? Its transcript is removed from ${model.machine(session.machineId)?.name ?? "the host"}.`,
           action: "Delete",
           run: () => void model.delete(session),
         },
@@ -243,42 +285,45 @@ export function deleteAction(session: HostSessionSummary): MenuItem {
 }
 
 /** A session row that opens it, with its actions on a long press. */
-export function SessionLink({ session, showProject }: { session: HostSessionSummary; showProject?: boolean }) {
+export function SessionLink({ session, showProject }: { session: MachineSession; showProject?: boolean }) {
   const model = useModel();
   const { handlers, menu } = useContextMenu(() => [...sessionActions(session, { rename: false }), deleteAction(session)]);
   return (
     <>
       <button className="session-row" {...handlers} onClick={() => model.push(sessionRoute(session))}>
-        <SessionRow session={session} project={showProject ? model.project(session.projectId) : undefined} />
+        <SessionRow session={session} showProject={showProject} />
       </button>
       {menu}
     </>
   );
 }
 
-/** One session as the IDE's sidebar shows it: agent and model, title, branch. */
-function SessionRow({ session, project }: { session: HostSessionSummary; project?: HostProject }) {
+/** One session as the IDE's sidebar shows it: agent and model, title,
+ * branch; its project and machine where the list mixes them. */
+function SessionRow({ session, showProject }: { session: MachineSession; showProject?: boolean }) {
   const model = useModel();
   const running = isRunning(session);
+  const project = showProject ? model.project(session.machineId, session.projectId) : undefined;
+  // Under a project the machine is already named by its section.
+  const machine = showProject && model.multi() ? model.machine(session.machineId)?.name : undefined;
+  const where = [project?.name, machine].filter(Boolean);
   return (
     <>
       <span className="row-line meta">
         <HarnessIcon harness={session.harness} size={13} />
-        <span className="ellipsis">{model.modelName(session.harness, session.model)}</span>
-        {project ? (
-          <>
+        <span className="ellipsis">{model.modelName(session.machineId, session.harness, session.model)}</span>
+        {where.map((part) => (
+          <span key={part} className="row-line">
             <span>·</span>
-            <span className="ellipsis">{project.name}</span>
-          </>
-        ) : null}
+            <span className="ellipsis">{part}</span>
+          </span>
+        ))}
         <span className="spacer" />
         {session.pinned ? <Icon name="pin" size={10} /> : null}
         <span className="mono-small">{ago(session.updatedAt)}</span>
       </span>
       <span className="row-line">
-        <span className={`row-title ellipsis${session.archived ? " muted" : ""}${running ? " shimmer" : ""}`}>
-          {displayTitle(session.title, session.harness)}
-        </span>
+        <span className={`row-title ellipsis${session.archived ? " muted" : ""}${running ? " shimmer" : ""}`}>{displayTitle(session.title, session.harness)}</span>
         <span className="spacer" />
         {session.needsInput ? (
           <Pill text="Needs you" />
@@ -302,20 +347,22 @@ function SessionRow({ session, project }: { session: HostSessionSummary; project
   );
 }
 
-/** The host's name beside the app's logo and version. */
+/** This page's host beside the app's logo and version; the number of
+ * machines when there are several. */
 function HostHeader() {
   const model = useModel();
-  const { host, offline } = model.state;
+  const host = model.machine(LOCAL)?.host;
+  const count = model.state.machines.length;
   return (
-    <div className="host-header">
+    <button className="host-header" onClick={() => model.set({ sheet: { kind: "machines" } })} aria-label="Machines">
       <img src="side.png" alt="" width={20} height={20} />
-      <span className="host-name ellipsis">{host?.name ?? "sIDE"}</span>
-      {offline ? (
+      <span className="host-name ellipsis">{count > 1 ? `${count} machines` : (host?.name ?? "sIDE")}</span>
+      {model.state.offline ? (
         <Icon name="offline" size={13} className="amber" />
       ) : host?.version ? (
         <span className="mono-small faint">{host.version}</span>
       ) : null}
-    </div>
+    </button>
   );
 }
 
@@ -325,17 +372,18 @@ function NewSessionButton() {
   const project = model.recentProject();
   if (!project) return null;
   return (
-    <button className="bar-button" aria-label="New session" onClick={() => model.push({ kind: "new", projectId: project.id })}>
+    <button className="bar-button" aria-label="New session" onClick={() => model.push({ kind: "new", machineId: project.machineId, projectId: project.id })}>
       <Icon name="compose" size={21} />
     </button>
   );
 }
 
-/** Everything that is not a session: web apps, usage, notifications, the host. */
+/** Everything that is not a session: machines, web apps, usage, notifications. */
 function HomeMenu() {
   const model = useModel();
-  const push = useNotifications(model.can("push"));
-  const apps = model.state.webApps ?? [];
+  const push = useNotifications();
+  const local = model.machine(LOCAL);
+  const apps = local?.webApps ?? [];
   const items = (): MenuItem[] => [
     // The desktop's web apps open in a tab of their own: a page can't frame them.
     ...(apps.length
@@ -345,6 +393,7 @@ function HomeMenu() {
           { kind: "divider" } as MenuItem,
         ]
       : []),
+    ...(model.can("machines") ? [{ label: "Machines", icon: "desktop", run: () => model.set({ sheet: { kind: "machines" } }) } satisfies MenuItem] : []),
     { label: "Usage & accounts", icon: "gauge", run: () => model.set({ sheet: { kind: "usage" } }) },
     { label: "Show archived", checked: model.state.showArchived, run: () => model.setShowArchived(!model.state.showArchived) },
     ...(push.state === "on" || push.state === "off"
@@ -355,15 +404,136 @@ function HomeMenu() {
           ? [{ kind: "text", label: "Notifications are blocked in the browser" } as MenuItem]
           : []),
     { kind: "divider" },
-    { kind: "section", label: `${location.host}${model.state.host?.version ? ` · host ${model.state.host.version}` : ""}` },
+    { kind: "section", label: `${location.host}${local?.host?.version ? ` · host ${local.host.version}` : ""}` },
     { label: "Sign out", danger: true, run: () => void model.signOut() },
   ];
   return <Menu ariaLabel="More" label={<Icon name="ellipsis" size={21} />} items={items} />;
 }
 
-/** The usage sheet of the home menu. */
+/** The machines this page shows: this host, and the others it reaches. */
+export function MachinesSheet() {
+  const model = useModel();
+  const [adding, setAdding] = useState(false);
+  const [address, setAddress] = useState("");
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string>();
+  const canAdd = model.can("machines");
+  const add = async () => {
+    setBusy(true);
+    setFailure(undefined);
+    try {
+      await model.addMachine(address, token);
+      setAdding(false);
+      setAddress("");
+      setToken("");
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <NavBar
+        sidebar
+        title="Machines"
+        trailing={
+          <button className="bar-text strong" onClick={() => model.set({ sheet: undefined })}>
+            Done
+          </button>
+        }
+      />
+      <div className="scroll sheet-scroll">
+        <div className="accounts">
+          {model.state.machines.map((machine) => (
+            <div key={machine.id} className="card">
+              <div className="row-line">
+                <Icon name="desktop" size={15} />
+                <span className="strong ellipsis">{machine.name}</span>
+                <span className="spacer" />
+                {machine.id === LOCAL ? <Pill text="This host" color="var(--muted)" /> : machine.offline ? <Pill text="Unreachable" /> : null}
+              </div>
+              <div className="meta muted ellipsis">
+                {machine.id === LOCAL ? location.host : machine.url}
+                {machine.host?.version ? ` · ${machine.host.version}` : ""}
+              </div>
+              {machine.error && machine.offline ? <div className="meta del clamp-2">{machine.error}</div> : null}
+              {machine.id !== LOCAL ? (
+                <div className="button-row">
+                  <Button
+                    onClick={() =>
+                      model.set({
+                        dialog: { kind: "prompt", title: "Rename machine", initial: machine.name, run: (name) => void model.renameMachine(machine.id, name) },
+                      })
+                    }
+                  >
+                    Rename
+                  </Button>
+                  <Button
+                    danger
+                    onClick={() =>
+                      model.set({
+                        dialog: {
+                          kind: "confirm",
+                          title: `Stop showing ${machine.name} here? Its sessions keep running on it.`,
+                          action: "Remove",
+                          run: () => void model.removeMachine(machine.id),
+                        },
+                      })
+                    }
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ))}
+          {!canAdd ? (
+            <p className="hint">Update this host to show other machines here.</p>
+          ) : adding ? (
+            <form
+              className="card"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void add();
+              }}
+            >
+              <div className="strong">Add a machine</div>
+              <p className="small muted">
+                On that machine, run <code>side-host pair --name Web --url &lt;its address&gt;</code> and paste the link, or its address and the credential.
+              </p>
+              <input className="field" value={address} placeholder="side://pair?… or https://machine.tailnet.ts.net" autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={(event) => setAddress(event.target.value)} />
+              {address.startsWith("side://") ? null : (
+                <input className="field" type="password" value={token} placeholder="Device credential" autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={(event) => setToken(event.target.value)} />
+              )}
+              {failure ? <div className="meta del">{failure}</div> : null}
+              <div className="button-row">
+                <button className="btn primary" disabled={busy || !address.trim()}>
+                  {busy ? <Spinner size={13} /> : null}
+                  Add
+                </button>
+                <Button onClick={() => setAdding(false)}>Cancel</Button>
+              </div>
+            </form>
+          ) : (
+            <div className="button-row">
+              <Button icon="plus" onClick={() => setAdding(true)}>
+                Add machine
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** The usage sheet of the home menu: every machine's accounts. */
 export function UsageSheet() {
   const model = useModel();
+  const [managing, setManaging] = useState<string>();
+  if (managing) return <HostAccountsSheet machineId={managing} onDone={() => setManaging(undefined)} embedded />;
   return (
     <>
       <NavBar
@@ -376,7 +546,9 @@ export function UsageSheet() {
         }
       />
       <div className="scroll sheet-scroll">
-        <UsageView accounts={model.state.accounts} />
+        {model.state.machines.map((machine) => (
+          <UsageView key={machine.id} machineId={machine.id} title={model.multi() ? machine.name : "Usage"} accounts={machine.accounts} onManage={() => setManaging(machine.id)} />
+        ))}
       </div>
     </>
   );
@@ -384,17 +556,15 @@ export function UsageSheet() {
 
 /** Each account's 5-hour and 7-day usage, as the web sidebar's footer, with
  * its sign-in error or limit. Opens the host's accounts. */
-function UsageView({ accounts }: { accounts: HostAccountSummary[] }) {
+function UsageView({ machineId, title, accounts, onManage }: { machineId: string; title: string; accounts: HostAccountSummary[]; onManage: () => void }) {
   const model = useModel();
-  const [managing, setManaging] = useState(false);
   const named = accounts.filter((account) => !account.pool);
-  useOnce(() => void model.refreshAccounts());
-  if (!named.length && !model.can("accounts.login")) return <p className="hint pad">No named accounts on this host.</p>;
-  if (managing) return <HostAccountsSheet onDone={() => setManaging(false)} embedded />;
+  useOnce(() => void model.refreshAccounts(machineId));
+  if (!named.length && !model.can("accounts.login", machineId)) return null;
   return (
     <>
-      <SectionLabel text="Usage">
-        <button className="link-button" onClick={() => setManaging(true)}>
+      <SectionLabel text={title}>
+        <button className="link-button" onClick={onManage}>
           Accounts
         </button>
       </SectionLabel>
@@ -402,7 +572,7 @@ function UsageView({ accounts }: { accounts: HostAccountSummary[] }) {
         {named.map((account) => {
           const until = limitedUntil(account);
           return (
-            <button key={account.id} className="usage-row" onClick={() => setManaging(true)}>
+            <button key={account.id} className="usage-row" onClick={onManage}>
               <span className="row-line">
                 <span className="meta muted ellipsis">{account.label}</span>
                 <span className="spacer" />

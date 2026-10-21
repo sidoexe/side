@@ -33,6 +33,7 @@ import { createHostServer } from "./server";
 import { HostPush } from "./push";
 import { HostRail } from "./rail";
 import { HostWebApps } from "./webApps";
+import { HostMachines } from "./machines";
 import { findTailscale, HostPreviews, tailscaleRunner } from "./previews";
 import {
   REMOTE_PROVIDERS,
@@ -300,6 +301,7 @@ Connect another computer using an SSH forward to the loopback port.`);
     engine.push.watch(store);
     engine.rail = new HostRail(join(directory, "rail"));
     engine.webApps = new HostWebApps(join(directory, "web-apps"));
+    engine.machines = new HostMachines(join(directory, "machines.json"), store.environmentId);
     const appCli = appCliCommand();
     backend.sessionEnv = (sessionId) => ({
       MONOCODE_APP_ENDPOINT: `http://127.0.0.1:${port}/app`,

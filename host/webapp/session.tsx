@@ -24,7 +24,7 @@ import { Button, CardLabel, HarnessIcon, Icon, Menu, NavBar, Spinner, usePoll, u
 
 type Change = { model?: string; modelSettings?: Record<string, string>; runtimeMode?: string; providerAccountId?: string };
 
-export function SessionView({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+export function SessionView({ machineId, projectId, sessionId }: { machineId: string; projectId: string; sessionId: string }) {
   const model = useModel();
   const [value, setValue] = useState<HostSession>();
   const [catalog, setCatalog] = useState<HostModelCatalog>();
@@ -36,7 +36,7 @@ export function SessionView({ projectId, sessionId }: { projectId: string; sessi
   const latest = useRef<HostSession>(undefined);
   const reading = useRef(false);
   const readAgain = useRef(false);
-  const summary = model.summary(projectId, sessionId);
+  const summary = model.summary(machineId, projectId, sessionId);
   const title = value ? displayTitle(value.session.title, value.session.harness) : summary ? displayTitle(summary.title, summary.harness) : "Session";
   const running = value?.status === "running";
   const items = useMemo(() => (value ? buildTranscript(value.session.blocks, running) : []), [value, running]);
@@ -54,14 +54,14 @@ export function SessionView({ projectId, sessionId }: { projectId: string; sessi
       do {
         readAgain.current = false;
         try {
-          const next = await syncSession(sessionId, latest.current);
+          const next = await syncSession(machineId, sessionId, latest.current);
           if (next !== latest.current) {
             latest.current = next;
             setValue(next);
           }
-          model.pollSucceeded();
+          model.pollSucceeded(machineId);
         } catch (error) {
-          model.reportPoll(error);
+          model.reportPoll(error, machineId);
         }
       } while (readAgain.current);
     } finally {
@@ -72,13 +72,13 @@ export function SessionView({ projectId, sessionId }: { projectId: string; sessi
   useEffect(() => {
     latest.current = undefined;
     setValue(undefined);
-  }, [sessionId]);
+  }, [machineId, sessionId]);
   // Quick while a turn runs, slower when idle, as the web client does.
-  usePoll(refresh, () => (latest.current?.status === "running" ? 750 : 3000), [sessionId]);
-  useEffect(() => void model.refreshAccounts(), []); // eslint-disable-line react-hooks/exhaustive-deps
+  usePoll(refresh, () => (latest.current?.status === "running" ? 750 : 3000), [machineId, sessionId]);
+  useEffect(() => void model.refreshAccounts(machineId), [machineId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    void rpc<HostModelCatalog>("models.list", { projectId }).then(setCatalog, () => undefined);
-  }, [projectId]);
+    void rpc<HostModelCatalog>("models.list", { projectId }, machineId).then(setCatalog, () => undefined);
+  }, [machineId, projectId]);
 
   // Opens at the end, and keeps to it while new output arrives.
   const last = value?.session.blocks.at(-1);
@@ -93,7 +93,7 @@ export function SessionView({ projectId, sessionId }: { projectId: string; sessi
   const toEnd = () => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
 
   const run = (input: Record<string, unknown>) => {
-    void command({ ...input, sessionId })
+    void command(machineId, { ...input, sessionId })
       .then(refresh)
       .catch((error: unknown) => model.report(error));
   };
@@ -121,7 +121,7 @@ export function SessionView({ projectId, sessionId }: { projectId: string; sessi
       if (outgoing.plan) input.intent = "plan";
     }
     try {
-      await command(input);
+      await command(machineId, input);
       await refresh();
     } catch (error) {
       model.report(error);
@@ -132,16 +132,17 @@ export function SessionView({ projectId, sessionId }: { projectId: string; sessi
   /** `sessions.update` of the usage limit: arms or cancels the resume, or
    * clears the notice with `null`. */
   const setUsageLimit = (limit: unknown) => {
-    void rpc("sessions.update", { projectId, sessionId, usageLimit: limit })
+    void rpc("sessions.update", { projectId, sessionId, usageLimit: limit }, machineId)
       .catch((error: unknown) => model.report(error))
       .then(refresh);
   };
 
   const subtitle = [
-    model.project(projectId)?.name,
-    value ? model.modelName(value.session.harness, value.session.model) : undefined,
+    model.project(machineId, projectId)?.name,
+    model.multi() ? model.machine(machineId)?.name : undefined,
+    value ? model.modelName(machineId, value.session.harness, value.session.model) : undefined,
     summary?.branch,
-    value?.accountInUse ? (model.state.accounts.find((a) => a.id === value.accountInUse)?.label ?? value.accountInUse) : undefined,
+    value?.accountInUse ? (model.machine(machineId)?.accounts.find((a) => a.id === value.accountInUse)?.label ?? value.accountInUse) : undefined,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -189,6 +190,7 @@ export function SessionView({ projectId, sessionId }: { projectId: string; sessi
                 key={item.id}
                 item={item}
                 cwd={value.session.cwd}
+                machineId={machineId}
                 sessionId={sessionId}
                 canDecide={running && !!value.runId}
                 onDecide={(requestId, decision) => run({ type: "approve", runId: value.runId ?? "", requestId, decision })}
@@ -207,6 +209,7 @@ export function SessionView({ projectId, sessionId }: { projectId: string; sessi
             {value.status === "interrupted" ? <div className="notice">Interrupted</div> : null}
             {value.session.usageLimit ? (
               <UsageLimit
+                machineId={machineId}
                 limit={value.session.usageLimit}
                 harness={value.session.harness}
                 account={value.session.providerAccountId}
@@ -230,8 +233,9 @@ export function SessionView({ projectId, sessionId }: { projectId: string; sessi
             ) : null}
             <Queue value={value} run={run} />
             <Composer
+              machineId={machineId}
               running={running}
-              canPlan={model.can("sessions.plan") && !running}
+              canPlan={model.can("sessions.plan", machineId) && !running}
               seed={seed}
               banner={editing ? "Editing your last message" : undefined}
               onCancelBanner={() => {
@@ -253,7 +257,7 @@ export function SessionView({ projectId, sessionId }: { projectId: string; sessi
                   {contextRatio(value.session.context) !== undefined ? <ContextMeter ratio={contextRatio(value.session.context)!} /> : null}
                 </>
               }
-              tools={<SessionChips value={value} catalog={catalog} onChange={(change) => configure(value, change)} />}
+              tools={<SessionChips machineId={machineId} value={value} catalog={catalog} onChange={(change) => configure(value, change)} />}
             />
           </div>
         </>
@@ -268,7 +272,7 @@ export function SessionView({ projectId, sessionId }: { projectId: string; sessi
 
 /** The open session's settings as chips: model, effort, permissions and
  * account. A change applies to the next turn, as on the desktop. */
-function SessionChips({ value, catalog, onChange }: { value: HostSession; catalog?: HostModelCatalog; onChange: (change: Change) => void }) {
+function SessionChips({ machineId, value, catalog, onChange }: { machineId: string; value: HostSession; catalog?: HostModelCatalog; onChange: (change: Change) => void }) {
   const app = useModel();
   const meta = value.session;
   const models = catalog?.models[meta.harness] ?? [];
@@ -279,7 +283,7 @@ function SessionChips({ value, catalog, onChange }: { value: HostSession; catalo
     <>
       <Chip
         icon={<HarnessIcon harness={meta.harness} size={13} />}
-        label={app.modelName(meta.harness, meta.model)}
+        label={app.modelName(machineId, meta.harness, meta.model)}
         disabled={!models.length}
         items={models.map((item) => ({ label: item.name, checked: modelMatches(item, meta.model), run: () => onChange({ model: item.id }) }))}
       />
@@ -297,7 +301,7 @@ function SessionChips({ value, catalog, onChange }: { value: HostSession; catalo
         label={RUNTIME_MODES.find((mode) => mode.id === meta.runtimeMode)?.label ?? meta.runtimeMode}
         items={RUNTIME_MODES.map((mode) => ({ label: mode.label, checked: mode.id === meta.runtimeMode, run: () => onChange({ runtimeMode: mode.id }) }))}
       />
-      <AccountChip harness={meta.harness} current={meta.providerAccountId} onChange={(providerAccountId) => onChange({ providerAccountId })} />
+      <AccountChip machineId={machineId} harness={meta.harness} current={meta.providerAccountId} onChange={(providerAccountId) => onChange({ providerAccountId })} />
     </>
   );
 }
@@ -332,6 +336,7 @@ function Queue({ value, run }: { value: HostSession; run: (input: Record<string,
 /** As the desktop's `UsageLimitNotice`: Resume once the limit has reset, or
  * resume at reset (cancellable) before; an account switch; Dismiss. */
 function UsageLimit({
+  machineId,
   limit,
   harness,
   account,
@@ -339,6 +344,7 @@ function UsageLimit({
   onSet,
   onAccount,
 }: {
+  machineId: string;
   limit: NonNullable<HostSession["session"]["usageLimit"]>;
   harness: string;
   account?: string;
@@ -374,7 +380,7 @@ function UsageLimit({
             Resume at reset
           </Button>
         )}
-        <AccountChip harness={harness} current={account} onChange={onAccount} />
+        <AccountChip machineId={machineId} harness={harness} current={account} onChange={onAccount} />
       </div>
     </div>
   );

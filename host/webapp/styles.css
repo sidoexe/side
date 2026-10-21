@@ -190,7 +190,11 @@ body.typing .tab-bar { display: none; }
 
 /* MARK: Home */
 
-.host-header { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 60vw; }
+.host-header { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 60vw; color: var(--text); }
+.machine-label { display: flex; align-items: center; gap: 6px; padding: 18px 16px 2px; font-size: 13px; font-weight: 600; color: var(--text); }
+.machine-label .meta { font-weight: 400; }
+.machine-warning { display: flex; align-items: center; gap: 8px; margin: 8px 12px 0; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--amber) 8%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 25%, transparent); color: var(--muted); }
+.new-machine { font-size: 14px; font-weight: 400; color: var(--muted); }
 .host-header img { border-radius: 5px; flex: none; }
 .host-name { font-size: 15px; font-weight: 600; }
 

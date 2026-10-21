@@ -94,6 +94,7 @@ function category(block: Block) {
 }
 
 export function TranscriptItemView({
+  machineId,
   item,
   cwd,
   sessionId,
@@ -103,6 +104,7 @@ export function TranscriptItemView({
   onEdit,
   onBuild,
 }: {
+  machineId: string;
   item: TranscriptItem;
   cwd: string;
   sessionId: string;
@@ -125,7 +127,7 @@ export function TranscriptItemView({
               {block.attachments
                 .filter((attachment) => attachment.kind === "image")
                 .map((attachment) => (
-                  <AttachmentImage key={attachment.id} sessionId={sessionId} attachment={attachment} />
+                  <AttachmentImage key={attachment.id} machineId={machineId} sessionId={sessionId} attachment={attachment} />
                 ))}
               <div className="attachment-names">
                 {block.attachments
@@ -201,14 +203,14 @@ export function TranscriptItemView({
 const images = new Map<string, Promise<string>>();
 
 /** An image sent in a session, read from the host once and kept. */
-function AttachmentImage({ sessionId, attachment }: { sessionId: string; attachment: Attachment }) {
+function AttachmentImage({ machineId, sessionId, attachment }: { machineId: string; sessionId: string; attachment: Attachment }) {
   const [url, setUrl] = useState<string>();
   const [failedToLoad, setFailed] = useState(false);
   useEffect(() => {
-    const key = `${sessionId}/${attachment.id}`;
+    const key = `${machineId}/${sessionId}/${attachment.id}`;
     let read = images.get(key);
     if (!read) {
-      read = readAttachment(sessionId, attachment).then((blob) => URL.createObjectURL(blob));
+      read = readAttachment(machineId, sessionId, attachment).then((blob) => URL.createObjectURL(blob));
       read.catch(() => images.delete(key));
       images.set(key, read);
     }
@@ -217,7 +219,7 @@ function AttachmentImage({ sessionId, attachment }: { sessionId: string; attachm
     return () => {
       live = false;
     };
-  }, [sessionId, attachment]);
+  }, [machineId, sessionId, attachment]);
   if (url) return <img className="attachment-image" src={url} alt={attachment.name} />;
   if (failedToLoad)
     return (
