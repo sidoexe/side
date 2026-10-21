@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { hostCommitMessage } from "./commit-message";
+import { hostCommitMessage, hostPrContent } from "./commit-message";
 import type { HostProvider } from "./providers";
 import { HostStore } from "./store";
 import { WorkspaceCommands } from "./workspace-commands";
@@ -84,4 +84,17 @@ it("every provider the desktop names branches with does so on a host too", async
     expect(hostProviders[id].generateBranchName, id).toBeTypeOf("function");
   for (const id of ["codex", "claude", "cursor", "grok", "opencode", "pi", "omp", "devin"] as const)
     expect(hostProviders[id].runText, id).toBeTypeOf("function");
+});
+
+it("writes a pull request's title and body from the branch's commits and diff", async () => {
+  const claude = fake('{"title":"Say hello","body":"## Summary\\n- Adds hello\\n\\n## Testing\\n- Not run"}');
+  const range = { base: "main", head: "feat/hello", commitSummary: "abc Add hello", diffSummary: " a.txt | 1 +", diffPatch: "+hello" };
+  const content = await hostPrContent({ cwd: "/repo", context: range, installed: ["claude"], providers: { claude } });
+  expect(content).toEqual({ title: "Say hello", body: "## Summary\n- Adds hello\n\n## Testing\n- Not run", base: "main", head: "feat/hello" });
+  const prompt = vi.mocked(claude.runText!).mock.calls[0][0].prompt;
+  expect(prompt).toContain("Head branch: feat/hello");
+  expect(prompt).toContain("+hello");
+  await expect(
+    hostPrContent({ cwd: "/repo", context: range, installed: ["claude"], providers: { claude: fake("nope") } }),
+  ).rejects.toThrow("Could not write");
 });

@@ -49,6 +49,7 @@ const HOST_COMMANDS = new Set([
   "search_project",
   "list_skills",
   "generate_commit_message",
+  "generate_pr_content",
   "git_worktree_check_remove",
   "git_worktree_remove",
   "session_checkpoint_status",

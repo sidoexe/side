@@ -640,8 +640,10 @@ function ChangedFiles({
   };
 
   const openCreatedPr = async () => {
+    // A host writes it with its own agent, as locally; one too old to,
+    // or with none installed, gives the commit list and diff summary.
     const content = isRemoteProjectPath(cwd)
-      ? await remotePrContent(cwd)
+      ? await generatePrContent(cwd, textHarness).catch(() => remotePrContent(cwd))
       : await generatePrContent(cwd, textHarness);
     if (!content) throw new Error("Could not prepare pull request content");
     const url = await gitPrCreate(

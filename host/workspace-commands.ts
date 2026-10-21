@@ -34,7 +34,7 @@ import {
   workspacePath,
 } from "./workspace";
 import { listHostSkills } from "./skills";
-import type { StagedContext } from "./commit-message";
+import type { RangeContext, StagedContext } from "./commit-message";
 import type { HostCheckpoints } from "./checkpoints";
 
 const exec = promisify(execFile);
@@ -80,6 +80,7 @@ export const WORKSPACE_COMMANDS = [
   "git_commit_file_diff",
   "git_staged_context",
   "git_range_context",
+  "generate_pr_content",
   "git_branches",
   "git_checkout",
   "git_create_branch",
@@ -135,6 +136,11 @@ export class WorkspaceCommands {
       release(ids: readonly string[], projectCwd: string, keep: boolean): void;
     },
     private readonly checkpoints?: HostCheckpoints,
+    private readonly writePrContent?: (
+      cwd: string,
+      context: RangeContext,
+      preferred: unknown,
+    ) => Promise<{ title: string; body: string; base: string; head: string }>,
   ) {}
 
   private sessionId(input: unknown): string {
@@ -186,6 +192,12 @@ export class WorkspaceCommands {
     if (!context.summary.trim() && !context.patch.trim())
       throw new Error("Stage some changes first");
     return this.writeCommitMessage(await this.gitRoot(cwd), context, preferred);
+  }
+
+  private async prContent(cwd: unknown, preferred: unknown) {
+    if (!this.writePrContent) throw new Error("Pull request content is unavailable on this host");
+    const context = await this.gitRangeContext(cwd);
+    return this.writePrContent(await this.gitRoot(cwd), context, preferred);
   }
 
   run(command: unknown, args: unknown): Promise<unknown> {
@@ -287,6 +299,8 @@ export class WorkspaceCommands {
         return this.listSkills(input.cwd, input.disabledPaths);
       case "generate_commit_message":
         return this.commitMessage(input.cwd, input.paths, input.harness);
+      case "generate_pr_content":
+        return this.prContent(input.cwd, input.harness);
       case "git_worktree_check_remove":
         return this.checkWorktreeRemoval(input.cwd, input.path, input.force);
       case "git_worktree_remove":

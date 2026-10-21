@@ -4,7 +4,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { hostCommitMessage } from "./commit-message";
+import { hostCommitMessage, hostPrContent } from "./commit-message";
 import { hostname, homedir } from "node:os";
 import { execFile, execFileSync } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
@@ -189,6 +189,8 @@ export function createHostServer(
         engine.releaseWorktreeSessions(ids, projectCwd, keep),
     },
     engine.checkpoints,
+    (cwd, context, preferred) =>
+      hostPrContent({ cwd, context, installed: providers, providers: engine.providers, preferred }),
   );
   const accountLogins = () => {
     if (!engine.accountLogins) throw new Error("Signing in is unavailable on this host");

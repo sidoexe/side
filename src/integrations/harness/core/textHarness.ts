@@ -53,5 +53,11 @@ export function generatePrContent(
   cwd: string,
   preferred?: HarnessId,
 ): Promise<(PrContent & { base: string; head: string }) | null> {
+  // A branch on another machine is read there; its host writes the text.
+  if (cwd.startsWith(REMOTE_PATH_PREFIX))
+    return invokeWorkspace<PrContent & { base: string; head: string }>("generate_pr_content", {
+      cwd,
+      harness: preferred ?? null,
+    });
   return generateHarnessPrContent(pickTextHarness(preferred), cwd);
 }
