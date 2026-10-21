@@ -21,6 +21,8 @@ struct SessionView: View {
     @State private var readAgain = false
 
     private var summary: HostSessionSummary? { model.summary(route) }
+    /// The machine whose host runs this session.
+    private var machine: Machine? { model.machine(route.machineId) }
     private var title: String {
         if let value { return displayTitle(value.meta.title, harness: value.meta.harness) }
         return summary?.displayName ?? "Session"
@@ -68,18 +70,19 @@ struct SessionView: View {
             }
         }
         .task(id: route) { await poll() }
-        .task { await model.refreshAccounts() }
+        .task(id: route.machineId) { if let machine { await model.refreshAccounts(machine) } }
         .task(id: route.projectId) {
-            catalog = try? await model.client?.rpc("models.list", ["projectId": route.projectId], as: HostModelCatalog.self)
+            catalog = try? await machine?.client.rpc("models.list", ["projectId": route.projectId], as: HostModelCatalog.self)
         }
     }
 
     private var subtitle: String {
         var parts: [String] = []
-        if let project = model.project(route.projectId) { parts.append(project.name) }
-        if let value { parts.append(model.modelName(harness: value.meta.harness, model: value.meta.model)) }
+        if let project = model.project(machineId: route.machineId, id: route.projectId) { parts.append(project.name) }
+        if model.multi, let machine { parts.append(machine.name) }
+        if let value { parts.append(model.modelName(machineId: route.machineId, harness: value.meta.harness, model: value.meta.model)) }
         if let branch = summary?.branch { parts.append(branch) }
-        if let account = value?.accountInUse { parts.append(model.accounts.first { $0.id == account }?.label ?? account) }
+        if let account = value?.accountInUse { parts.append(machine?.accounts.first { $0.id == account }?.label ?? account) }
         return parts.joined(separator: " · ")
     }
 
@@ -95,6 +98,7 @@ struct SessionView: View {
                         TranscriptItemView(
                             item: item,
                             cwd: value.meta.cwd,
+                            machineId: route.machineId,
                             sessionId: route.sessionId,
                             canDecide: running && value.runId != nil,
                             onDecide: { requestId, decision in
@@ -152,7 +156,8 @@ struct SessionView: View {
         let running = value.running
         return ComposerView(
             running: running,
-            canPlan: model.can("sessions.plan") && !running,
+            machineId: route.machineId,
+            canPlan: machine?.can("sessions.plan") == true && !running,
             seed: seed,
             banner: editing ? "Editing your last message" : nil,
             onCancelBanner: {
@@ -169,7 +174,7 @@ struct SessionView: View {
                 Spacer(minLength: 0)
                 if let ratio = value.meta.context?.ratio { ContextMeter(ratio: ratio) }
             },
-            tools: { SessionChips(value: value, catalog: catalog) { change in configure(value, change) } }
+            tools: { SessionChips(machineId: route.machineId, value: value, catalog: catalog) { change in configure(value, change) } }
         )
     }
 
@@ -222,7 +227,7 @@ struct SessionView: View {
                         }
                         .buttonStyle(ThemeButtonStyle())
                     }
-                    AccountChip(harness: value.meta.harness, current: value.meta.providerAccountId) { account in
+                    AccountChip(machineId: route.machineId, harness: value.meta.harness, current: value.meta.providerAccountId) { account in
                         configure(value, SessionChips.Change(providerAccountId: account))
                     }
                 }
@@ -241,11 +246,11 @@ struct SessionView: View {
     private func setUsageLimit(_ limit: Any, projectId: String) {
         Task {
             do {
-                _ = try await model.client?.rpc("sessions.update", [
+                _ = try await machine?.client.rpc("sessions.update", [
                     "projectId": projectId, "sessionId": route.sessionId, "usageLimit": limit,
                 ], as: HostClient.Ignored.self)
             } catch {
-                model.report(error)
+                model.report(error, machine: machine)
             }
             await refresh()
         }
@@ -320,7 +325,7 @@ struct SessionView: View {
     }
 
     private func send(_ outgoing: Outgoing, _ value: HostSession) async throws {
-        guard let client = model.client else { return }
+        guard let client = machine?.client else { return }
         var input: [String: Any] = ["sessionId": route.sessionId, "text": outgoing.text]
         if !outgoing.attachments.isEmpty { input["attachments"] = outgoing.attachments.map(\.json) }
         if editing {
@@ -334,13 +339,13 @@ struct SessionView: View {
             try await client.command(input)
             await refresh()
         } catch {
-            model.report(error)
+            model.report(error, machine: machine)
             throw error
         }
     }
 
     private func run(_ input: [String: Any]) {
-        guard let client = model.client else { return }
+        guard let client = machine?.client else { return }
         var input = input
         input["sessionId"] = route.sessionId
         Task {
@@ -348,7 +353,7 @@ struct SessionView: View {
                 try await client.command(input)
                 await refresh()
             } catch {
-                model.report(error)
+                model.report(error, machine: machine)
             }
         }
     }
@@ -365,16 +370,16 @@ struct SessionView: View {
         defer { reading = false }
         repeat {
             readAgain = false
-            guard let client = model.client else { return }
+            guard let client = machine?.client else { return }
             do {
                 let next = try await client.sync(route.sessionId, known: value)
                 if next != value {
                     value = next
                     items = TranscriptItem.build(next.blocks, running: next.running)
                 }
-                model.pollSucceeded()
+                if let machine { model.pollSucceeded(machine) }
             } catch {
-                model.reportPoll(error)
+                if let machine { model.reportPoll(error, machine: machine) }
             }
         } while readAgain && !Task.isCancelled
     }
@@ -400,6 +405,7 @@ struct SessionChips: View {
     }
 
     @Environment(AppModel.self) private var app
+    let machineId: String
     let value: HostSession
     let catalog: HostModelCatalog?
     let onChange: (Change) -> Void
@@ -408,7 +414,7 @@ struct SessionChips: View {
         let meta = value.meta
         let models = catalog?.models[meta.harness] ?? []
         let model = models.first { $0.matches(meta.model) }
-        Chip(icon: AnyView(HarnessIcon(harness: meta.harness, size: 13)), label: app.modelName(harness: meta.harness, model: meta.model), disabled: models.isEmpty) {
+        Chip(icon: AnyView(HarnessIcon(harness: meta.harness, size: 13)), label: app.modelName(machineId: machineId, harness: meta.harness, model: meta.model), disabled: models.isEmpty) {
             ForEach(models) { item in
                 ChoiceButton(label: item.name, selected: item.matches(meta.model)) { onChange(Change(model: item.id)) }
             }
@@ -430,7 +436,7 @@ struct SessionChips: View {
                 ChoiceButton(label: mode.label, selected: mode.id == meta.runtimeMode) { onChange(Change(runtimeMode: mode.id)) }
             }
         }
-        AccountChip(harness: meta.harness, current: meta.providerAccountId) { onChange(Change(providerAccountId: $0)) }
+        AccountChip(machineId: machineId, harness: meta.harness, current: meta.providerAccountId) { onChange(Change(providerAccountId: $0)) }
     }
 }
 

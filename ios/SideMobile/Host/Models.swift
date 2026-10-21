@@ -19,6 +19,9 @@ struct HostProject: Decodable, Identifiable, Hashable {
     let id: String
     let cwd: String
     let name: String
+    /// The machine whose host lists it; set by the phone, never sent.
+    var machineId: String?
+    var machine: String { machineId ?? "" }
 }
 
 struct HostSessionSummary: Decodable, Identifiable, Hashable {
@@ -41,6 +44,9 @@ struct HostSessionSummary: Decodable, Identifiable, Hashable {
     let toReview: Bool?
     /// Its last turn ended on an error. Older hosts never say so.
     let failed: Bool?
+    /// The machine whose host runs it; set by the phone, never sent.
+    var machineId: String?
+    var machine: String { machineId ?? "" }
 
     var running: Bool { status == "running" }
     var interrupted: Bool { status == "interrupted" }

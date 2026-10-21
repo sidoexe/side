@@ -18,6 +18,8 @@ struct ComposerView<Context: View, Tools: View>: View {
     /// Replaces "Queue a follow-up…" while running, where a message steers.
     var runningPlaceholder: String?
     var disabled = false
+    /// The machine the files go to, with the message.
+    var machineId = ""
     /// Offers the "Plan" toggle: the agent proposes a plan before building.
     var canPlan = false
     var allowsAttachments = true
@@ -211,7 +213,7 @@ struct ComposerView<Context: View, Tools: View>: View {
     }
 
     private func upload(_ data: Data, name: String, mimeType: String) async {
-        guard let client = model.client else { return }
+        guard let client = model.machine(machineId)?.client else { return }
         uploading += 1
         defer { uploading -= 1 }
         do {

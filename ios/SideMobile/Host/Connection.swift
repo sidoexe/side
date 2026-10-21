@@ -1,38 +1,75 @@
 import Foundation
 import Security
 
-/// The host this phone is paired with: its address and device credential,
-/// kept in the Keychain.
-struct Connection: Codable, Equatable {
+/// A host this phone is paired with: its address and device credential.
+/// The phone keeps one per machine, in the Keychain.
+struct Connection: Codable, Equatable, Identifiable {
+    /// Absent on the single connection older builds saved.
+    var id: String
     var endpoint: URL
     var token: String
+    /// The name it is shown under, when the user gave one: two Macs often
+    /// share a host name.
+    var name: String?
 
-    private static let service = "dev.sidoexe.side.mobile.connection"
+    init(id: String = UUID().uuidString.lowercased(), endpoint: URL, token: String, name: String? = nil) {
+        self.id = id
+        self.endpoint = endpoint
+        self.token = token
+        self.name = name
+    }
 
-    static func load() -> Connection? {
+    private enum Keys: String, CodingKey { case id, endpoint, token, name }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        endpoint = try c.decode(URL.self, forKey: .endpoint)
+        token = try c.decode(String.self, forKey: .token)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString.lowercased()
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+    }
+
+    /// Every paired machine, under one item.
+    private static let service = "dev.sidoexe.side.mobile.connections"
+    /// The single connection of builds before several machines.
+    private static let legacyService = "dev.sidoexe.side.mobile.connection"
+
+    private static func read(_ service: String) -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecReturnData as String: true,
         ]
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
-        return try? JSONDecoder().decode(Connection.self, from: data)
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess else { return nil }
+        return item as? Data
     }
 
-    func save() {
-        Connection.clear()
+    private static func delete(_ service: String) {
+        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service] as CFDictionary)
+    }
+
+    static func loadAll() -> [Connection] {
+        if let data = read(service), let all = try? JSONDecoder().decode([Connection].self, from: data) { return all }
+        // The pairing of an older build carries over as the first machine.
+        if let data = read(legacyService), let one = try? JSONDecoder().decode(Connection.self, from: data) {
+            saveAll([one])
+            delete(legacyService)
+            return [one]
+        }
+        return []
+    }
+
+    static func saveAll(_ connections: [Connection]) {
+        delete(service)
+        guard !connections.isEmpty else { return }
         let item: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Connection.service,
+            kSecAttrService as String: service,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            kSecValueData as String: (try? JSONEncoder().encode(self)) ?? Data(),
+            kSecValueData as String: (try? JSONEncoder().encode(connections)) ?? Data(),
         ]
         SecItemAdd(item as CFDictionary, nil)
-    }
-
-    static func clear() {
-        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service] as CFDictionary)
     }
 
     /// Reads what the user typed or scanned: a pairing link

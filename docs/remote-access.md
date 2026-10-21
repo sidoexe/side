@@ -118,6 +118,15 @@ The token is kept in an `HttpOnly`, `SameSite=Strict` cookie scoped to `/web` fo
 
 On the host machine itself, `http://127.0.0.1:3775/web/` works without Tailscale.
 
+### Several machines
+
+Every machine runs its own host, and its sessions run there. The phone app and the web app show the sessions of every machine together: **Now** and **Projects** list them all, with the machine's name where a list mixes machines, and **Projects** groups projects by machine.
+
+- In the web app, **… → Machines → Add machine** takes another machine's pairing link (`side-host pair --name Web --url <its address>`) or its address and a device credential. The host that serves the page keeps that credential (in `machines.json`, readable by its user only) and passes the page's calls on to the machine; the page never holds it. Notifications come from every machine.
+- In the phone app, **… → Machines → Add machine** pairs another machine the same way; the phone talks to each one directly, and each one sends its notifications.
+
+**Rename** shows a machine under another name, for two Macs with the same host name. **Remove** stops showing it; its sessions keep running on it.
+
 ### Deploy the web app with each release
 
 A host serves the web app its package came with. A host the desktop does not update (connected by URL rather than SSH) can still get each release's web app as soon as the release is published: the `deploy-web` job of the release workflow joins the tailnet and asks the host to install it. The host downloads that release's own package from GitHub, checks it against the published checksum, and swaps in its `web` folder without restarting; the one it replaces stays as `web.previous`. The deploy key opens only this: it cannot read sessions or run anything, and it can only install the web app of an official release.

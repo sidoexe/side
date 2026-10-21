@@ -6,7 +6,7 @@ struct RootView: View {
     var body: some View {
         @Bindable var model = model
         Group {
-            if model.connection == nil {
+            if !model.paired {
                 ConnectView()
             } else {
                 TabView(selection: $model.tab) {
@@ -23,8 +23,8 @@ struct RootView: View {
         .background(Theme.bg)
         // Here rather than on a tab: a session opened from a notification
         // needs the host's projects and model names too.
-        .task(id: model.connection?.endpoint) {
-            while !Task.isCancelled, model.connection != nil {
+        .task(id: model.machines.map(\.id)) {
+            while !Task.isCancelled, model.paired {
                 await model.refresh()
                 try? await Task.sleep(for: .seconds(5))
             }
@@ -54,8 +54,8 @@ struct TabStack<Root: View>: View {
                 .navigationDestination(for: Route.self) { route in
                     switch route {
                     case .session(let session): SessionView(route: session)
-                    case .newSession(let projectId): NewSessionView(projectId: projectId)
-                    case .browse: FolderBrowserView()
+                    case .newSession(let machineId, let projectId): NewSessionView(machineId: machineId, projectId: projectId)
+                    case .browse(let machineId): FolderBrowserView(machineId: machineId)
                     case .webApp(let app): WebAppView(app: app)
                     }
                 }
@@ -75,6 +75,7 @@ struct NowView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if let update = model.update { UpdateBanner(update: update).padding(.top, 4) }
+                OfflineMachines()
                 if !model.toReview.isEmpty {
                     SectionLabel(text: "To review")
                     ForEach(model.toReview) { reviewRow($0) }
@@ -83,7 +84,7 @@ struct NowView: View {
                     SectionLabel(text: "Working")
                     ForEach(model.working) { SessionLink(session: $0, showProject: true) }
                 }
-                if model.host != nil, model.waitingCount == 0, model.working.isEmpty {
+                if model.machines.contains(where: { $0.host != nil }), model.waitingCount == 0, model.working.isEmpty {
                     VStack(spacing: 6) {
                         Image(systemName: "checkmark.circle").font(.system(size: 28)).foregroundStyle(Theme.faint)
                         Text("Nothing waits on you").font(Theme.body).foregroundStyle(Theme.muted)
@@ -166,7 +167,7 @@ struct ProjectsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage("home.showArchived") private var showArchived = false
     /// The projects opened, by id, one per line.
-    @AppStorage("projects.open") private var openIds = ""
+    @AppStorage("projects.open.machines") private var openIds = ""
     @State private var filter = ""
 
     private var query: String { filter.trimmingCharacters(in: .whitespaces).lowercased() }
@@ -176,9 +177,12 @@ struct ProjectsView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 search
-                ForEach(model.visibleProjects) { project($0) }
-                if model.host != nil && model.projects.isEmpty {
-                    Text("No projects yet. Open a folder of the host with the folder button.")
+                ForEach(model.machines) { machine in
+                    if model.multi { machineLabel(machine) }
+                    ForEach(machine.visibleProjects) { project($0) }
+                }
+                if model.machines.contains(where: { $0.host != nil }) && model.allProjects.isEmpty {
+                    Text("No projects yet. Open a folder of a machine with the folder button.")
                         .font(Theme.small)
                         .foregroundStyle(Theme.muted)
                         .padding(16)
@@ -195,15 +199,46 @@ struct ProjectsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 18) {
-                    if model.can("projects.browse") {
-                        NavigationLink(value: Route.browse) { Image(systemName: "folder.badge.plus") }
-                    }
+                    browseButton
                     NewSessionButton()
                     HomeMenu()
                 }
                 .foregroundStyle(Theme.text)
             }.flat()
         }
+    }
+
+    /// Opens a folder of a machine; with several, asks which.
+    @ViewBuilder private var browseButton: some View {
+        let browsable = model.machines.filter { $0.can("projects.browse") }
+        if browsable.count > 1 {
+            Menu {
+                Section("Open a folder of") {
+                    ForEach(browsable) { machine in
+                        Button(machine.name) { model.path.append(.browse(machineId: machine.id)) }
+                    }
+                }
+            } label: {
+                Image(systemName: "folder.badge.plus")
+            }
+        } else if let machine = browsable.first {
+            NavigationLink(value: Route.browse(machineId: machine.id)) { Image(systemName: "folder.badge.plus") }
+        }
+    }
+
+    /// A machine's name above its projects, when several are shown.
+    private func machineLabel(_ machine: Machine) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: machine.offline ? "wifi.slash" : "desktopcomputer")
+                .font(.system(size: 12))
+                .foregroundStyle(machine.offline ? Theme.amber : Theme.faint)
+            Text(machine.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+            if machine.offline { Text("unreachable").font(Theme.meta).foregroundStyle(Theme.amber) }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 18)
+        .padding(.bottom, 2)
     }
 
     private var search: some View {
@@ -223,6 +258,8 @@ struct ProjectsView: View {
         .padding(.bottom, 4)
     }
 
+    private func key(_ project: HostProject) -> String { "\(project.machine):\(project.id)" }
+
     private func toggle(_ id: String) {
         var ids = opened
         if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
@@ -230,7 +267,7 @@ struct ProjectsView: View {
     }
 
     private func sessions(of project: HostProject) -> [HostSessionSummary] {
-        (model.sessions[project.id] ?? [])
+        (model.machine(project.machine)?.sessions[project.id] ?? [])
             .filter { !$0.draftOnly && (showArchived || $0.archived != true) }
             .filter { query.isEmpty || $0.displayName.lowercased().contains(query) || project.name.lowercased().contains(query) }
             .sorted { ($0.pinned == true ? 1 : 0, $0.updatedAt) > ($1.pinned == true ? 1 : 0, $1.updatedAt) }
@@ -240,10 +277,10 @@ struct ProjectsView: View {
     private func project(_ project: HostProject) -> some View {
         let list = sessions(of: project)
         if query.isEmpty || !list.isEmpty {
-            let open = opened.contains(project.id) || !query.isEmpty
+            let open = opened.contains(key(project)) || !query.isEmpty
             HStack(spacing: 8) {
                 Button {
-                    toggle(project.id)
+                    toggle(key(project))
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: open ? "chevron.down" : "chevron.right")
@@ -256,7 +293,7 @@ struct ProjectsView: View {
                             .tracking(0.66)
                             .foregroundStyle(Theme.muted)
                             .lineLimit(1)
-                        ProjectStatusCounts(sessions: model.sessions[project.id] ?? [])
+                        ProjectStatusCounts(sessions: model.machine(project.machine)?.sessions[project.id] ?? [])
                         Spacer(minLength: 0)
                     }
                     .frame(minHeight: 36)
@@ -265,16 +302,16 @@ struct ProjectsView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(project.name), \(open ? "open" : "folded")")
                 Menu {
-                    NavigationLink(value: Route.newSession(projectId: project.id)) { Label("New session", systemImage: "plus") }
+                    NavigationLink(value: Route.newSession(machineId: project.machine, projectId: project.id)) { Label("New session", systemImage: "plus") }
                     Text(tilde(project.cwd))
-                    if model.can("projects.rail") {
+                    if model.machine(project.machine)?.can("projects.rail") == true {
                         Button("Remove from list", role: .destructive) { Task { await model.hide(project) } }
                     }
                 } label: {
                     Image(systemName: "ellipsis").font(.system(size: 13)).foregroundStyle(Theme.muted).frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
-                NavigationLink(value: Route.newSession(projectId: project.id)) {
+                NavigationLink(value: Route.newSession(machineId: project.machine, projectId: project.id)) {
                     Image(systemName: "plus").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.muted).frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
@@ -301,8 +338,13 @@ struct SessionLink: View {
     @State private var deleting = false
 
     var body: some View {
-        NavigationLink(value: Route.session(SessionRoute(projectId: session.projectId, sessionId: session.id))) {
-            SessionRow(session: session, project: showProject ? model.project(session.projectId) : nil)
+        NavigationLink(value: Route.session(SessionRoute(machineId: session.machine, projectId: session.projectId, sessionId: session.id))) {
+            SessionRow(
+                session: session,
+                project: showProject ? model.project(machineId: session.machine, id: session.projectId) : nil,
+                // Under a project the machine is already named by its section.
+                machine: showProject && model.multi ? model.machine(session.machine)?.name : nil
+            )
         }
         .buttonStyle(SessionRowStyle())
         .contextMenu {
@@ -338,10 +380,12 @@ struct HostHeader: View {
     var body: some View {
         HStack(spacing: 8) {
             Image("side-logo").resizable().frame(width: 20, height: 20).clipShape(.rect(cornerRadius: 5))
-            Text(model.host?.name ?? "sIDE").font(.system(size: 15, weight: .semibold)).lineLimit(1)
+            Text(model.multi ? "\(model.machines.count) machines" : (model.machines.first?.name ?? "sIDE"))
+                .font(.system(size: 15, weight: .semibold))
+                .lineLimit(1)
             // The app's own version, short enough to stay beside the
             // toolbar's buttons; the host's is in the menu.
-            if model.offline {
+            if !model.offlineMachines.isEmpty {
                 Image(systemName: "wifi.slash").font(.system(size: 12)).foregroundStyle(Theme.amber)
             } else {
                 Text(AppUpdate.installedVersion)
@@ -358,14 +402,9 @@ struct NewSessionButton: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        if let project = recentProject {
-            NavigationLink(value: Route.newSession(projectId: project.id)) { Image(systemName: "square.and.pencil") }
+        if let project = model.recentProject {
+            NavigationLink(value: Route.newSession(machineId: project.machine, projectId: project.id)) { Image(systemName: "square.and.pencil") }
         }
-    }
-
-    private var recentProject: HostProject? {
-        let latest = model.sessions.values.joined().max { $0.updatedAt < $1.updatedAt }
-        return model.visibleProjects.first { $0.id == latest?.projectId } ?? model.visibleProjects.first
     }
 }
 
@@ -374,11 +413,13 @@ struct HomeMenu: View {
     @Environment(AppModel.self) private var model
     @AppStorage("home.showArchived") private var showArchived = false
     @State private var usage = false
+    @State private var machines = false
 
     var body: some View {
         Menu {
-            // The desktop's web apps, such as a review page, signed in as there.
-            if let apps = model.webApps, !apps.isEmpty {
+            // The desktop's web apps, such as a review page, signed in as
+            // there. Every host keeps the same list; the first one's is shown.
+            if let apps = model.machines.lazy.compactMap(\.webApps).first, !apps.isEmpty {
                 Section("Web apps") {
                     ForEach(apps) { app in
                         Button(app.name, systemImage: "globe") { model.path.append(.webApp(app)) }
@@ -386,23 +427,26 @@ struct HomeMenu: View {
                 }
             }
             Section {
+                Button("Machines", systemImage: "desktopcomputer") { machines = true }
                 Button("Usage & accounts", systemImage: "gauge.with.dots.needle.50percent") { usage = true }
                 Toggle("Show archived", isOn: $showArchived)
             }
-            Section("App \(AppUpdate.installedVersion)" + (model.host?.version.map { " · host \($0)" } ?? "")) {
+            Section("App \(AppUpdate.installedVersion)") {
                 Button("Check for updates", systemImage: "arrow.down.circle") { Task { await model.checkForUpdate(force: true) } }
-            }
-            if let endpoint = model.connection?.endpoint {
-                Section(endpoint.host() ?? endpoint.absoluteString) {
-                    Button("Sign out", role: .destructive) { Task { await model.signOut() } }
-                }
             }
         } label: {
             Image(systemName: "ellipsis")
         }
         .sheet(isPresented: $usage) {
             NavigationStack {
-                ScrollView { UsageView(accounts: model.accounts).padding(.bottom, 24) }
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(model.machines) { machine in
+                            UsageView(machine: machine, title: model.multi ? machine.name : "Usage")
+                        }
+                    }
+                    .padding(.bottom, 24)
+                }
                     .background(Theme.sidebar.ignoresSafeArea())
                     .navigationTitle("Usage")
                     .navigationBarTitleDisplayMode(.inline)
@@ -410,6 +454,7 @@ struct HomeMenu: View {
             }
             .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $machines) { MachinesSheet() }
     }
 }
 
@@ -418,15 +463,21 @@ struct SessionRow: View {
     @Environment(AppModel.self) private var model
     let session: HostSessionSummary
     var project: HostProject?
+    /// The machine's name, where the list mixes machines.
+    var machine: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 HarnessIcon(harness: session.harness, size: 13)
-                Text(model.modelName(harness: session.harness, model: session.model)).lineLimit(1)
+                Text(model.modelName(machineId: session.machine, harness: session.harness, model: session.model)).lineLimit(1)
                 if let project {
                     Text("·")
                     Text(project.name).lineLimit(1)
+                }
+                if let machine {
+                    Text("·")
+                    Text(machine).lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 if session.pinned == true { Image(systemName: "pin.fill").font(.system(size: 9)) }
@@ -518,14 +569,15 @@ struct SessionRowStyle: ButtonStyle {
 /// its sign-in error or limit. Opens the host's accounts.
 struct UsageView: View {
     @Environment(AppModel.self) private var model
-    let accounts: [HostAccountSummary]
+    let machine: Machine
+    var title = "Usage"
     @State private var managing = false
 
     var body: some View {
-        let named = accounts.filter { !$0.isPool }
-        if !named.isEmpty || model.can("accounts.login") {
+        let named = machine.accounts.filter { !$0.isPool }
+        if !named.isEmpty || machine.can("accounts.login") {
             HStack {
-                SectionLabel(text: "Usage")
+                SectionLabel(text: title)
                 Button("Accounts") { managing = true }
                     .font(Theme.meta)
                     .foregroundStyle(Theme.link)
@@ -560,8 +612,8 @@ struct UsageView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .sheet(isPresented: $managing) { HostAccountsSheet() }
-            .onAppear { Task { await model.refreshAccounts() } }
+            .sheet(isPresented: $managing) { HostAccountsSheet(machine: machine) }
+            .onAppear { Task { await model.refreshAccounts(machine) } }
         }
     }
 
@@ -627,5 +679,95 @@ struct UpdateBanner: View {
         } message: {
             Text("1. Close LiveContainer: swipe it away in the app switcher.\n2. Paste the link in Safari's address bar and open it.\n3. Choose Replace: the app keeps its data and stays paired.")
         }
+    }
+}
+
+/// Machines that could not be read: their sessions are the last ones known.
+struct OfflineMachines: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let offline = model.offlineMachines
+        if !offline.isEmpty, model.multi {
+            HStack(spacing: 8) {
+                Image(systemName: "wifi.slash").font(.system(size: 12)).foregroundStyle(Theme.amber)
+                Text("\(offline.map(\.name).joined(separator: ", ")) \(offline.count == 1 ? "is" : "are") unreachable; showing the last sessions known.")
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.muted)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.amber.opacity(0.08), in: .rect(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.amber.opacity(0.25)))
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+        }
+    }
+}
+
+/// The machines this phone is paired with: each one runs its own sessions,
+/// and the lists gather them. Add, rename or remove one here.
+struct MachinesSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var renaming: Machine?
+    @State private var removing: Machine?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(model.machines) { machine in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "desktopcomputer").font(.system(size: 13))
+                                Text(machine.name).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                                Spacer()
+                                if machine.offline { Pill(text: "Unreachable") }
+                            }
+                            Text(machine.connection.endpoint.absoluteString + (machine.host?.version.map { " · \($0)" } ?? ""))
+                                .font(Theme.meta)
+                                .foregroundStyle(Theme.muted)
+                                .lineLimit(1)
+                            HStack(spacing: 6) {
+                                Button("Rename") { renaming = machine }.buttonStyle(ThemeButtonStyle())
+                                Button("Remove") { removing = machine }.buttonStyle(ThemeButtonStyle(danger: true))
+                            }
+                        }
+                        .card()
+                    }
+                    NavigationLink {
+                        ConnectForm { dismiss() }
+                            .navigationTitle("Add a machine")
+                            .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        Label("Add machine", systemImage: "plus")
+                    }
+                    .buttonStyle(ThemeButtonStyle())
+                    .padding(.top, 4)
+                }
+                .padding(20)
+            }
+            .background(Theme.sidebar.ignoresSafeArea())
+            .navigationTitle("Machines")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Theme.sidebar, for: .navigationBar)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .alert("Rename machine", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+                if let machine = renaming {
+                    RenameField(initial: machine.name) { name in model.rename(machine, to: name) }
+                }
+            }
+            .confirmationDialog(
+                "Stop showing \(removing?.name ?? "") on this phone? Its sessions keep running on it.",
+                isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button("Remove", role: .destructive) {
+                    if let machine = removing { Task { await model.remove(machine) } }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }

@@ -4,19 +4,22 @@ import SwiftUI
 /// pick the project, agent and model, permissions and account.
 struct NewSessionView: View {
     @Environment(AppModel.self) private var model
+    let machineId: String
     let projectId: String
 
-    @State private var current = ""
+    /// The project picked in its chip, as `machine` and `project`.
+    @State private var current: (machine: String, project: String)?
     @AppStorage("new.harness") private var harness = "claude"
     @AppStorage("new.model") private var modelId = ""
     @AppStorage("new.mode") private var mode = "supervised"
     @State private var account = ""
     @State private var catalog: HostModelCatalog?
 
-    private var project: HostProject? { model.project(current.isEmpty ? projectId : current) }
-    private var harnesses: [String] { (model.host?.providers ?? []).filter { !(catalog?.models[$0] ?? []).isEmpty } }
+    private var machine: Machine? { model.machine(current?.machine ?? machineId) }
+    private var project: HostProject? { model.project(machineId: current?.machine ?? machineId, id: current?.project ?? projectId) }
+    private var harnesses: [String] { (machine?.host?.providers ?? []).filter { !(catalog?.models[$0] ?? []).isEmpty } }
     private var selected: AgentModel? { catalog?.models[harness]?.first { $0.id == modelId } }
-    private var accounts: [HostAccountSummary] { model.accounts.filter { $0.provider == harness } }
+    private var accounts: [HostAccountSummary] { (machine?.accounts ?? []).filter { $0.provider == harness } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -25,13 +28,15 @@ struct NewSessionView: View {
                 HStack(spacing: 10) {
                     MascotView(seed: folderName(project.cwd), size: 18)
                     Text(project.name).font(.system(size: 22, weight: .semibold)).lineLimit(1)
+                    if model.multi, let machine { Text(machine.name).font(.system(size: 14)).foregroundStyle(Theme.muted).lineLimit(1) }
                 }
                 .padding(.horizontal, 10)
             }
             ComposerView(
                 placeholder: "Ask, build, plan…",
                 disabled: selected == nil,
-                canPlan: model.can("sessions.plan"),
+                machineId: machine?.id ?? machineId,
+                canPlan: machine?.can("sessions.plan") == true,
                 onSend: { outgoing in try await create(outgoing) },
                 context: {
                     if let project { Text(tilde(project.cwd)).font(Theme.mono).truncationMode(.head) }
@@ -49,16 +54,25 @@ struct NewSessionView: View {
         .navigationTitle("New session")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Theme.bg, for: .navigationBar)
-        .task(id: project?.id) { await load() }
+        .task(id: "\(project?.machine ?? ""):\(project?.id ?? "")") { await load() }
     }
 
     @ViewBuilder
     private var chips: some View {
-        let projects = model.visibleProjects
-        if projects.count > 1, let project {
+        if model.allProjects.count > 1, let project {
             Chip(icon: AnyView(MascotView(seed: folderName(project.cwd), size: 11)), label: project.name) {
-                ForEach(projects) { item in
-                    ChoiceButton(label: item.name, selected: item.id == project.id) { current = item.id }
+                // Every machine's projects, under its name when there are several.
+                ForEach(model.machines) { machine in
+                    let projects = machine.visibleProjects
+                    if !projects.isEmpty {
+                        Section(model.multi ? machine.name : "") {
+                            ForEach(projects) { item in
+                                ChoiceButton(label: item.name, selected: item.id == project.id && item.machine == project.machine) {
+                                    current = (item.machine, item.id)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -95,7 +109,7 @@ struct NewSessionView: View {
     }
 
     private func load() async {
-        guard let client = model.client, let project else { return }
+        guard let client = machine?.client, let project else { return }
         do {
             catalog = try await client.rpc("models.list", ["projectId": project.id], as: HostModelCatalog.self)
             if !harnesses.contains(harness) { harness = harnesses.contains("claude") ? "claude" : harnesses.first ?? harness }
@@ -103,12 +117,13 @@ struct NewSessionView: View {
             if !models.contains(where: { $0.id == modelId }) { modelId = models.first?.id ?? "" }
             if !accounts.contains(where: { $0.id == account }) { account = accounts.first { $0.isPool }?.id ?? "" }
         } catch {
-            model.report(error)
+            model.report(error, machine: machine)
         }
     }
 
     private func create(_ outgoing: Outgoing) async throws {
-        guard let client = model.client, let project, !modelId.isEmpty else { return }
+        guard let machine, let project, !modelId.isEmpty else { return }
+        let client = machine.client
         do {
             var input: [String: Any] = [
                 "type": "create", "projectId": project.id, "harness": harness, "model": modelId, "runtimeMode": mode,
@@ -119,12 +134,12 @@ struct NewSessionView: View {
             if !outgoing.attachments.isEmpty { message["attachments"] = outgoing.attachments.map(\.json) }
             if outgoing.plan { message["intent"] = "plan" }
             try await client.command(message)
-            await model.refresh()
+            await model.refresh(machine)
             // The new session replaces this screen, as on the desktop.
             if !model.path.isEmpty { model.path.removeLast() }
-            model.path.append(.session(SessionRoute(projectId: project.id, sessionId: receipt.sessionId)))
+            model.path.append(.session(SessionRoute(machineId: machine.id, projectId: project.id, sessionId: receipt.sessionId)))
         } catch {
-            model.report(error)
+            model.report(error, machine: machine)
             throw error
         }
     }
@@ -133,6 +148,8 @@ struct NewSessionView: View {
 /// Picks a folder of the host and opens it as a project.
 struct FolderBrowserView: View {
     @Environment(AppModel.self) private var model
+    let machineId: String
+    private var machine: Machine? { model.machine(machineId) }
     @State private var directory: HostDirectory?
     @State private var opening = false
 
@@ -163,7 +180,7 @@ struct FolderBrowserView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle("Open folder")
+        .navigationTitle(model.multi ? "Open folder on \(machine?.name ?? "")" : "Open folder")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Theme.bg, for: .navigationBar)
         .toolbar {
@@ -173,8 +190,8 @@ struct FolderBrowserView: View {
                     Task {
                         opening = true
                         defer { opening = false }
-                        if let project = await model.openProject(cwd: path) {
-                            model.path = [.newSession(projectId: project.id)]
+                        if let machine, let project = await model.openProject(machine, cwd: path) {
+                            model.path = [.newSession(machineId: machine.id, projectId: project.id)]
                         }
                     }
                 }
@@ -185,13 +202,13 @@ struct FolderBrowserView: View {
     }
 
     private func load(_ path: String?) async {
-        guard let client = model.client else { return }
+        guard let client = machine?.client else { return }
         do {
             var params: [String: Any] = [:]
             if let path { params["path"] = path }
             directory = try await client.rpc("projects.browse", params, as: HostDirectory.self)
         } catch {
-            model.report(error)
+            model.report(error, machine: machine)
         }
     }
 }

@@ -6,14 +6,6 @@ func resetTime(_ ms: Double) -> String {
     return date.formatted(date: Calendar.current.isDateInToday(date) ? .omitted : .abbreviated, time: .shortened)
 }
 
-/// Whether the host can sign in an account of this provider from here:
-/// Claude with `accounts.login`, Codex with `accounts.login.codex` as well.
-@MainActor
-func canSignIn(_ model: AppModel, provider: String) -> Bool {
-    guard model.can("accounts.login") else { return false }
-    return provider == "claude" || (provider == "codex" && model.can("accounts.login.codex"))
-}
-
 /// One line under an account in a menu: why it needs the user, or its usage.
 func accountStatus(_ account: HostAccountSummary, among accounts: [HostAccountSummary]) -> String {
     if let pool = account.pool {
@@ -33,22 +25,24 @@ func accountStatus(_ account: HostAccountSummary, among accounts: [HostAccountSu
 /// "Default" or a host account, each with its usage, and the accounts sheet.
 struct AccountChip: View {
     @Environment(AppModel.self) private var app
+    let machineId: String
     let harness: String
     /// The session's `providerAccountId`; "default" is the Default choice.
     let current: String?
     let onChange: (String) -> Void
     @State private var managing = false
 
-    private var canAdd: Bool { canSignIn(app, provider: harness) }
+    private var machine: Machine? { app.machine(machineId) }
+    private var canAdd: Bool { machine?.canSignIn(provider: harness) == true }
 
     var body: some View {
-        let accounts = app.accounts.filter { $0.provider == harness }
+        let accounts = (machine?.accounts ?? []).filter { $0.provider == harness }
         let selected = current.flatMap { $0.isEmpty || $0 == "default" ? nil : $0 }
         if !accounts.isEmpty || canAdd {
             Chip(label: accounts.first { $0.id == selected }?.label ?? "Default") {
                 ChoiceButton(label: "Default", selected: selected == nil) { onChange("default") }
                     // Menus have no open callback; their rows appear when it opens.
-                    .onAppear { Task { await app.refreshAccounts() } }
+                    .onAppear { Task { if let machine { await app.refreshAccounts(machine) } } }
                 ForEach(accounts) { account in
                     Button {
                         onChange(account.id)
@@ -62,7 +56,7 @@ struct AccountChip: View {
                 Divider()
                 Button("Accounts…", systemImage: "person.crop.circle") { managing = true }
             }
-            .sheet(isPresented: $managing) { HostAccountsSheet(provider: harness) }
+            .sheet(isPresented: $managing) { if let machine { HostAccountsSheet(machine: machine, provider: harness) } }
         }
     }
 }
@@ -81,6 +75,8 @@ struct HostAccountsSheet: View {
 
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    /// The machine whose host keeps these accounts.
+    let machine: Machine
     /// Only this provider's accounts, or every one.
     var provider: String?
     @State private var signIn: SignIn?
@@ -90,12 +86,12 @@ struct HostAccountsSheet: View {
     @State private var refreshing = false
 
     private var accounts: [HostAccountSummary] {
-        model.accounts.filter { provider == nil || $0.provider == provider }
+        machine.accounts.filter { provider == nil || $0.provider == provider }
     }
     private var claude: Bool { provider == nil || provider == "claude" }
     /// The providers an account can be added for, in this sheet.
     private var addable: [String] {
-        ["claude", "codex"].filter { (provider == nil || provider == $0) && canSignIn(model, provider: $0) }
+        ["claude", "codex"].filter { (provider == nil || provider == $0) && machine.canSignIn(provider: $0) }
     }
 
     var body: some View {
@@ -108,7 +104,7 @@ struct HostAccountsSheet: View {
                             .foregroundStyle(Theme.muted)
                     }
                     ForEach(accounts) { row($0) }
-                    if claude, model.can("accounts.import"), !found.isEmpty {
+                    if claude, machine.can("accounts.import"), !found.isEmpty {
                         SectionLabel(text: "Signed in on the host").padding(.horizontal, -16)
                         ForEach(found, id: \.configDir) { entry in
                             Button {
@@ -142,16 +138,16 @@ struct HostAccountsSheet: View {
                 .padding(20)
             }
             .background(Theme.sidebar.ignoresSafeArea())
-            .navigationTitle("Host accounts")
+            .navigationTitle(model.multi ? "\(machine.name) accounts" : "Host accounts")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Theme.sidebar, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    if model.can("accounts.refresh") {
+                    if machine.can("accounts.refresh") {
                         Button {
                             Task {
                                 refreshing = true
-                                await model.refreshAccounts(force: true)
+                                await model.refreshAccounts(machine, force: true)
                                 refreshing = false
                             }
                         } label: {
@@ -164,8 +160,8 @@ struct HostAccountsSheet: View {
             }
             .navigationDestination(item: $signIn) { target in
                 switch target {
-                case .add(let provider): HostSignInView(provider: provider, account: nil)
-                case .again(let account): HostSignInView(provider: account.provider, account: account)
+                case .add(let provider): HostSignInView(machine: machine, provider: provider, account: nil)
+                case .again(let account): HostSignInView(machine: machine, provider: account.provider, account: account)
                 }
             }
             .confirmationDialog(
@@ -176,7 +172,7 @@ struct HostAccountsSheet: View {
                 Button("Remove", role: .destructive) {
                     if let account = removing {
                         Task {
-                            await model.remove(account)
+                            await model.remove(machine, account: account)
                             await loadFound()
                         }
                     }
@@ -186,15 +182,15 @@ struct HostAccountsSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .task {
-            await model.refreshAccounts()
+            await model.refreshAccounts(machine)
             await loadFound()
         }
     }
 
     /// Signed-in Claude profiles no account declares yet, to import.
     private func loadFound() async {
-        guard claude, model.can("accounts.import") else { return }
-        found = (try? await model.client?.rpc("accounts.found", as: [Found].self)) ?? []
+        guard claude, machine.can("accounts.import") else { return }
+        found = (try? await machine.client.rpc("accounts.found", as: [Found].self)) ?? []
     }
 
     private func row(_ account: HostAccountSummary) -> some View {
@@ -210,7 +206,7 @@ struct HostAccountsSheet: View {
                 }
             }
             if account.isPool {
-                Text("\(accountStatus(account, among: model.accounts)) · starts on the most weekly room, moves on at a limit")
+                Text("\(accountStatus(account, among: machine.accounts)) · starts on the most weekly room, moves on at a limit")
                     .font(Theme.meta)
                     .foregroundStyle(Theme.muted)
             } else {
@@ -229,8 +225,8 @@ struct HostAccountsSheet: View {
                         .font(Theme.meta)
                         .foregroundStyle(Theme.faint)
                 }
-                if let balanced = account.balanced, model.can("accounts.balance") {
-                    Toggle(isOn: Binding(get: { balanced }, set: { on in Task { await model.setBalanced(account, on) } })) {
+                if let balanced = account.balanced, machine.can("accounts.balance") {
+                    Toggle(isOn: Binding(get: { balanced }, set: { on in Task { await model.setBalanced(machine, account, on) } })) {
                         VStack(alignment: .leading, spacing: 1) {
                             Text("Use in Balanced").font(.system(size: 13))
                             Text("Balanced spreads conversations over these accounts").font(Theme.meta).foregroundStyle(Theme.faint)
@@ -239,11 +235,11 @@ struct HostAccountsSheet: View {
                     .tint(Theme.addFg)
                 }
                 HStack(spacing: 6) {
-                    if canSignIn(model, provider: account.provider) {
+                    if machine.canSignIn(provider: account.provider) {
                         Button("Sign in again") { signIn = .again(account) }
                             .buttonStyle(ThemeButtonStyle(primary: account.usage?.error != nil))
                     }
-                    if model.can("accounts.remove") {
+                    if machine.can("accounts.remove") {
                         Button("Remove") { removing = account }.buttonStyle(ThemeButtonStyle(danger: true))
                     }
                 }
@@ -275,11 +271,11 @@ struct HostAccountsSheet: View {
         importing = entry.configDir
         defer { importing = nil }
         do {
-            _ = try await model.client?.rpc("accounts.import", ["configDir": entry.configDir], as: HostClient.Ignored.self)
+            _ = try await machine.client.rpc("accounts.import", ["configDir": entry.configDir], as: HostClient.Ignored.self)
             found.removeAll { $0.configDir == entry.configDir }
-            await model.refreshAccounts(force: true)
+            await model.refreshAccounts(machine, force: true)
         } catch {
-            model.report(error)
+            model.report(error, machine: machine)
         }
     }
 }
@@ -317,6 +313,7 @@ struct HostSignInView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    let machine: Machine
     let provider: String
     /// The account to sign in again, or none to add one.
     let account: HostAccountSummary?
@@ -400,13 +397,13 @@ struct HostSignInView: View {
             attempt += 1
             // Leaving midway ends the host's sign-in, as the desktop does.
             if !finished, let loginId = step.loginId {
-                Task { _ = try? await model.client?.rpc("accounts.loginCancel", ["loginId": loginId], as: HostClient.Ignored.self) }
+                Task { _ = try? await machine.client.rpc("accounts.loginCancel", ["loginId": loginId], as: HostClient.Ignored.self) }
             }
         }
     }
 
     private func start() async {
-        guard let client = model.client else { return }
+        let client = machine.client
         attempt += 1
         let current = attempt
         step = .starting
@@ -434,14 +431,14 @@ struct HostSignInView: View {
     /// Codex: each `accounts.loginStatus` waits up to about 10 seconds on the
     /// host; asks again while it is pending.
     private func poll(_ loginId: String, attempt current: Int) async {
-        guard let client = model.client else { return }
+        let client = machine.client
         while current == attempt, !Task.isCancelled {
             do {
                 let status = try await client.rpc("accounts.loginStatus", ["loginId": loginId], as: Status.self)
                 guard current == attempt else { return }
                 if status.pending == true { continue }
                 finished = true
-                await model.refreshAccounts(force: true)
+                await model.refreshAccounts(machine, force: true)
                 dismiss()
                 return
             } catch {
@@ -452,7 +449,8 @@ struct HostSignInView: View {
     }
 
     private func finish() async {
-        guard let client = model.client, case .code(let loginId, _) = step, !busy else { return }
+        let client = machine.client
+        guard case .code(let loginId, _) = step, !busy else { return }
         let code = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !code.isEmpty else { return }
         busy = true
@@ -460,7 +458,7 @@ struct HostSignInView: View {
         do {
             _ = try await client.rpc("accounts.loginCode", ["loginId": loginId, "code": code], as: HostClient.Ignored.self)
             finished = true
-            await model.refreshAccounts(force: true)
+            await model.refreshAccounts(machine, force: true)
             dismiss()
         } catch {
             // The host ends the sign-in on a failed code; it starts over.

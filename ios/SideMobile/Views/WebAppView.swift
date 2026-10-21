@@ -49,7 +49,9 @@ struct WebAppView: View {
     /// Hands the saved login to the web view, then loads the page.
     private func open() async {
         guard let url = URL(string: app.url) else { return }
-        if let session = try? await model.client?.rpc("webApps.session", ["id": app.id], as: HostWebAppSession?.self) {
+        // The login is kept on the host that lists the app.
+        let machine = model.machines.first { $0.webApps?.contains(app) == true } ?? model.machines.first
+        if let session = try? await machine?.client.rpc("webApps.session", ["id": app.id], as: HostWebAppSession?.self) {
             let store = page.view.configuration.websiteDataStore.httpCookieStore
             for header in session.cookies {
                 for cookie in HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": header], for: url) {
