@@ -237,6 +237,8 @@ type Props = SessionPaneProps & {
     queue?: boolean;
     editLast?: boolean;
     operator?: boolean;
+    /** The host takes snapshots around each turn (`sessions.review`). */
+    review?: boolean;
   };
   /** An opened host conversation whose transcript has not arrived yet. */
   remoteSessionLoading?: boolean;
@@ -576,8 +578,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
     return () => window.removeEventListener(ADD_TO_CHAT_EVENT, onAdd);
   }, [addSelectionToChat, addToChatTarget]);
   const workCwd = sessionWorkCwd(session);
+  // A host session has the review card when its host snapshots turns.
   const reviewHidden =
-    remote ||
+    (remote && !remoteFeatures?.review) ||
     !!session.inboxAsk ||
     !!session.worktreeRemoved ||
     !!draftBlock;

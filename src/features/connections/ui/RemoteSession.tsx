@@ -82,6 +82,7 @@ export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
     queue?: boolean;
     editLast?: boolean;
     operator?: boolean;
+    review?: boolean;
   };
   remoteSessionLoading: boolean;
   remoteSessionStarted: boolean;
@@ -1415,6 +1416,7 @@ function ConnectedRemoteSession({
       queue: !!descriptor?.capabilities.includes("sessions.queue"),
       editLast: !!descriptor?.capabilities.includes("sessions.editLast"),
       operator: !!descriptor?.capabilities.includes("app") && !!descriptor.appCli,
+      review: !!descriptor?.capabilities.includes("sessions.review"),
     },
     remoteSessionLoading: !!sessionId && !hostSession && !session.blocks.length,
     remoteSessionStarted: !!sessionId,

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
@@ -34,9 +34,11 @@ vi.mock("../../sessions/ui/AgentTranscript", () => ({
     onRemoveDraft,
     onOpenFile,
     onOpenDiff,
+    latestTurnAccessory,
   }: {
     blocks: Block[];
     busy: boolean;
+    latestTurnAccessory?: ReactNode;
     onSendDraft?: (block: Block) => void;
     onRemoveDraft?: (block: Block) => void;
     onOpenFile?: (path: string) => void;
@@ -45,6 +47,7 @@ vi.mock("../../sessions/ui/AgentTranscript", () => ({
     createElement(
       "ol",
       { "aria-label": "Transcript", "data-busy": busy },
+      latestTurnAccessory,
       createElement("button", { "aria-label": "Open transcript file", onClick: () => onOpenFile?.("src/app.ts") }),
       createElement("button", { "aria-label": "Open transcript diff", onClick: () => onOpenDiff?.("src/app.ts") }),
       blocks.map((block) =>
@@ -124,6 +127,16 @@ let createdBranch: string | undefined;
 let createdWorktree: string | undefined;
 let deletedSessions: string[];
 let extraCapabilities: string[];
+/** What the host's turn snapshots say the last turn changed. */
+let checkpointFiles: {
+  path: string;
+  relative: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  exact: boolean;
+  undoable: boolean;
+}[] = [];
 let hostAccounts: unknown[];
 let sessionUpdates: Record<string, unknown>[];
 
@@ -142,6 +155,7 @@ beforeEach(() => {
   createdWorktree = undefined;
   deletedSessions = [];
   extraCapabilities = [];
+  checkpointFiles = [];
   hostAccounts = [];
   sessionUpdates = [];
   catalog = { models: { codex: [gpt] }, errors: {} };
@@ -174,6 +188,7 @@ beforeEach(() => {
         ...(extraCapabilities.includes("app") ? { appCli: "/home/me/.side-host/bin/side-host app" } : {}),
       };
     if (method === "accounts.list") return hostAccounts;
+    if (operation === "session_checkpoint_status") return { files: checkpointFiles };
     if (method === "sessions.update") {
       const update = params as unknown as Record<string, unknown>;
       sessionUpdates.push(update);
@@ -1265,4 +1280,22 @@ it("queues a message typed during a turn on the host, and manages it from the qu
   await vi.waitFor(() =>
     expect(commands.at(-1)).toMatchObject({ type: "queueRemove", messageId: queued.commandId }),
   );
+});
+
+it("shows a host turn's review card when the host snapshots turns", async () => {
+  extraCapabilities = ["sessions.review"];
+  checkpointFiles = [
+    { path: "/home/me/repo/src/app.ts", relative: "src/app.ts", status: "modified", additions: 3, deletions: 1, exact: true, undoable: true },
+  ];
+  await limitedSession(Date.now() - 60_000);
+  expect(container.querySelector("[data-session-review-shell]")).not.toBeNull();
+  expect(container.textContent).toContain("app.ts");
+});
+
+it("keeps the review card off a host that does not snapshot turns", async () => {
+  checkpointFiles = [
+    { path: "/home/me/repo/src/app.ts", relative: "src/app.ts", status: "modified", additions: 3, deletions: 1, exact: true, undoable: true },
+  ];
+  await limitedSession(Date.now() - 60_000);
+  expect(container.querySelector("[data-session-review-shell]")).toBeNull();
 });
