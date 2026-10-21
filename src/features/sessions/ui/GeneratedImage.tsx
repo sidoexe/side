@@ -17,7 +17,11 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
     let cancelled = false;
     let created: string | null = null;
     setState({ status: "loading" });
-    void readBinaryFile(image.path).then(
+    // A host's image arrives as bytes; a local one is read from its file.
+    const bytes = image.data
+      ? Promise.resolve(Uint8Array.from(atob(image.data), (char) => char.charCodeAt(0)))
+      : readBinaryFile(image.path);
+    void bytes.then(
       (bytes) => {
         if (cancelled) return;
         const mime = sniffImageMime(bytes);
@@ -36,7 +40,7 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
       cancelled = true;
       if (created) URL.revokeObjectURL(created);
     };
-  }, [image.path]);
+  }, [image.path, image.data]);
 
   if (state.status === "loading") {
     return (

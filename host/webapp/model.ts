@@ -130,8 +130,9 @@ export type Block = {
   taskList?: { items: { text: string; status: string }[] };
   plan?: { status?: string };
   notice?: string;
-  /** An image the agent generated; it stays on the machine that ran it. */
-  image?: { name?: string; alt?: string };
+  /** An image the agent generated. A host keeps it with the attachments
+   * (`attachmentId`), and every client reads it from there. */
+  image?: { name?: string; alt?: string; attachmentId?: string; size?: number; mimeType?: string };
 };
 
 export type UserQuestion = {

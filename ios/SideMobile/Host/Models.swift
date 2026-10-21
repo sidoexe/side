@@ -193,6 +193,10 @@ struct Block: Decodable, Identifiable, Equatable {
     struct GeneratedImage: Decodable, Equatable {
         let name: String?
         let alt: String?
+        /// Kept with the host's attachments, read as the images sent in.
+        let attachmentId: String?
+        let size: Int?
+        let mimeType: String?
     }
 }
 

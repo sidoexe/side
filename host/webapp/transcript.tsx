@@ -187,7 +187,22 @@ export function TranscriptItemView({
       if (!block.text.trim()) return null;
       return block.notice === "error" || block.notice === "interrupt" ? <div className="notice">{block.text}</div> : <div className="system">{block.text}</div>;
     case "image":
-      // The file stays on the machine that made it; say that it exists.
+      // Kept with the host's attachments: shown as the images sent in.
+      if (block.image?.attachmentId && block.image.size)
+        return (
+          <AttachmentImage
+            machineId={machineId}
+            sessionId={sessionId}
+            attachment={{
+              id: block.image.attachmentId,
+              name: block.image.alt ?? block.image.name ?? "Generated image",
+              mimeType: block.image.mimeType ?? "image/png",
+              kind: "image",
+              size: block.image.size,
+            }}
+          />
+        );
+      // Made before hosts kept them: say that it exists.
       return (
         <div className="system row-line">
           <Icon name="photo" size={14} />

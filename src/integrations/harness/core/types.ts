@@ -54,6 +54,8 @@ export type HarnessEvent =
       mimeType: string;
       size: number;
       alt?: string;
+      /** Kept in a host's attachment store, read through `attachments.read`. */
+      attachmentId?: string;
     }
   | { type: "reasoning.delta"; text: string }
   | { type: "reasoning.completed" }

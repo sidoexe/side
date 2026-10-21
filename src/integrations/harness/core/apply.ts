@@ -784,6 +784,7 @@ function appendImage(
       mimeType: event.mimeType,
       size: event.size,
       ...(event.alt ? { alt: event.alt } : {}),
+      ...(event.attachmentId ? { attachmentId: event.attachmentId } : {}),
     },
   });
 }

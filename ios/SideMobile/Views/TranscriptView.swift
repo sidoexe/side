@@ -205,11 +205,20 @@ struct BlockView: View {
                 }
             }
         case "image":
-            // The file stays on the machine that made it; say that it exists.
-            Label(block.image?.alt ?? block.image?.name ?? "Generated image", systemImage: "photo")
+            if let id = block.image?.attachmentId, let size = block.image?.size, !sessionId.isEmpty {
+                // Kept with the host's attachments: shown as the images sent in.
+                AttachmentImage(
+                    machineId: machineId,
+                    sessionId: sessionId,
+                    attachment: Attachment(id: id, name: block.image?.name ?? "Generated image", mimeType: block.image?.mimeType ?? "image/png", kind: "image", size: size)
+                )
+            } else {
+                // Made before hosts kept them: say that it exists.
+                Label(block.image?.alt ?? block.image?.name ?? "Generated image", systemImage: "photo")
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.muted)
                 .lineLimit(2)
+            }
         default:
             EmptyView()
         }

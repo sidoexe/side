@@ -38,7 +38,7 @@ import { JsonRpcClient, type JsonRpcId } from "../../core/jsonRpc";
 import {
   deleteGeneratedImages,
   saveGeneratedImage,
-} from "../../../../platform/tauri/fs";
+} from "../../core/generatedImages";
 import {
   codexAsyncQuestions,
   codexAsyncQuestionResponse,
@@ -1062,6 +1062,7 @@ async function materializeGeneratedImage(
       name: event.name,
       mimeType: asset.mimeType,
       size: asset.size,
+      ...(asset.attachmentId ? { attachmentId: asset.attachmentId } : {}),
       ...(event.alt ? { alt: event.alt } : {}),
     });
   } catch (cause) {

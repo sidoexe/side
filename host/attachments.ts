@@ -5,14 +5,21 @@ import {
   readSync,
   writeSync,
   statSync,
+  writeFileSync,
+  rmSync,
 } from "node:fs";
-import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { dirname, join } from "node:path";
+import { sniffImageMime } from "../src/features/files/model/filePreview";
+import type { GeneratedImageStore } from "../src/integrations/harness/core/generatedImages";
 import type { Attachment } from "../src/features/sessions/model/session";
 import type { RemoteAttachment } from "../src/features/connections/model/protocol";
 import type { HostStore } from "./store";
 
 export const MAX_REMOTE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_CHUNK_BYTES = 512 * 1024;
+/** As the desktop's MAX_GENERATED_IMAGE_BYTES (src-tauri/src/fs.rs). */
+const MAX_GENERATED_IMAGE_BYTES = 25 * 1024 * 1024;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -114,10 +121,33 @@ export function resolveAttachments(
 
 /** Reads only an attachment already accepted into this session. Paths supplied
  * by the client are never used, and each response stays below the RPC cap. */
+/** An agent's generated images, kept beside the turns' attachments so every
+ * client reads them through `attachments.read`, as the images sent in. */
+export function hostGeneratedImages(store: HostStore): GeneratedImageStore {
+  return {
+    async save({ data, name }) {
+      const bytes = Buffer.from(data, "base64");
+      if (bytes.length > MAX_GENERATED_IMAGE_BYTES) throw new Error(`${name} is too large`);
+      const mimeType = sniffImageMime(bytes);
+      if (!mimeType) throw new Error(`${name} is not an image`);
+      const id = randomUUID();
+      const path = attachmentPath(store, id);
+      mkdirSync(store.attachmentDir, { recursive: true, mode: 0o700 });
+      writeFileSync(path, bytes, { mode: 0o600 });
+      return { path, mimeType, size: bytes.length, attachmentId: id };
+    },
+    async delete(paths) {
+      for (const path of paths) if (dirname(path) === store.attachmentDir) rmSync(path, { force: true });
+    },
+  };
+}
+
 export function readAttachmentChunk(store: HostStore, input: Record<string, unknown>) {
   const session = store.session(String(input.sessionId ?? ""));
-  const attachment = session.session.blocks.flatMap((block) => block.attachments ?? [])
-    .find((file) => file.id === input.id);
+  const generated = session.session.blocks.find((block) => block.image?.attachmentId === input.id)?.image;
+  const attachment =
+    session.session.blocks.flatMap((block) => block.attachments ?? []).find((file) => file.id === input.id) ??
+    (generated ? { id: generated.attachmentId!, kind: "image" as const, size: generated.size } : undefined);
   if (!attachment || attachment.kind !== "image") throw new Error("Image attachment not found");
   const offset = input.offset;
   if (!Number.isSafeInteger(offset) || Number(offset) < 0 || Number(offset) > attachment.size)

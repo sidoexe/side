@@ -235,6 +235,10 @@ export type GeneratedImageMeta = {
   mimeType: string;
   size: number;
   alt?: string;
+  /** Made on a host: kept in its attachment store, read with `attachments.read`. */
+  attachmentId?: string;
+  /** Base64 bytes of a host's image, read once by the desktop for display. */
+  data?: string;
 };
 
 export type Attachment = {

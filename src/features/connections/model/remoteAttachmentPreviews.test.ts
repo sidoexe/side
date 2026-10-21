@@ -67,3 +67,27 @@ it("keeps the transcript available when an image is missing", async () => {
     await withRemoteAttachmentPreviews("machine", value, undefined, read),
   ).toBe(value);
 });
+
+it("reads an image the agent generated on the host, once", async () => {
+  const generated = (): HostSession => ({
+    ...snapshot(),
+    session: {
+      ...snapshot().session,
+      blocks: [
+        {
+          id: "made",
+          role: "image",
+          text: "",
+          image: { path: "/host/attachments/x", name: "cat.png", mimeType: "image/png", size: 3, attachmentId: "made-image" },
+        },
+      ],
+    },
+  });
+  const read = vi.fn(async () => ({ offset: 3, size: 3, data: btoa("cat") }));
+  const first = await withRemoteAttachmentPreviews("machine", generated(), undefined, read);
+  expect(first.session.blocks[0].image?.data).toBe(btoa("cat"));
+  expect(read).toHaveBeenCalledWith({ sessionId: "session", id: "made-image", offset: 0 });
+  const again = await withRemoteAttachmentPreviews("machine", generated(), first, read);
+  expect(again.session.blocks[0].image?.data).toBe(btoa("cat"));
+  expect(read).toHaveBeenCalledTimes(1);
+});

@@ -458,8 +458,8 @@ describe("GitChangesPanel pull action", () => {
 });
 
 describe("GitChangesPanel remote pull request", () => {
-  it("creates it from the host Git range without calling a local harness", async () => {
-    const cwd = "remote://machine/home/user/repo";
+  const cwd = "remote://machine/home/user/repo";
+  const createPr = async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({
         remote: "origin",
@@ -477,7 +477,6 @@ describe("GitChangesPanel remote pull request", () => {
     });
     vi.mocked(gitPrCreate).mockResolvedValue("https://example.test/pull/42");
     await renderPanel(cwd);
-
     const button = [
       ...container.querySelectorAll<HTMLButtonElement>("button"),
     ].find((candidate) => candidate.textContent?.trim() === "Create PR");
@@ -486,10 +485,22 @@ describe("GitChangesPanel remote pull request", () => {
       button!.click();
       await Promise.resolve();
     });
+    await vi.waitFor(() => expect(gitPrCreate).toHaveBeenCalled());
+  };
 
+  it("has the host write it with its own agent, as locally", async () => {
+    vi.mocked(generatePrContent).mockResolvedValue({ title: "Fix the remote flow", body: "## Summary\n- Fix", base: "main", head: "feature/pull" });
+    await createPr();
     expect(gitPush).toHaveBeenCalledWith(cwd);
+    expect(generatePrContent).toHaveBeenCalledWith(cwd, undefined);
+    expect(gitPrCreate).toHaveBeenCalledWith(cwd, "Fix the remote flow", "## Summary\n- Fix", "main", "feature/pull");
+    expect(openUrl).toHaveBeenCalledWith("https://example.test/pull/42");
+  });
+
+  it("falls back to the host Git range when the host cannot write it", async () => {
+    vi.mocked(generatePrContent).mockRejectedValue(new Error("Unsupported workspace command"));
+    await createPr();
     expect(gitRangeContext).toHaveBeenCalledWith(cwd);
-    expect(generatePrContent).not.toHaveBeenCalled();
     expect(gitPrCreate).toHaveBeenCalledWith(
       cwd,
       "Fix remote flow",
@@ -497,6 +508,5 @@ describe("GitChangesPanel remote pull request", () => {
       "main",
       "feature/pull",
     );
-    expect(openUrl).toHaveBeenCalledWith("https://example.test/pull/42");
   });
 });
