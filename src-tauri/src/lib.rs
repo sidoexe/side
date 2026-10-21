@@ -3,6 +3,7 @@ use tauri::Manager;
 mod account_identity;
 mod automations;
 mod azure_devops;
+mod caffeine;
 mod chat_background;
 mod checkpoint;
 mod control;
@@ -400,6 +401,8 @@ pub fn run() {
             fs::copy_path,
             fs::move_path,
             fs::reveal_path,
+            caffeine::caffeine_status,
+            caffeine::caffeine_set,
             pasteboard::clipboard_file_paths,
             pasteboard::clipboard_image,
             pasteboard::copy_file_to_clipboard,
@@ -609,6 +612,7 @@ pub fn run() {
         tauri::RunEvent::Exit => {
             handle.state::<remote::RemoteConnections>().shutdown();
             reap_harness_children(handle);
+            caffeine::stop();
         }
         _ => {}
     });

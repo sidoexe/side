@@ -218,6 +218,10 @@ export function createHostServer(
     if (!engine.automations) throw new Error("Automations are unavailable on this host");
     return engine.automations;
   };
+  const caffeine = () => {
+    if (!engine.caffeine) throw new Error("Caffeine mode is unavailable on this host");
+    return engine.caffeine;
+  };
   const models = async (projectId?: unknown) => {
     const cwd =
       typeof projectId === "string"
@@ -476,6 +480,7 @@ export function createHostServer(
                 ...(engine.webApps ? ["webApps"] : []),
                 ...(engine.machines ? ["machines"] : []),
                 ...(engine.previews ? ["previews"] : []),
+                ...(engine.caffeine ? ["caffeine"] : []),
                 "accounts",
                 "accounts.refresh",
                 "accounts.balance",
@@ -896,6 +901,12 @@ export function createHostServer(
             break;
           case "projects.clearBackground":
             result = rail().clearBackground(params);
+            break;
+          case "caffeine.status":
+            result = caffeine().status();
+            break;
+          case "caffeine.set":
+            result = await caffeine().set(params);
             break;
           case "previews.open":
             if (!engine.previews) throw new Error("Previews need Tailscale on this host");

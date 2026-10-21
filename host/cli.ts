@@ -37,6 +37,7 @@ import { HostMachines } from "./machines";
 import { hostGeneratedImages } from "./attachments";
 import { setGeneratedImageStore } from "../src/integrations/harness/core/generatedImages";
 import { findTailscale, HostPreviews, tailscaleRunner } from "./previews";
+import { caffeineCommand, HostCaffeine } from "./caffeine";
 import {
   REMOTE_PROVIDERS,
   type RemoteProvider,
@@ -352,6 +353,7 @@ Connect another computer using an SSH forward to the loopback port.`);
       server.closeAllConnections();
       engine.push?.close();
       engine.previews?.close();
+      engine.caffeine?.close();
       await engine.close();
       await backend.close();
       release();
@@ -373,6 +375,8 @@ Connect another computer using an SSH forward to the loopback port.`);
         console.warn(`Previews are off: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
+    const caffeine = caffeineCommand();
+    if (caffeine) engine.caffeine = new HostCaffeine(caffeine);
     writeFileSync(
       statePath,
       JSON.stringify({ pid: process.pid, port, secret }),

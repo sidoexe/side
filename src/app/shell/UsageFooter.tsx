@@ -1,4 +1,4 @@
-import { RefreshCw, Terminal } from "../../shared/ui/icons";
+import { Coffee, RefreshCw, Terminal } from "../../shared/ui/icons";
 import { signInProviderAccount } from "../../features/providers/model/providerSignIn";
 import {
   useCallback,
@@ -56,6 +56,7 @@ import {
   type ProviderAccountProvider,
 } from "../../features/providers/model/providerAccounts";
 import { setRemoteAccountSlot } from "../../features/connections/ui/remoteAccountSlot";
+import { useCaffeine } from "../../features/connections/model/caffeine";
 
 const CLOCK_MS = 30_000;
 
@@ -151,34 +152,65 @@ export function UsageFooter({
           }
         />
       )}
-      {showTerminals || showTerminalButton ? (
-        <div className="ml-auto flex shrink-0 items-center gap-2">
-          {showTerminals ? (
-            <RunningTerminalChip
-              terminals={terminals}
-              open={terminalOpen}
-              onToggle={onToggleTerminal}
-            />
-          ) : showTerminalButton ? (
-            <button
-              type="button"
-              className={`inline-flex h-5 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1.5 hover:bg-content/10 ${
-                projectTerminalOpen
-                  ? "text-accent"
-                  : "text-content/40 hover:text-content"
-              }`}
-              aria-label={terminalLabel}
-              aria-pressed={projectTerminalOpen}
-              title={terminalLabel}
-              onClick={onTerminalClick}
-            >
-              <Terminal className="size-3.5" strokeWidth={1.75} aria-hidden />
-              <span>Terminal</span>
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <CaffeineButton project={project} />
+        {showTerminals ? (
+          <RunningTerminalChip
+            terminals={terminals}
+            open={terminalOpen}
+            onToggle={onToggleTerminal}
+          />
+        ) : showTerminalButton ? (
+          <button
+            type="button"
+            className={`inline-flex h-5 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1.5 hover:bg-content/10 ${
+              projectTerminalOpen
+                ? "text-accent"
+                : "text-content/40 hover:text-content"
+            }`}
+            aria-label={terminalLabel}
+            aria-pressed={projectTerminalOpen}
+            title={terminalLabel}
+            onClick={onTerminalClick}
+          >
+            <Terminal className="size-3.5" strokeWidth={1.75} aria-hidden />
+            <span>Terminal</span>
+          </button>
+        ) : null}
+      </div>
     </footer>
+  );
+}
+
+/** Caffeine mode for the machine that runs the project: one click keeps it
+ * from sleeping. Hidden where that machine cannot stay awake. */
+function CaffeineButton({ project }: { project?: string }) {
+  const { machineName, on, busy, error, toggle } = useCaffeine(project);
+  if (on === undefined) return null;
+  const where = machineName ?? "this computer";
+  const label = error
+    ? error
+    : on
+      ? `Caffeine on: ${where} stays awake. Click to let it sleep.`
+      : `Caffeine: keep ${where} awake`;
+  return (
+    <button
+      type="button"
+      className={`inline-flex h-5 shrink-0 items-center rounded px-1.5 hover:bg-content/10 disabled:opacity-50 ${
+        error
+          ? "text-red-400"
+          : on
+            ? "text-accent"
+            : "text-content/40 hover:text-content"
+      }`}
+      aria-label={label}
+      aria-pressed={on}
+      title={label}
+      disabled={busy}
+      onClick={toggle}
+    >
+      <Coffee className="size-3.5" strokeWidth={1.75} aria-hidden />
+    </button>
   );
 }
 

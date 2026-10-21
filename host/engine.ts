@@ -50,6 +50,7 @@ import type { HostRail } from "./rail";
 import type { HostWebApps } from "./webApps";
 import type { HostMachines } from "./machines";
 import type { HostPreviews } from "./previews";
+import type { HostCaffeine } from "./caffeine";
 import type { HostAccountLogins } from "./account-login";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments";
 import {
@@ -373,6 +374,8 @@ export class HostEngine {
   previews?: HostPreviews;
   /** The other machines the browser app reaches through this host. */
   machines?: HostMachines;
+  /** Keeps this machine awake while a desktop asks for it. */
+  caffeine?: HostCaffeine;
 
   /** Whether a turn of this session is running now. */
   isRunning(sessionId: string): boolean {

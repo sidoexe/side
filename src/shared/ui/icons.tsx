@@ -28,6 +28,7 @@ import ChartBreakoutSquareIcon from "@hugeicons/core-free-icons/ChartBreakoutSqu
 import CircleDashedIcon from "@hugeicons/core-free-icons/CircleDashedIcon";
 import CircleDotIcon from "@hugeicons/core-free-icons/CircleDotIcon";
 import CloudUploadIcon from "@hugeicons/core-free-icons/CloudUploadIcon";
+import Coffee02Icon from "@hugeicons/core-free-icons/Coffee02Icon";
 import Clock01Icon from "@hugeicons/core-free-icons/Clock01Icon";
 import ColorPickerIcon from "@hugeicons/core-free-icons/ColorPickerIcon";
 import Comment01Icon from "@hugeicons/core-free-icons/Comment01Icon";
@@ -165,6 +166,7 @@ export const ArrowDownCircle = wrap(CircleArrowDown01Icon, "ArrowDownCircle");
 export const ArrowLeft = wrap(ArrowLeft01Icon, "ArrowLeft");
 export const ArrowUp = wrap(ArrowUp01Icon, "ArrowUp");
 export const Bot = wrap(BotIcon, "Bot");
+export const Coffee = wrap(Coffee02Icon, "Coffee");
 export const Ghost = wrap(GhostIcon, "Ghost");
 export const AiIdea = wrap(AiIdeaIcon, "AiIdea");
 export const CaseSensitive = wrap(CaseSensitiveIcon, "CaseSensitive");
