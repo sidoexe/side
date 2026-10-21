@@ -1431,3 +1431,22 @@ describe("task lists", () => {
     expect(saved.items.map((item) => item.text)).toEqual(["Write tests"]);
   });
 });
+
+describe("questions kept open", () => {
+  it("asks the provider to keep a pending question from timing out", async () => {
+    const { engine, store, turns, provider, id } = setup();
+    provider.keepQuestionOpen = vi.fn();
+    engine.command({ type: "send", commandId: "send", sessionId: id, text: "Work" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    turns[0].input.onEvent({
+      type: "question.asked",
+      requestId: 4,
+      questions: [{ id: "q1", prompt: "Choose", multiSelect: false, allowCustom: false, options: [{ id: "yes", label: "Yes" }] }],
+    });
+    const runId = store.session(id).runId!;
+    engine.command({ type: "questionKeepOpen", commandId: "keep", sessionId: id, runId, requestId: 4 });
+    expect(provider.keepQuestionOpen).toHaveBeenCalledWith(id, 4);
+    expect(store.session(id).session.pendingQuestion?.requestId).toBe(4);
+    expect(() => engine.command({ type: "questionKeepOpen", commandId: "keep-other", sessionId: id, runId, requestId: 9 })).toThrow("already resolved");
+  });
+});

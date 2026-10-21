@@ -238,6 +238,14 @@ export type HostCommand =
     }
   | { type: "queueRemove"; commandId: string; sessionId: string; messageId: string }
   | {
+      /** The user is working on a question: keep it from timing out. */
+      type: "questionKeepOpen";
+      commandId: string;
+      sessionId: string;
+      runId: string;
+      requestId: number;
+    }
+  | {
       /** Edit a ready plan before it is built, as on the desktop. */
       type: "planEdit";
       commandId: string;

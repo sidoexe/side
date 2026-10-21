@@ -62,6 +62,8 @@ export interface HostProvider {
   restoreTaskLists?(id: string, lists: TaskListMeta[]): void;
   approve(id: string, request: number, decision: ApprovalDecision): void;
   answer(id: string, request: number, reply: UserQuestionReply): void;
+  /** Stops a question from timing out while the user answers it. */
+  keepQuestionOpen?(id: string, request: number): void;
   generateTitle?(input: {
     sessionId: string;
     cwd: string;
@@ -89,6 +91,7 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     bind: codex.bindCodexSession,
     approve: codex.respondCodexApproval,
     answer: codex.respondCodexQuestion,
+    keepQuestionOpen: codex.keepCodexQuestionOpen,
     generateTitle: generateCodexSessionTitle,
     generateBranchName: generateCodexBranchName,
   },

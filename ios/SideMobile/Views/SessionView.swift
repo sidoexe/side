@@ -19,6 +19,7 @@ struct SessionView: View {
     @State private var atEnd = true
     @State private var reading = false
     @State private var readAgain = false
+    @State private var keptQuestions = Set<Int>()
 
     private var summary: HostSessionSummary? { model.summary(route) }
     /// The machine whose host runs this session.
@@ -138,7 +139,12 @@ struct SessionView: View {
                         JumpToEnd { withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
                     }
                     if let question = value.meta.pendingQuestion, value.runId != nil {
-                        QuestionCard(prompt: question) { reply in
+                        QuestionCard(prompt: question, onInteract: {
+                            // Working on it keeps it from timing out, once per question.
+                            guard machine?.can("questions.keepOpen") == true, !keptQuestions.contains(question.requestId) else { return }
+                            keptQuestions.insert(question.requestId)
+                            run(["type": "questionKeepOpen", "runId": value.runId!, "requestId": question.requestId])
+                        }) { reply in
                             run(["type": "answer", "runId": value.runId!, "requestId": question.requestId, "reply": reply])
                         }
                     }
@@ -442,6 +448,8 @@ struct SessionChips: View {
 
 struct QuestionCard: View {
     let prompt: UserQuestionPrompt
+    /// The first answer chosen or typed: the question must not time out.
+    var onInteract: () -> Void = {}
     let onReply: ([String: Any]) -> Void
     @State private var answers: [String: [String]] = [:]
     @State private var custom: [String: String] = [:]
@@ -475,7 +483,7 @@ struct QuestionCard: View {
                             .buttonStyle(.plain)
                         }
                         if question.allowCustom {
-                            TextField("Other…", text: Binding(get: { custom[question.id] ?? "" }, set: { custom[question.id] = $0 }))
+                            TextField("Other…", text: Binding(get: { custom[question.id] ?? "" }, set: { onInteract(); custom[question.id] = $0 }))
                                 .font(.system(size: 14))
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 7)
@@ -499,6 +507,7 @@ struct QuestionCard: View {
     }
 
     private func toggle(_ question: UserQuestion, _ id: String) {
+        onInteract()
         var selected = answers[question.id] ?? []
         if question.multiSelect {
             if let index = selected.firstIndex(of: id) { selected.remove(at: index) } else { selected.append(id) }

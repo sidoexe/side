@@ -1446,6 +1446,19 @@ function ConnectedRemoteSession({
       reply,
     });
   };
+  /** Questions already kept from timing out, so each one is asked once. */
+  const keptQuestions = useRef(new Set<number>());
+  const keepQuestionOpen = (requestId: number) => {
+    if (!hostSession || !snapshot?.runId || keptQuestions.current.has(requestId)) return;
+    keptQuestions.current.add(requestId);
+    void run({
+      type: "questionKeepOpen",
+      commandId: crypto.randomUUID(),
+      sessionId: hostSession.id,
+      runId: snapshot.runId,
+      requestId,
+    });
+  };
   const compact = () => {
     if (!hostSession || busy || pending || changes || !online) return false;
     void run(message(hostSession.id, "/compact"));
@@ -1463,8 +1476,9 @@ function ConnectedRemoteSession({
       approve,
       answer,
       ...(descriptor?.capabilities.includes("sessions.planEdit") ? { editPlan } : {}),
+      ...(descriptor?.capabilities.includes("questions.keepOpen") ? { keepQuestionOpen } : {}),
     }),
-    [shell.id, buildPlan, saveDraft, stopTurn, compact, approve, answer, editPlan, descriptor],
+    [shell.id, buildPlan, saveDraft, stopTurn, compact, approve, answer, editPlan, keepQuestionOpen, descriptor],
   );
 
   const hostFilePath = (path: string) => {

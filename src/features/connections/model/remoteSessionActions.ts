@@ -11,6 +11,8 @@ type RemoteActions = {
   answer: (requestId: number, reply: UserQuestionReply) => void;
   /** Present when the host can edit a ready plan (`sessions.planEdit`). */
   editPlan?: (blockId: string, text: string) => void;
+  /** Present when the host can keep a question from timing out. */
+  keepQuestionOpen?: (requestId: number) => void;
 };
 
 const actions = new Map<string, RemoteActions>();

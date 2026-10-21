@@ -9340,7 +9340,10 @@ function Workspace({
   const onQuestionInteraction = useCallback(
     (sessionId: string, requestId: number) => {
       const session = sessionsRef.current.find((s) => s.id === sessionId);
-      if (session && remoteProjectFor(session.cwd)) return;
+      if (session && remoteProjectFor(session.cwd)) {
+        remoteSessionActions(sessionId)?.keepQuestionOpen?.(requestId);
+        return;
+      }
       if (session && !session.worktreeRemoved)
         keepHarnessQuestionOpen(session.harness, sessionId, requestId);
     },

@@ -289,6 +289,7 @@ export function parseCommand(input: unknown): HostCommand {
   if (!Number.isSafeInteger(v.requestId) || Number(v.requestId) < 0)
     throw new Error("Invalid request ID");
   const requestId = Number(v.requestId);
+  if (v.type === "questionKeepOpen") return { type: "questionKeepOpen", commandId, sessionId, runId, requestId };
   if (v.type === "approve" && (v.decision === "allow" || v.decision === "deny"))
     return {
       type: "approve",
@@ -1101,6 +1102,10 @@ export class HostEngine {
                 command.requestId,
                 command.decision,
               );
+          } else if (command.type === "questionKeepOpen") {
+            if (value.session.pendingQuestion?.requestId !== command.requestId)
+              throw new Error("Question is already resolved");
+            effect = () => provider.keepQuestionOpen?.(command.sessionId, command.requestId);
           } else {
             if (value.session.pendingQuestion?.requestId !== command.requestId)
               throw new Error("Question is already resolved");

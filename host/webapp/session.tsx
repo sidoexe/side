@@ -35,6 +35,7 @@ export function SessionView({ machineId, projectId, sessionId }: { machineId: st
   const scroller = useRef<HTMLDivElement>(null);
   const latest = useRef<HostSession>(undefined);
   const reading = useRef(false);
+  const keptQuestions = useRef(new Set<number>());
   const readAgain = useRef(false);
   const summary = model.summary(machineId, projectId, sessionId);
   const title = value ? displayTitle(value.session.title, value.session.harness) : summary ? displayTitle(summary.title, summary.harness) : "Session";
@@ -228,6 +229,13 @@ export function SessionView({ machineId, projectId, sessionId }: { machineId: st
             {value.session.pendingQuestion && value.runId ? (
               <QuestionCard
                 prompt={value.session.pendingQuestion}
+                onInteract={() => {
+                  // Working on it keeps it from timing out, once per question.
+                  const requestId = value.session.pendingQuestion!.requestId;
+                  if (!model.can("questions.keepOpen", machineId) || keptQuestions.current.has(requestId)) return;
+                  keptQuestions.current.add(requestId);
+                  run({ type: "questionKeepOpen", runId: value.runId, requestId });
+                }}
                 onReply={(reply) => run({ type: "answer", runId: value.runId, requestId: value.session.pendingQuestion!.requestId, reply })}
               />
             ) : null}
@@ -386,10 +394,19 @@ function UsageLimit({
   );
 }
 
-function QuestionCard({ prompt, onReply }: { prompt: UserQuestionPrompt; onReply: (reply: Record<string, unknown>) => void }) {
+function QuestionCard({
+  prompt,
+  onReply,
+  onInteract,
+}: {
+  prompt: UserQuestionPrompt;
+  onReply: (reply: Record<string, unknown>) => void;
+  onInteract: () => void;
+}) {
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [custom, setCustom] = useState<Record<string, string>>({});
   const toggle = (questionId: string, multiSelect: boolean, id: string) => {
+    onInteract();
     const selected = answers[questionId] ?? [];
     setAnswers({
       ...answers,
@@ -432,7 +449,10 @@ function QuestionCard({ prompt, onReply }: { prompt: UserQuestionPrompt; onReply
             );
           })}
           {question.allowCustom ? (
-            <input className="field" placeholder="Other…" value={custom[question.id] ?? ""} onChange={(event) => setCustom({ ...custom, [question.id]: event.target.value })} />
+            <input className="field" placeholder="Other…" value={custom[question.id] ?? ""} onChange={(event) => {
+                onInteract();
+                setCustom({ ...custom, [question.id]: event.target.value });
+              }} />
           ) : null}
         </div>
       ))}
