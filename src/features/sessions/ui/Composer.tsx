@@ -498,9 +498,9 @@ export function Composer({
   const [createError, setCreateError] = useState<string | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
   const remote = remoteSession;
-  // A remote session's `remote://` path routes file and skill indexing to its
-  // host. Native command catalogs probe a local CLI, so they stay local-only.
-  const skillCwd = remote && hasNativeCommands(harness) ? "" : executionCwd;
+  // A remote session's `remote://` path routes file and skill indexing, and
+  // an agent's own command catalog, to its host.
+  const skillCwd = executionCwd;
   // Inactive tabs stay mounted. Their composers let go of the project listing
   // and pick it up again when shown.
   const fileCwd = enabled ? executionCwd : "";
@@ -558,12 +558,16 @@ export function Composer({
         ? [
             ...(remoteFeatures?.plan ? [PLAN_COMMAND] : []),
             ...(remoteFeatures?.operator ? [OPERATOR_COMMAND] : []),
+            ...(remoteFeatures?.draft && canSaveDraft && onSaveDraft ? [DRAFT_COMMAND] : []),
             COMPACT_COMMAND,
+            // The host's skill files, and the agent's own commands it lists.
             ...skills.filter(
               (skill) =>
-                skill.kind === "file" &&
-                skill.name !== PLAN_COMMAND.name &&
-                skill.name !== COMPACT_COMMAND.name,
+                skill.kind === "native" ||
+                (skill.kind === "file" &&
+                  skill.name !== PLAN_COMMAND.name &&
+                  skill.name !== COMPACT_COMMAND.name &&
+                  skill.name !== DRAFT_COMMAND.name),
             ),
           ]
         : [
@@ -596,6 +600,7 @@ export function Composer({
       remote,
       remoteFeatures?.plan,
       remoteFeatures?.operator,
+      remoteFeatures?.draft,
       hideTopBar,
       canSaveDraft,
       onSaveDraft,

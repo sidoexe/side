@@ -23,6 +23,7 @@ import { SyncTransfers } from "./sync-transfer";
 import { DEFAULT_WEB_ROOT, sameOrigin, serveWeb, webSecurityHeaders, webToken } from "./web";
 import { DEPLOY_KEY, deployWebRelease } from "./web-deploy";
 import { searchHostSessions } from "./search";
+import { listHostCommands } from "./commands";
 import { browseHostDirectories } from "./browse";
 import {
   createHostBranch,
@@ -465,6 +466,7 @@ export function createHostServer(
                 "sessions.planEdit",
                 "questions.keepOpen",
                 "sessions.search",
+                "commands.list",
                 ...(engine.checkpoints ? ["sessions.review"] : []),
                 ...(engine.automations ? ["automations"] : []),
                 ...(engine.app ? ["app"] : []),
@@ -898,6 +900,9 @@ export function createHostServer(
           case "previews.open":
             if (!engine.previews) throw new Error("Previews need Tailscale on this host");
             result = await engine.previews.open(params);
+            break;
+          case "commands.list":
+            result = await listHostCommands(engine.store, params.harness, params.cwd, params.sessionId);
             break;
           case "sessions.search":
             result = searchHostSessions(engine.store, params.query);

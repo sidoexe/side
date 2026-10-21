@@ -12,6 +12,8 @@ import { isLocalProject, normalizeProjectPath } from "../../projects/model/recen
 import { isMarkdownBlockquotePosition } from "../../sessions/model/quoteDraft";
 import type { HarnessId } from "../../sessions/model/session";
 import { getHarness } from "../../../integrations/harness/core/registry";
+import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { remoteMachineFor, remoteRequest, remoteSessionFor } from "../../connections/model/connections";
 import type { NativeCommand } from "../../../integrations/harness/core/nativeCommands";
 import {
   CREATE_SKILL_BODY,
@@ -305,6 +307,20 @@ function startCatalogLoad(
 
 async function loadCatalog(context: SkillCatalogContext): Promise<Skill[]> {
   const provider = getHarness(context.harness)?.commands;
+  // A session on another machine: its host lists the agent's own commands,
+  // in its folder and for its running conversation.
+  const remote = parseRemotePath(context.cwd);
+  if (remote && provider) {
+    const machine = await remoteMachineFor(remote.environmentId);
+    if (!machine) return [];
+    const hostSession = context.sessionId ? remoteSessionFor(context.sessionId) : undefined;
+    const commands = await remoteRequest<NativeCommand[]>(machine.id, "commands.list", {
+      harness: context.harness,
+      cwd: remote.hostPath,
+      ...(hostSession ? { sessionId: hostSession } : {}),
+    });
+    return (commands ?? []).map((command): NativeSkill => ({ kind: "native", ...command }));
+  }
   if (provider) {
     const commands = await provider.discover(context);
     return commands.map((command): NativeSkill => ({
