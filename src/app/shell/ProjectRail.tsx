@@ -285,7 +285,7 @@ export function ProjectRail({
     () => recents.map((item) => item.path),
     [recents],
   );
-  const remoteStatus = useRemoteProjectsStatus(projectPaths);
+  const remoteStatus = useRemoteProjectsStatus(projectPaths, true);
   const projectStatus = useMemo(() => {
     const counts = new Map<string, ProjectStatusCounts>();
     const entry = (path: string) => {

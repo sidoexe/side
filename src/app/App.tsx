@@ -510,6 +510,7 @@ import {
   loadNotificationsEnabled,
   NOTIFICATION_CLICK_EVENT,
   announceSessionFinished,
+  announceSessionInput,
   probeNotificationPermission,
   setWindowFocused,
 } from "../features/notifications/model/notifications";
@@ -596,6 +597,12 @@ import {
   OPEN_CONNECTIONS_EVENT,
   OPEN_REMOTE_PROJECT_EVENT,
   REMOTE_HISTORY_UPDATED,
+  REMOTE_SESSION_TRANSITION,
+  loadRemoteSession,
+  parseRemoteNotificationId,
+  remoteMachineFor,
+  remoteNotificationId,
+  type RemoteSessionTransition,
   cachedRemoteSessionSummary,
   rememberRemotePendingWorktree,
   rememberRemoteSession,
@@ -1888,6 +1895,44 @@ function Workspace({
     [sessions],
   );
   useInputNotifications(promptableSessions, activeSessionId);
+
+  // A host session's turn that ends, or that waits on the user, is announced
+  // as a local one's, from the host lists the desktop reads. One window
+  // announces it, so several windows do not repeat the banner.
+  useEffect(() => {
+    if (getCurrentWindow().label !== "main") return;
+    const onTransition = (event: Event) => {
+      const { project, session, kind } = (event as CustomEvent<RemoteSessionTransition>).detail;
+      const existing = findRemoteSessionTab(tabsRef.current, sessionsRef.current, project, session.id);
+      // A host session open in a tab already announces its own questions.
+      if (kind === "input" && existing) return;
+      void (async () => {
+        const remote = remoteProjectFor(project);
+        const machine = remote ? await remoteMachineFor(remote.environmentId) : undefined;
+        // The transcript gives the banner the reply or the question, as locally.
+        const snapshot = machine ? await loadRemoteSession(machine.id, session.id).catch(() => undefined) : undefined;
+        const shown = {
+          ...(snapshot?.session ?? { blocks: [] }),
+          id: existing?.shellId ?? remoteNotificationId(project, session.id),
+          cwd: project,
+          title: session.title,
+          harness: session.harness,
+        } as Session;
+        const visible = !!existing && existing.shellId === activeSessionIdRef.current;
+        if (kind === "finished") return announceSessionFinished(shown, visible);
+        const approval = shown.blocks.find((block) => block.approval && !block.approval.decided)?.approval;
+        return announceSessionInput(
+          shown,
+          shown.pendingQuestion
+            ? { kind: "question", requestId: shown.pendingQuestion.requestId }
+            : { kind: "approval", requestId: approval?.requestId ?? -1 },
+          visible,
+        );
+      })();
+    };
+    window.addEventListener(REMOTE_SESSION_TRANSITION, onTransition);
+    return () => window.removeEventListener(REMOTE_SESSION_TRANSITION, onTransition);
+  }, []);
 
   // Cache the OS decision so a turn ending later can skip a denied banner.
   useEffect(() => {
@@ -10956,6 +11001,7 @@ function Workspace({
     onNavigateProjectList,
     openSettings,
     onOpenApprovalSession,
+    onSelectRemoteSession,
   });
   actions.current = {
     onNewFocused,
@@ -10987,6 +11033,7 @@ function Workspace({
     onNavigateProjectList,
     openSettings,
     onOpenApprovalSession,
+    onSelectRemoteSession,
   };
 
   const debounce = useRef({ name: "", at: 0 });
@@ -11296,6 +11343,15 @@ function Workspace({
       }),
       // Every window hears the click; only the one holding the session acts.
       listen<string>(NOTIFICATION_CLICK_EVENT, ({ payload: sessionId }) => {
+        // A host session open in no tab: the main window opens it.
+        const remote = parseRemoteNotificationId(sessionId);
+        if (remote) {
+          const win = getCurrentWindow();
+          if (win.label !== "main") return;
+          void win.unminimize().then(() => win.setFocus()).catch(() => {});
+          actions.current.onSelectRemoteSession(remote.project, remote.sessionId);
+          return;
+        }
         if (!sessionsRef.current.some((s) => s.id === sessionId)) return;
         const win = getCurrentWindow();
         void win

@@ -14,6 +14,7 @@ import {
 } from "./protocol";
 import { remoteProjectFor } from "./remoteProjects";
 import { withRemoteAttachmentPreviews } from "./remoteAttachmentPreviews";
+import { setRemoteWaitingCount } from "../../notifications/model/dockBadge";
 
 const CHANGE = "monocode:remote-machines";
 export const REMOTE_HISTORY_CHANGE = "monocode:remote-history";
@@ -405,12 +406,57 @@ function cachedSessions(project: string): HostSessionSummary[] {
   }
 }
 /** Caches a project's host list, announcing it only when it changed. */
+/** A host session's turn ended, or it started waiting on the user: what a
+ * local session notifies about, read from the host's lists. */
+export const REMOTE_SESSION_TRANSITION = "monocode:remote-session-transition";
+/** A notification's session ID for a host session open in no tab. */
+const REMOTE_NOTIFICATION = "remote-session:";
+export const remoteNotificationId = (project: string, sessionId: string) =>
+  `${REMOTE_NOTIFICATION}${JSON.stringify([project, sessionId])}`;
+export function parseRemoteNotificationId(id: string): { project: string; sessionId: string } | undefined {
+  if (!id.startsWith(REMOTE_NOTIFICATION)) return undefined;
+  try {
+    const [project, sessionId] = JSON.parse(id.slice(REMOTE_NOTIFICATION.length)) as [string, string];
+    return typeof project === "string" && typeof sessionId === "string" ? { project, sessionId } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export type RemoteSessionTransition = {
+  project: string;
+  session: HostSessionSummary;
+  kind: "finished" | "input";
+};
+
+/** What changed between two readings of a host's list: a turn that ended,
+ * or a session that started waiting on the user. A first reading, with
+ * nothing before it, announces nothing. */
+export function remoteSessionTransitions(
+  project: string,
+  before: readonly HostSessionSummary[],
+  next: readonly HostSessionSummary[],
+): RemoteSessionTransition[] {
+  const previous = new Map(before.map((session) => [session.id, session]));
+  return next.flatMap((session): RemoteSessionTransition[] => {
+    const earlier = previous.get(session.id);
+    if (!earlier || session.archived) return [];
+    if (!earlier.needsInput && session.needsInput) return [{ project, session, kind: "input" }];
+    if (earlier.status === "running" && session.status !== "running" && !session.needsInput)
+      return [{ project, session, kind: "finished" }];
+    return [];
+  });
+}
+
 function storeRemoteSessions(project: string, next: HostSessionSummary[]) {
   const text = JSON.stringify(next);
   try {
     if (localStorage.getItem(historyKey(project)) === text) return;
+    const before = cachedSessions(project);
     localStorage.setItem(historyKey(project), text);
     window.dispatchEvent(new Event(REMOTE_HISTORY_UPDATED));
+    for (const transition of remoteSessionTransitions(project, before, next))
+      window.dispatchEvent(new CustomEvent<RemoteSessionTransition>(REMOTE_SESSION_TRANSITION, { detail: transition }));
   } catch {
     /* the list is refetched next time */
   }
@@ -558,6 +604,8 @@ const STATUS_POLL_MS = 15_000;
  */
 export function useRemoteProjectsStatus(
   paths: readonly string[],
+  /** The rail's reading, which is every project shown: it counts in the Dock badge. */
+  badge = false,
 ): ReadonlyMap<string, RemoteProjectStatus> {
   const remotePaths = paths.filter((path) => !!remoteProjectFor(path));
   const remoteKey = remotePaths.join("\0");
@@ -615,12 +663,20 @@ export function useRemoteProjectsStatus(
     };
     // `machines` is read through its key.
   }, [remoteKey, machineKey]);
-  return useMemo(() => {
+  const counts = useMemo(() => {
     const counts = new Map<string, RemoteProjectStatus>();
     for (const path of remoteKey ? remoteKey.split("\0") : [])
       counts.set(pathKey(path), remoteProjectStatus(cachedSessions(path)));
     return counts;
   }, [remoteKey, version]);
+  // The rail's host sessions waiting on the user join the Dock badge.
+  useEffect(() => {
+    if (!badge) return;
+    let waiting = 0;
+    for (const status of counts.values()) waiting += status.waiting;
+    setRemoteWaitingCount(waiting);
+  }, [counts, badge]);
+  return counts;
 }
 
 export function cachedRemoteSessionSummary(project: string, sessionId: string) {
