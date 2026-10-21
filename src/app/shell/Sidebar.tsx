@@ -132,7 +132,6 @@ import type {
   HarnessId,
   LinkedWorkItem,
 } from "../../features/sessions/model/session";
-import type { LiveAgent } from "../../features/sessions/model/liveAgents";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import type { SettingsSectionId } from "../../features/settings/model/settings";
 import type { InstalledUpdate } from "../model/updateNotice";
@@ -161,7 +160,6 @@ import {
 } from "../../features/files/ui/ExplorerMenu";
 import { FileTree } from "../../features/files/ui/FileTree";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
-import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview";
 import { ProjectRail } from "./ProjectRail";
 import { InboxNotificationMenu } from "../../features/inbox/ui/InboxNotificationMenu";
 import { RailAction } from "./RailAction";
@@ -303,8 +301,6 @@ type Props = {
   textHarness?: HarnessId;
   recents?: RecentProject[];
   busyProjectPaths?: Iterable<string>;
-  liveAgents?: LiveAgent[];
-  onSelectAgent?: (sessionId: string) => void;
   onSelectProject?: (path: string) => void;
   onOpenProject?: () => void;
   onRemoveProject?: (path: string, options: { purgeData: boolean }) => void;
@@ -400,8 +396,6 @@ function SidebarComponent({
   textHarness,
   recents = [],
   busyProjectPaths,
-  liveAgents = [],
-  onSelectAgent,
   onSelectProject,
   onOpenProject,
   onRemoveProject,
@@ -2250,12 +2244,6 @@ function SidebarComponent({
         ) : null}
         {showSidebarFooter ? (
           <>
-            <LiveAgentsPreview
-              agents={liveAgents}
-              activeSessionId={activeSessionId}
-              onSelect={onSelectAgent}
-              bottomSpacing={compactRailVisible}
-            />
             <SidebarUpdateFooter
               update={updateNotice}
               onOpenWhatsNew={onOpenWhatsNew}
@@ -2400,10 +2388,6 @@ function SidebarComponent({
           inboxUnseen={inboxUnseen}
           busyPaths={busyProjectPaths}
           onShowProjectDone={onShowProjectDone}
-          liveAgents={liveAgents}
-          activeSessionId={activeSessionId}
-          onSelectAgent={onSelectAgent}
-          onSelectRemoteSession={onSelectRemoteSession}
           canGoBack={canGoBack}
           canGoForward={canGoForward}
           onGoBack={onGoBack}

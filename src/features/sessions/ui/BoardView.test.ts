@@ -35,7 +35,17 @@ const agent = (id: string, extra: Partial<LiveAgent> = {}): LiveAgent => ({
   ...extra,
 });
 
-function render(board: Partial<SessionBoard> = {}) {
+function render(
+  board: Partial<SessionBoard> = {},
+  props: {
+    peek?: boolean;
+    onClose?: () => void;
+    onExpand?: () => void;
+    onArchiveSessions?: (ids: readonly string[]) => void;
+    onDeleteSession?: (id: string) => void;
+    onDeleteSessions?: (ids: readonly string[]) => void;
+  } = {},
+) {
   const full: SessionBoard = {
     enabled: true,
     review: [],
@@ -43,11 +53,17 @@ function render(board: Partial<SessionBoard> = {}) {
     checked: [],
     onSelect: vi.fn(),
     onMarkChecked: vi.fn(),
+    onReorder: vi.fn(),
     ...board,
   };
   act(() =>
     root.render(
-      createElement(BoardView, { board: full, besideRail: true, onClose: vi.fn() }),
+      createElement(BoardView, {
+        board: full,
+        besideRail: true,
+        onClose: vi.fn(),
+        ...props,
+      }),
     ),
   );
   return full;
@@ -56,7 +72,7 @@ function render(board: Partial<SessionBoard> = {}) {
 const column = (label: string) =>
   container.querySelector(`[data-board-column="${label}"]`)!;
 
-it("lays every session out in Working and To review", () => {
+it("lays every session out in Working, To review and Checked", () => {
   const board = render({
     review: [
       agent("ask", { needsApproval: true }),
@@ -71,6 +87,7 @@ it("lays every session out in Working and To review", () => {
     );
   expect(ids("To review", "data-live-agent-card")).toEqual(["ask", "done"]);
   expect(ids("Working", "data-live-agent-card")).toEqual(["run"]);
+  expect(ids("Checked", "data-checked-session")).toEqual(["old"]);
 
   act(() =>
     (column("Working").querySelector("[data-live-agent-card]") as HTMLElement).click(),
@@ -88,4 +105,59 @@ it("says how to turn the board on when Working agents is off", () => {
   render({ enabled: false });
   expect(container.querySelector("[data-board-column]")).toBeNull();
   expect(container.textContent).toContain("Turn on Working agents");
+});
+
+it("narrows to one column beside an open session, and widens back", () => {
+  const onClose = vi.fn();
+  const onExpand = vi.fn();
+  render(
+    { working: [agent("run")], review: [agent("done", { done: true })] },
+    { peek: true, onClose, onExpand },
+  );
+  expect(container.querySelector("[data-board-peek]")).not.toBeNull();
+  expect(column("Working")).not.toBeNull();
+  expect(column("To review")).not.toBeNull();
+
+  act(() =>
+    (container.querySelector('[aria-label="Expand board"]') as HTMLElement).click(),
+  );
+  expect(onExpand).toHaveBeenCalledOnce();
+  act(() =>
+    (container.querySelector('[aria-label="Close board"]') as HTMLElement).click(),
+  );
+  expect(onClose).toHaveBeenCalledOnce();
+});
+
+it("archives or deletes checked sessions, one at a time or all at once", () => {
+  const onArchiveSessions = vi.fn();
+  const onDeleteSession = vi.fn();
+  const onDeleteSessions = vi.fn();
+  render(
+    {
+      checked: [
+        { id: "a", cwd: "/code/app", title: "Task a", harness: "claude" },
+        { id: "b", cwd: "/code/app", title: "Task b", harness: "claude" },
+      ],
+    },
+    { onArchiveSessions, onDeleteSession, onDeleteSessions },
+  );
+  const click = (label: string) =>
+    act(() =>
+      (container.querySelector(`[aria-label="${label}"]`) as HTMLElement).click(),
+    );
+
+  click("Archive Task a");
+  expect(onArchiveSessions).toHaveBeenLastCalledWith(["a"]);
+  click("Delete Task b");
+  expect(onDeleteSession).toHaveBeenLastCalledWith("b");
+  click("Archive all checked");
+  expect(onArchiveSessions).toHaveBeenLastCalledWith(["a", "b"]);
+  click("Delete all checked");
+  expect(onDeleteSessions).toHaveBeenLastCalledWith(["a", "b"]);
+});
+
+it("offers no column actions while nothing is checked", () => {
+  render({}, { onArchiveSessions: vi.fn(), onDeleteSessions: vi.fn() });
+  expect(container.querySelector('[aria-label="Archive all checked"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Delete all checked"]')).toBeNull();
 });

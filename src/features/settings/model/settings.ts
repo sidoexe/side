@@ -22,6 +22,7 @@ export type SettingsSectionId =
   | "appearance"
   | "keybindings"
   | "chat"
+  | "instructions"
   | "providers"
   | "mcp"
   | "skills"
@@ -90,6 +91,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "transcript composer prompt message diff review layout format save editor",
   },
   {
+    id: "instructions",
+    group: "agents",
+    label: "Instructions",
+    description:
+      "Personal instructions every new chat starts with, whatever the provider.",
+    keywords:
+      "pre prompt preprompt system prompt preferences personal custom rules always",
+  },
+  {
     id: "providers",
     group: "agents",
     label: "Providers",
@@ -128,7 +138,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "archive",
     group: "workspace",
     label: "Archive",
-    description: "Projects and conversations you have archived.",
+    description:
+      "Projects and conversations you have archived. Archived conversations are deleted after 7 days.",
     keywords: "archived restore delete hidden",
   },
   {
@@ -311,6 +322,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section: "appearance",
     label: "Chat background",
     keywords: "wallpaper image picture opacity backdrop",
+  },
+  {
+    id: "personal-instructions",
+    section: "instructions",
+    label: "Personal instructions",
+    keywords: "pre prompt preprompt system prompt preferences custom rules",
   },
   {
     id: "transcript-layout",

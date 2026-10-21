@@ -623,6 +623,7 @@ describe("settings navigation", () => {
       "appearance",
       "keybindings",
       "chat",
+      "instructions",
       "providers",
       "mcp",
       "skills",

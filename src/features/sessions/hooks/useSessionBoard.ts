@@ -1,4 +1,4 @@
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import {
   allRemoteProjects,
   remoteProjectFor,
@@ -17,6 +17,15 @@ import {
 } from "../../settings/model/settings";
 import type { LiveAgent } from "../model/liveAgents";
 import {
+  arrangeColumn,
+  boardOrder,
+  reorderBoardColumn,
+  saveBoardOrder,
+  settleBoardOrder,
+  subscribeBoardOrder,
+  type BoardColumn,
+} from "../model/boardOrder";
+import {
   checkedSessions,
   noteSessionsChecked,
   subscribeCheckedSessions,
@@ -33,6 +42,8 @@ export type SessionBoard = {
   checked: CheckedSession[];
   onSelect: (sessionId: string) => void;
   onMarkChecked: (agent: LiveAgent) => void;
+  /** The user dragged a card within a column, which now reads `ids`. */
+  onReorder: (column: BoardColumn, ids: string[]) => void;
 };
 
 function isWorking(agent: LiveAgent): boolean {
@@ -40,8 +51,8 @@ function isWorking(agent: LiveAgent): boolean {
 }
 
 /**
- * Every session in three columns, as the rail's To review, Working and
- * Checked list them. A host runs its own sessions, so its running, finished
+ * Every session in the board's three columns: To review, Working and
+ * Checked. A host runs its own sessions, so its running, finished
  * and waiting ones come from the list it reports rather than from this desktop.
  */
 export function useSessionBoard(
@@ -90,22 +101,41 @@ export function useSessionBoard(
     subscribeCheckedSessions,
     checkedSessions,
   );
+  const review = [
+    ...liveAgents.filter((agent) => agent.needsApproval || agent.done),
+    ...remoteRows.flatMap(({ agent }) => (isWorking(agent) ? [] : agent)),
+  ].sort((a, b) => Number(b.needsApproval) - Number(a.needsApproval));
+  const working = [
+    ...liveAgents,
+    ...remoteRows.map(({ agent }) => agent),
+  ].filter(isWorking);
+  // One that works or waits again leaves the list until it is checked again.
+  const checked = enabled
+    ? storedChecks.filter(
+        (entry) => !liveAgents.some((agent) => agent.id === entry.id),
+      )
+    : [];
+  const order = useSyncExternalStore(subscribeBoardOrder, boardOrder);
+  const ids = (items: readonly { id: string }[]) => items.map(({ id }) => id);
+  const columnsKey = [working, review, checked]
+    .map((items) => ids(items).join("\0"))
+    .join("\n");
+  useEffect(() => {
+    if (!enabled) return;
+    saveBoardOrder(
+      settleBoardOrder(
+        { working: ids(working), review: ids(review), checked: ids(checked) },
+        boardOrder(),
+      ),
+    );
+    // `columnsKey` moves whenever a column gains, loses or reorders a card.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, columnsKey]);
   return {
     enabled,
-    review: [
-      ...liveAgents.filter((agent) => agent.needsApproval || agent.done),
-      ...remoteRows.flatMap(({ agent }) => (isWorking(agent) ? [] : agent)),
-    ].sort((a, b) => Number(b.needsApproval) - Number(a.needsApproval)),
-    working: [
-      ...liveAgents,
-      ...remoteRows.map(({ agent }) => agent),
-    ].filter(isWorking),
-    // One that works or waits again leaves the list until it is checked again.
-    checked: enabled
-      ? storedChecks.filter(
-          (entry) => !liveAgents.some((agent) => agent.id === entry.id),
-        )
-      : [],
+    review: arrangeColumn(review, order.review),
+    working: arrangeColumn(working, order.working),
+    checked: arrangeColumn(checked, order.checked),
     onSelect: (sessionId) => {
       const project = remoteProjects.get(sessionId);
       if (!project) return onSelectAgent?.(sessionId);
@@ -120,5 +150,6 @@ export function useSessionBoard(
       const { id, cwd, title, harness } = agent;
       noteSessionsChecked([{ id, cwd, title, harness }]);
     },
+    onReorder: reorderBoardColumn,
   };
 }

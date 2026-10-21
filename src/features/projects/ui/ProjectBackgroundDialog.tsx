@@ -38,7 +38,7 @@ type Props = {
   name: string;
   /**
    * Nothing falls back to the global background, and a new image starts as a
-   * dimmed Haze on every chat.
+   * dimmed Haze. One visibility, with no empty/session split.
    */
   standalone?: boolean;
   onClose: () => void;
@@ -234,7 +234,7 @@ export function ProjectBackgroundDialog({
           </button>
           <p className="mt-1.5 text-[11px] leading-relaxed text-content/45">
             {standalone
-              ? `Shown behind ${name}'s chat only.`
+              ? `Shown behind ${name} only.`
               : path
                 ? "This image overrides the global background for this project."
                 : "This project currently follows the global Appearance setting."}
@@ -277,35 +277,39 @@ export function ProjectBackgroundDialog({
 
         {standalone && !path ? null : (
           <>
-            <ProjectBackgroundRow label="Show on">
-              <div
-                role="radiogroup"
-                aria-label="Show project background on"
-                className="grid w-44 grid-cols-2 gap-0.5 rounded-md border border-content/10 p-0.5 text-[12px]"
-              >
-                {[
-                  { value: "empty" as const, label: "Empty only" },
-                  { value: "all" as const, label: "All sessions" },
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={scope === option.value}
-                    onClick={() => updateScope(option.value)}
-                    className={`rounded-[5px] px-1.5 py-1 ${
-                      scope === option.value
-                        ? "bg-selection text-content"
-                        : "text-content/50 hover:text-content"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </ProjectBackgroundRow>
+            {standalone ? null : (
+              <ProjectBackgroundRow label="Show on">
+                <div
+                  role="radiogroup"
+                  aria-label="Show project background on"
+                  className="grid w-44 grid-cols-2 gap-0.5 rounded-md border border-content/10 p-0.5 text-[12px]"
+                >
+                  {[
+                    { value: "empty" as const, label: "Empty only" },
+                    { value: "all" as const, label: "All sessions" },
+                  ].map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={scope === option.value}
+                      onClick={() => updateScope(option.value)}
+                      className={`rounded-[5px] px-1.5 py-1 ${
+                        scope === option.value
+                          ? "bg-selection text-content"
+                          : "text-content/50 hover:text-content"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </ProjectBackgroundRow>
+            )}
 
-            <ProjectBackgroundRow label="Empty chat visibility">
+            <ProjectBackgroundRow
+              label={standalone ? "Visibility" : "Empty chat visibility"}
+            >
               <div className="flex w-56 items-center gap-3">
                 <input
                   type="range"
@@ -324,24 +328,26 @@ export function ProjectBackgroundDialog({
               </div>
             </ProjectBackgroundRow>
 
-            <ProjectBackgroundRow label="Session visibility">
-              <div className="flex w-56 items-center gap-3">
-                <input
-                  type="range"
-                  min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
-                  max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
-                  value={Math.round(sessionOpacity * 100)}
-                  aria-label="Project background visibility in sessions"
-                  className="sidebar-opacity-slider min-w-0 flex-1"
-                  onChange={(event) =>
-                    updateOpacity("session", Number(event.target.value))
-                  }
-                />
-                <span className="w-10 shrink-0 text-right text-[12px] tabular-nums text-content">
-                  {Math.round(sessionOpacity * 100)}%
-                </span>
-              </div>
-            </ProjectBackgroundRow>
+            {standalone ? null : (
+              <ProjectBackgroundRow label="Session visibility">
+                <div className="flex w-56 items-center gap-3">
+                  <input
+                    type="range"
+                    min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
+                    max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
+                    value={Math.round(sessionOpacity * 100)}
+                    aria-label="Project background visibility in sessions"
+                    className="sidebar-opacity-slider min-w-0 flex-1"
+                    onChange={(event) =>
+                      updateOpacity("session", Number(event.target.value))
+                    }
+                  />
+                  <span className="w-10 shrink-0 text-right text-[12px] tabular-nums text-content">
+                    {Math.round(sessionOpacity * 100)}%
+                  </span>
+                </div>
+              </ProjectBackgroundRow>
+            )}
           </>
         )}
 

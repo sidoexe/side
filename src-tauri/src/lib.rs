@@ -224,6 +224,7 @@ pub fn run() {
         .setup(|app| {
             harness::reap_orphaned_harness_processes();
             session_store::init(app.handle())?;
+            session_store::purge_expired_archives(app.handle());
             if let Ok(data) = app.path().app_data_dir() {
                 data_migration::remove_colleague_data(&data);
             }

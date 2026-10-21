@@ -249,6 +249,11 @@ import {
   useShowRemainingUsage,
 } from "../model/displayPrefs";
 import {
+  loadPersonalInstructions,
+  PERSONAL_INSTRUCTIONS_MAX_LENGTH,
+  savePersonalInstructions,
+} from "../model/personalInstructions";
+import {
   accountStatus,
   accountUsageKey,
   useProviderAccountUsage,
@@ -572,6 +577,7 @@ export function SettingsView({
                 <AppearancePage appearance={appearance} />
               ) : null}
               {section === "chat" ? <ChatPage /> : null}
+              {section === "instructions" ? <InstructionsPage /> : null}
               {section === "keybindings" ? <KeybindingsPage /> : null}
               {section === "mcp" ? (
                 <McpSettings cwd={cwd} recents={recents} />
@@ -929,6 +935,41 @@ function GeneralPage({
         <UpdateRow onOpenWhatsNew={onOpenWhatsNew} />
       </Group>
     </>
+  );
+}
+
+function InstructionsPage() {
+  const [instructions, setInstructions] = useState(loadPersonalInstructions);
+
+  const onInstructions = (next: string) => {
+    savePersonalInstructions(next);
+    setInstructions(next.slice(0, PERSONAL_INSTRUCTIONS_MAX_LENGTH));
+  };
+
+  return (
+    <Group
+      id="personal-instructions"
+      title="Personal instructions"
+      description="Sent ahead of your first message whenever an agent starts a fresh context: a new chat, a model switch, or a handoff. Slash commands go through untouched."
+    >
+      <div className="px-4 py-3.5">
+        <textarea
+          aria-label="Personal instructions"
+          value={instructions}
+          onChange={(event) => onInstructions(event.target.value)}
+          maxLength={PERSONAL_INSTRUCTIONS_MAX_LENGTH}
+          rows={10}
+          placeholder={
+            "Answer in French.\nPrefer small, focused commits.\nAsk before adding a dependency."
+          }
+          className="block min-h-40 w-full resize-y bg-transparent text-[12px] leading-relaxed text-content outline-none placeholder:text-content/35"
+        />
+        <div className="mt-2 flex justify-end text-[11px] tabular-nums text-content/35">
+          {instructions.length.toLocaleString()} /{" "}
+          {PERSONAL_INSTRUCTIONS_MAX_LENGTH.toLocaleString()}
+        </div>
+      </div>
+    </Group>
   );
 }
 

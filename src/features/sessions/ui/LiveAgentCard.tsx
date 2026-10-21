@@ -1,133 +1,14 @@
-import { useEffect, useState } from "react";
-import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { formatLiveElapsed, type LiveAgent } from "../model/liveAgents";
 import { projectKey, projectName } from "../../../shared/lib/paths";
 import {
-  loadTabGroupColors,
-  loadTabGroupCustomColors,
-  loadTabGroupLabels,
-  loadTabGroupMascots,
   resolveTabGroupColor,
   resolveTabGroupLabel,
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
-import { Check, ChevronDown, ChevronUp, CircleAlert } from "../../../shared/ui/icons";
+import { Check, CircleAlert } from "../../../shared/ui/icons";
 import { HarnessIcon } from "./HarnessIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { TerminalSpinner } from "./TerminalSpinner";
-
-const LIVE_AGENT_MIN = 2;
-const LIVE_AGENT_CAP = 4;
-
-type Props = {
-  agents: LiveAgent[];
-  activeSessionId?: string;
-  onSelect?: (sessionId: string) => void;
-  bottomSpacing?: boolean;
-  groupLabels?: Record<string, string>;
-  groupColors?: Record<string, number>;
-  groupCustomColors?: Record<string, string>;
-  groupMascots?: Record<string, string>;
-};
-
-export function LiveAgentsPreview({
-  agents,
-  activeSessionId,
-  onSelect,
-  bottomSpacing = false,
-  groupLabels: groupLabelsProp,
-  groupColors: groupColorsProp,
-  groupCustomColors: groupCustomColorsProp,
-  groupMascots: groupMascotsProp,
-}: Props) {
-  const [loadedGroupLabels] = useState(loadTabGroupLabels);
-  const [loadedGroupColors] = useState(loadTabGroupColors);
-  const [loadedGroupCustomColors] = useState(loadTabGroupCustomColors);
-  const [loadedGroupMascots] = useState(loadTabGroupMascots);
-  const groupLabels = groupLabelsProp ?? loadedGroupLabels;
-  const groupColors = groupColorsProp ?? loadedGroupColors;
-  const groupCustomColors = groupCustomColorsProp ?? loadedGroupCustomColors;
-  const groupMascots = groupMascotsProp ?? loadedGroupMascots;
-  const [expanded, setExpanded] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  const lockList = useLockOverscroll<HTMLDivElement>();
-  const ticking =
-    agents.length >= LIVE_AGENT_MIN &&
-    agents.some((agent) => !agent.done && agent.startedAt != null);
-
-  useEffect(() => {
-    if (!ticking) return;
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [ticking]);
-
-  if (agents.length < LIVE_AGENT_MIN) return null;
-
-  const extra = agents.length - LIVE_AGENT_CAP;
-  const visible =
-    expanded || extra <= 0 ? agents : agents.slice(0, LIVE_AGENT_CAP);
-
-  return (
-    <section
-      aria-label="Working agents"
-      className={`shrink-0 px-2 ${bottomSpacing ? "pb-2" : ""}`}
-      data-live-agents-preview="full"
-    >
-      <span className="sr-only" aria-live="polite" aria-atomic="true">
-        {agents.length} working agents
-      </span>
-      <div className="overflow-hidden rounded-lg bg-content/5">
-        <div className="flex items-center gap-2 px-3.5 py-1.5">
-          <span
-            aria-hidden
-            className="size-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_8px_var(--color-accent)] motion-safe:animate-pulse"
-          />
-          <span className="min-w-0 flex-1 truncate text-xs text-content/50">
-            Working
-          </span>
-          <span className="text-[11px] tabular-nums text-content/40">
-            {agents.length}
-          </span>
-        </div>
-        <div
-          ref={expanded ? lockList : undefined}
-          className={`flex flex-col gap-px px-1 ${
-            extra > 0 ? "" : "pb-1"
-          } ${expanded ? "max-h-[45vh] overflow-y-auto overscroll-none" : ""}`}
-        >
-          {visible.map((agent) => (
-            <LiveAgentCard
-              key={agent.id}
-              agent={agent}
-              now={now}
-              selected={agent.id === activeSessionId}
-              onSelect={onSelect}
-              groupLabels={groupLabels}
-              groupColors={groupColors}
-              groupCustomColors={groupCustomColors}
-              groupMascots={groupMascots}
-            />
-          ))}
-        </div>
-        {extra > 0 ? (
-          <button
-            type="button"
-            aria-expanded={expanded}
-            onClick={() => setExpanded((open) => !open)}
-            className="flex w-full items-center justify-center gap-1 px-2 py-1.5 text-[11px] text-content/50 hover:bg-content/8 hover:text-content"
-          >
-            {expanded ? (
-              <ChevronUp className="size-3" strokeWidth={1.75} />
-            ) : (
-              <ChevronDown className="size-3" strokeWidth={1.75} />
-            )}
-            {expanded ? "Show less" : `${extra} more`}
-          </button>
-        ) : null}
-      </div>
-    </section>
-  );
-}
 
 export function LiveAgentCard({
   agent,
@@ -246,6 +127,7 @@ export function LiveAgentCard({
         title="Mark checked"
         aria-label={`Mark ${agent.title} checked`}
         data-live-agent-check={agent.id}
+        data-no-drag
         onClick={() => onMarkChecked(agent)}
         className="absolute right-1.5 top-[23px] flex h-[18px] items-center gap-1 rounded bg-background-base px-1.5 text-[11px] text-content/60 opacity-0 hover:text-content focus-visible:opacity-100 group-hover/review:opacity-100"
       >

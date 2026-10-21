@@ -50,8 +50,8 @@ afterEach(async () => {
 });
 
 describe("project background dialog", () => {
-  it("offers a Colleague's background every option a project's has", async () => {
-    saveProjectChatBackgroundSettings("mono:a", {
+  it("gives the Board's background one visibility and no scope", async () => {
+    saveProjectChatBackgroundSettings("side:board", {
       path: "/backgrounds/mono.png",
       emptyOpacity: 0.24,
       sessionOpacity: 0.24,
@@ -62,8 +62,8 @@ describe("project background dialog", () => {
     await act(async () =>
       root.render(
         createElement(ProjectBackgroundDialog, {
-          project: "mono:a",
-          name: "MonoCrab",
+          project: "side:board",
+          name: "the Board",
           standalone: true,
           onClose: vi.fn(),
         }),
@@ -73,8 +73,9 @@ describe("project background dialog", () => {
     expect(dialog.textContent).toContain("Change image");
     expect(dialog.textContent).toContain("Remove background image");
     expect(dialog.textContent).toContain("Background effect");
-    expect(dialog.querySelectorAll('input[type="range"]')).toHaveLength(2);
-    expect(dialog.querySelector('[role="radiogroup"]')).not.toBeNull();
+    expect(dialog.textContent).toContain("Shown behind the Board only.");
+    expect(dialog.querySelectorAll('input[type="range"]')).toHaveLength(1);
+    expect(dialog.querySelector('[role="radiogroup"]')).toBeNull();
     expect(dialog.querySelector(".gradient-blur-background")).not.toBeNull();
   });
 

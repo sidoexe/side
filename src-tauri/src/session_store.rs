@@ -93,6 +93,52 @@ fn init_with(
     Ok(())
 }
 
+/// Archived conversations are kept for a week, then deleted for good.
+pub(crate) const ARCHIVE_RETENTION_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+
+/// Delete conversations archived longer than the retention window. Runs once
+/// at startup, before the app loads any session, so no open view holds one.
+pub fn purge_expired_archives(app: &AppHandle) {
+    let Some(store) = app.try_state::<SessionStore>() else {
+        return;
+    };
+    let Ok(conn) = store.lock_conn() else {
+        return;
+    };
+    let image_paths = match purge_archived_before(&conn, now_millis() - ARCHIVE_RETENTION_MS) {
+        Ok(paths) => paths,
+        Err(error) => {
+            eprintln!("Expired archive cleanup failed: {error}");
+            return;
+        }
+    };
+    drop(conn);
+    if !image_paths.is_empty() {
+        if let Err(error) = crate::fs::delete_generated_images_sync(app, &image_paths) {
+            eprintln!("Generated image cleanup will need a retry: {error}");
+        }
+    }
+}
+
+/// Returns the generated images the deleted conversations referenced.
+fn purge_archived_before(conn: &Connection, cutoff: i64) -> rusqlite::Result<Vec<String>> {
+    let expired = conn
+        .prepare(
+            "SELECT id, blocks_json FROM sessions
+             WHERE archived = 1 AND archived_at IS NOT NULL AND archived_at <= ?1",
+        )?
+        .query_map([cutoff], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut image_paths = Vec::new();
+    for (id, raw) in expired {
+        delete_session(conn, &id)?;
+        if let Ok(blocks) = serde_json::from_str::<Value>(&raw) {
+            image_paths.extend(generated_image_paths(&blocks));
+        }
+    }
+    Ok(image_paths)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionUpsert {
@@ -779,9 +825,16 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         ("queued_messages_json", "TEXT NOT NULL DEFAULT '[]'"),
         ("queue_status", "TEXT"),
         ("sidebar_hidden", "INTEGER NOT NULL DEFAULT 0"),
+        ("archived_at", "INTEGER"),
     ] {
         ensure_session_column(conn, column, decl)?;
     }
+    // Conversations archived before the archive date was recorded start their
+    // retention window now rather than being deleted on the first launch.
+    conn.execute(
+        "UPDATE sessions SET archived_at = ?1 WHERE archived = 1 AND archived_at IS NULL",
+        params![now_millis()],
+    )?;
     if current < 9 {
         // v8 stopped the blob scan but still cost a table seek per row, and
         // every summary column (`created_at`, `updated_at`, `branch`,
@@ -1889,8 +1942,12 @@ fn delete_session(conn: &Connection, session_id: &str) -> rusqlite::Result<()> {
 
 fn set_archived(conn: &Connection, session_id: &str, archived: bool) -> rusqlite::Result<()> {
     conn.execute(
-        "UPDATE sessions SET archived = ?1 WHERE id = ?2",
-        params![if archived { 1 } else { 0 }, session_id],
+        "UPDATE sessions SET archived = ?1, archived_at = ?2 WHERE id = ?3",
+        params![
+            if archived { 1 } else { 0 },
+            archived.then(now_millis),
+            session_id
+        ],
     )?;
     Ok(())
 }
@@ -2927,6 +2984,52 @@ mod tests {
         let restored = get_session(&conn, "s1").unwrap().unwrap();
         assert!(!restored.worktree_removed);
         assert_eq!(restored.branch.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn archived_sessions_are_purged_after_the_retention_window() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        for id in ["old", "recent", "active", "restored"] {
+            upsert_session(&conn, &sample(id, "/tmp/a", id)).unwrap();
+        }
+        for id in ["old", "recent", "restored"] {
+            set_archived(&conn, id, true).unwrap();
+        }
+        set_archived(&conn, "restored", false).unwrap();
+        let now = now_millis();
+        conn.execute(
+            "UPDATE sessions SET archived_at = ?1 WHERE id = 'old'",
+            params![now - ARCHIVE_RETENTION_MS - 1],
+        )
+        .unwrap();
+        purge_archived_before(&conn, now - ARCHIVE_RETENTION_MS).unwrap();
+        let mut ids: Vec<String> = list_by_project(&conn, "/tmp/a")
+            .unwrap()
+            .into_iter()
+            .map(|session| session.id)
+            .collect();
+        ids.sort();
+        assert_eq!(ids, vec!["active", "recent", "restored"]);
+    }
+
+    #[test]
+    fn previously_archived_sessions_start_their_retention_at_migration() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        upsert_session(&conn, &sample("s1", "/tmp/a", "First")).unwrap();
+        conn.execute(
+            "UPDATE sessions SET archived = 1, archived_at = NULL WHERE id = 's1'",
+            [],
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        let archived_at: Option<i64> = conn
+            .query_row("SELECT archived_at FROM sessions WHERE id = 's1'", [], |row| row.get(0))
+            .unwrap();
+        assert!(archived_at.is_some());
+        purge_archived_before(&conn, now_millis() - ARCHIVE_RETENTION_MS).unwrap();
+        assert_eq!(list_by_project(&conn, "/tmp/a").unwrap().len(), 1);
     }
 
     #[test]

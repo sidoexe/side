@@ -145,6 +145,7 @@ import {
   zoomInUiScale,
   zoomOutUiScale,
 } from "../features/settings/model/uiScale";
+import { personalInstructionsContext } from "../features/settings/model/personalInstructions";
 import { resolveZoomKeybinding } from "../features/settings/model/zoomKeybinding";
 import { resolveAppShortcut } from "../features/settings/model/appShortcuts";
 import { runUpdateFlow } from "./model/updater";
@@ -1084,6 +1085,9 @@ function Workspace({
   const [notesViewOpen, setNotesViewOpen] = useState(false);
   const [automationsViewOpen, setAutomationsViewOpen] = useState(false);
   const [boardViewOpen, setBoardViewOpen] = useState(false);
+  // A session opened from the board shows beside it instead of replacing it.
+  const [boardPeek, setBoardPeek] = useState(false);
+  const boardCovers = boardViewOpen && !boardPeek;
   const [webViewOpen, setWebViewOpen] = useState(false);
   const [inspectedWorkerId, setInspectedWorkerId] = useState<string | null>(
     null,
@@ -1323,7 +1327,7 @@ function Workspace({
       !inboxViewOpen &&
       !notesViewOpen &&
       !automationsViewOpen &&
-      !boardViewOpen &&
+      !boardCovers &&
       !webViewOpen &&
       !settingsOpen,
     standaloneSessionId: inboxViewOpen ? inboxAskPortal?.sessionId : undefined,
@@ -1334,6 +1338,8 @@ function Workspace({
   automationsViewOpenRef.current = automationsViewOpen;
   const boardViewOpenRef = useRef(boardViewOpen);
   boardViewOpenRef.current = boardViewOpen;
+  const boardCoversRef = useRef(boardCovers);
+  boardCoversRef.current = boardCovers;
   const webViewOpenRef = useRef(webViewOpen);
   webViewOpenRef.current = webViewOpen;
   const settingsOpenRef = useRef(settingsOpen);
@@ -1942,7 +1948,7 @@ function Workspace({
             !inboxViewOpenRef.current &&
             !notesViewOpenRef.current &&
             !automationsViewOpenRef.current &&
-            !boardViewOpenRef.current &&
+            !boardCoversRef.current &&
             !webViewOpenRef.current &&
             !settingsOpenRef.current
           ) {
@@ -1980,7 +1986,7 @@ function Workspace({
     searchViewOpen,
     notesViewOpen,
     automationsViewOpen,
-    boardViewOpen,
+    boardCovers,
     webViewOpen,
     settingsOpen,
     flushForegroundHarnessEvents,
@@ -5026,7 +5032,7 @@ function Workspace({
             inboxViewOpenRef.current ||
             notesViewOpenRef.current ||
             automationsViewOpenRef.current ||
-            boardViewOpenRef.current ||
+            boardCoversRef.current ||
             webViewOpenRef.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
@@ -7223,6 +7229,12 @@ function Workspace({
           );
           // What the app adds to the user's message rather than them.
           const appContext: string[] = [];
+          // A fresh provider context hears the user's standing preferences once.
+          const personalContext =
+            !rawCommand && !current.providerSessionId
+              ? personalInstructionsContext()
+              : undefined;
+          if (personalContext) appContext.push(personalContext);
           if (operatorCommand.matched) {
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
             appContext.push(operatorAppContext(cli));
@@ -10193,23 +10205,20 @@ function Workspace({
     ],
   );
 
+  // The board stays open on the left, narrowed, beside the session it opens.
   const onSelectLiveAgent = useCallback(
     (sessionId: string) => {
-      setSearchViewOpen(false);
-      setInboxViewOpen(false);
-      setNotesViewOpen(false);
-      setAutomationsViewOpen(false);
-      setBoardViewOpen(false);
-      setWebViewOpen(false);
+      setBoardPeek(true);
       onOpenApprovalSession(sessionId);
     },
     [onOpenApprovalSession],
   );
-  // A host's session opens in place of the board, as a local one does.
+  // A host's session opens beside the board, as a local one does.
   const onSelectBoardRemoteSession = useCallback(
     (project: string, sessionId: string) => {
-      setBoardViewOpen(false);
       onSelectRemoteSession(project, sessionId);
+      setBoardViewOpen(true);
+      setBoardPeek(true);
     },
     [onSelectRemoteSession],
   );
@@ -10585,11 +10594,16 @@ function Workspace({
       setWebViewOpen(false);
       setAutomationsViewOpen(false);
       setBoardViewOpen(true);
+      setBoardPeek(false);
     });
   }, []);
 
   const onLeaveBoard = useCallback(() => {
     setBoardViewOpen(false);
+  }, []);
+
+  const onExpandBoard = useCallback(() => {
+    setBoardPeek(false);
   }, []);
 
   const onOpenWeb = useCallback(() => {
@@ -10749,7 +10763,9 @@ function Workspace({
       return;
     }
     if (boardViewOpen) {
-      setBoardViewOpen(false);
+      // Back from a session beside the board widens the board again.
+      if (boardPeek) setBoardPeek(false);
+      else setBoardViewOpen(false);
       return;
     }
     if (webViewOpen) {
@@ -10766,6 +10782,7 @@ function Workspace({
     notesViewOpen,
     automationsViewOpen,
     boardViewOpen,
+    boardPeek,
     webViewOpen,
   ]);
 
@@ -11052,7 +11069,7 @@ function Workspace({
             inboxViewOpenRef.current ||
             notesViewOpenRef.current ||
             automationsViewOpenRef.current ||
-            boardViewOpenRef.current ||
+            boardCoversRef.current ||
             webViewOpenRef.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
@@ -11137,7 +11154,7 @@ function Workspace({
         !inboxViewOpenRef.current &&
         !notesViewOpenRef.current &&
         !automationsViewOpenRef.current &&
-        !boardViewOpenRef.current &&
+        !boardCoversRef.current &&
         !webViewOpenRef.current &&
         !(
           e.target instanceof Element &&
@@ -11567,8 +11584,6 @@ function Workspace({
               textHarness={pickTextHarness(active?.harness)}
               recents={recents}
               busyProjectPaths={busyProjectPaths}
-              liveAgents={liveAgents}
-              onSelectAgent={onSelectLiveAgent}
               onSelectProject={onSelectProject}
               onOpenProject={pickProject}
               onRemoveProject={onRemoveProject}
@@ -11608,7 +11623,11 @@ function Workspace({
               onDismissUpdate={onDismissUpdate}
             />
 
-            <div className="body-glass flex min-h-0 min-w-0 flex-1 flex-col">
+            <div
+              className={`body-glass flex min-h-0 min-w-0 flex-1 ${
+                boardViewOpen && boardPeek ? "flex-row" : "flex-col"
+              }`}
+            >
               <div
                 className={
                   searchViewOpen ||
@@ -11616,7 +11635,7 @@ function Workspace({
                   inboxViewOpen ||
                   notesViewOpen ||
                   automationsViewOpen ||
-                  boardViewOpen ||
+                  boardCovers ||
                   webViewOpen
                     ? "hidden"
                     : "flex min-h-0 min-w-0 flex-1 flex-col"
@@ -11627,7 +11646,7 @@ function Workspace({
                   inboxViewOpen ||
                   notesViewOpen ||
                   automationsViewOpen ||
-                  boardViewOpen ||
+                  boardCovers ||
                   webViewOpen
                 }
                 inert={
@@ -11636,7 +11655,7 @@ function Workspace({
                   inboxViewOpen ||
                   notesViewOpen ||
                   automationsViewOpen ||
-                  boardViewOpen ||
+                  boardCovers ||
                   webViewOpen ||
                   undefined
                 }
@@ -11807,7 +11826,7 @@ function Workspace({
                             !inboxViewOpen &&
                             !notesViewOpen &&
                             !automationsViewOpen &&
-                            !boardViewOpen &&
+                            !boardCovers &&
                             !webViewOpen &&
                             activeLinkedWorkItemPanel?.sessionId ===
                               panel.sessionId
@@ -11923,8 +11942,19 @@ function Workspace({
                   activeSessionId={activeSessionId}
                   besideRail={projectRailOpen || compactProjectRail}
                   compactRail={compactRailActive}
+                  peek={boardPeek}
                   onClose={onLeaveBoard}
+                  onExpand={onExpandBoard}
                   onToggleSidebar={onToggleSidebar}
+                  onArchiveSessions={(ids) =>
+                    void onArchiveHistorySessions(ids, true)
+                  }
+                  onDeleteSession={(id) => void onDeleteHistorySession(id)}
+                  onDeleteSessions={(ids) =>
+                    void (ids.length === 1
+                      ? onDeleteHistorySession(ids[0])
+                      : onDeleteHistorySessions(ids))
+                  }
                 />
               ) : null}
               {settingsOpen ? (

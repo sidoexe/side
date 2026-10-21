@@ -79,9 +79,6 @@ import {
   updateProjectGroup,
   type ProjectGroup,
 } from "../../features/projects/model/projectGroups";
-import type { LiveAgent } from "../../features/sessions/model/liveAgents";
-import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview";
-import { ReviewAgentsSection } from "../../features/sessions/ui/ReviewAgentsSection";
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
 import { RailAction, RailSearch } from "./RailAction";
@@ -105,7 +102,6 @@ import {
 } from "../../features/connections/model/connections";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { useProjectMenu } from "./useProjectMenu";
-import { useSessionBoard } from "../../features/sessions/hooks/useSessionBoard";
 import { WebAppsRailSection } from "./WebAppsRailSection";
 
 type Props = {
@@ -138,11 +134,6 @@ type Props = {
   onSelectProject: (path: string) => void;
   onOpenProject: () => void;
   onRemoveProject?: (path: string, options: { purgeData: boolean }) => void;
-  liveAgents?: LiveAgent[];
-  activeSessionId?: string;
-  onSelectAgent?: (sessionId: string) => void;
-  /** Opens a session that runs on a project's host. */
-  onSelectRemoteSession?: (project: string, sessionId: string) => void;
   settingsOpen?: boolean;
   settingsSection?: SettingsSectionId;
   onOpenSettings?: () => void;
@@ -182,10 +173,6 @@ export function ProjectRail({
   onSelectProject,
   onOpenProject,
   onRemoveProject,
-  liveAgents = [],
-  activeSessionId,
-  onSelectAgent,
-  onSelectRemoteSession,
   settingsOpen = false,
   settingsSection = "general",
   onOpenSettings,
@@ -399,14 +386,6 @@ export function ProjectRail({
     onReorderProjects,
     "y",
   );
-  // Finished agents and those waiting on the user sit under the projects;
-  // the bottom card keeps only the ones still working.
-  const board = useSessionBoard(
-    liveAgents,
-    projectPaths,
-    onSelectAgent,
-    onSelectRemoteSession,
-  );
   return (
     <nav
       ref={resize.setPaneRef}
@@ -597,28 +576,8 @@ export function ProjectRail({
                 groupLogos={groupLogos}
                 groupMascots={groupMascots}
               />
-              <ReviewAgentsSection
-                agents={board.review}
-                checked={board.checked}
-                activeSessionId={activeSessionId}
-                onSelect={board.onSelect}
-                onMarkChecked={board.onMarkChecked}
-                groupLabels={groupLabels}
-                groupColors={groupColors}
-                groupCustomColors={groupCustomColors}
-                groupMascots={groupMascots}
-              />
             </ProjectStatusContext.Provider>
           </div>
-          <LiveAgentsPreview
-            agents={board.working}
-            activeSessionId={activeSessionId}
-            onSelect={onSelectAgent}
-            groupLabels={groupLabels}
-            groupColors={groupColors}
-            groupCustomColors={groupCustomColors}
-            groupMascots={groupMascots}
-          />
           <SidebarUpdateFooter
             update={updateNotice}
             onOpenWhatsNew={onOpenWhatsNew}
