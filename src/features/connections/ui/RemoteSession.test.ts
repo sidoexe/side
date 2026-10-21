@@ -14,6 +14,7 @@ import { preloadRemoteSession } from "./RemoteSession";
 import { rememberRemoteSession, remoteSessionFor } from "../model/connections";
 import "../model/remoteCommands";
 import { setRemoteAccountSlot } from "./remoteAccountSlot";
+import { registerHarness, type HarnessAdapter } from "../../../integrations/harness/core/registry";
 import type {
   HostCommand,
   HostDescriptor,
@@ -312,6 +313,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   setRemoteAccountSlot(undefined);
+  localStorage.removeItem("monocode.followUpBehavior");
   act(() => root.unmount());
   container.remove();
   document.body.innerHTML = "";
@@ -1245,6 +1247,7 @@ it("arms the host's resume at reset and dismisses the notice on the host", async
 
 it("queues a message typed during a turn on the host, and manages it from the queue", async () => {
   extraCapabilities = ["sessions.queue"];
+  localStorage.setItem("monocode.followUpBehavior", "queue");
   await render();
   await send("First");
   host = {
@@ -1298,4 +1301,28 @@ it("keeps the review card off a host that does not snapshot turns", async () => 
   ];
   await limitedSession(Date.now() - 60_000);
   expect(container.querySelector("[data-session-review-shell]")).toBeNull();
+});
+
+it("hands a message typed during a turn to the host's running agent, as locally", async () => {
+  extraCapabilities = ["sessions.queue"];
+  localStorage.removeItem("monocode.followUpBehavior");
+  // Codex takes a message during a turn, as its real adapter says.
+  registerHarness({ id: "codex", live: true } as unknown as HarnessAdapter);
+  await render();
+  await send("First");
+  host = {
+    ...host!,
+    revision: host!.revision + 1,
+    status: "running",
+    runId: "run",
+    session: { ...host!.session, busy: true },
+  };
+  await vi.waitFor(() => expect(byLabel("Stop")).not.toBeNull(), { timeout: 4_000 });
+  await type("Also check the tests");
+  await act(async () => byLabel("Send")!.click());
+  await vi.waitFor(() => expect(commands.at(-1)).toMatchObject({ type: "queueSteer", sessionId: "host-session" }));
+  const queued = commands.at(-2)!;
+  expect(queued).toMatchObject({ type: "queue", text: "Also check the tests" });
+  // The host names the queued message after the command that queued it.
+  expect(commands.at(-1)).toMatchObject({ messageId: queued.commandId });
 });

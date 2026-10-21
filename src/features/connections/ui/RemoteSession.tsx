@@ -35,6 +35,8 @@ import { RemoteAccountPicker } from "./RemoteAccountPicker";
 import { WebLinkContext } from "../../sessions/ui/AgentMarkdown";
 import { openRemotePreview } from "../model/remotePreviews";
 import { CONTINUE_PROMPT } from "../../sessions/model/inFlight";
+import { canSteerHarness, isLiveHarness } from "../../../integrations/harness/core/registry";
+import { loadFollowUpBehavior } from "../../settings/model/settings";
 import {
   clearPendingRemoteCommand,
   loadRemoteSession,
@@ -960,6 +962,7 @@ function ConnectedRemoteSession({
     text: string,
     attachments: Attachment[],
     intent: "default" | "plan",
+    steer: boolean,
   ): boolean => {
     preparingRef.current = true;
     void (async () => {
@@ -967,9 +970,13 @@ function ConnectedRemoteSession({
       const operator = operatorTurn(text);
       const expanded = (await providerPromptFor(operator.text)) ?? operator.text;
       const prompt = operator.context ? `${expanded}\n\n${operator.context}` : expanded;
+      // The host names a queued message after the command that queued it,
+      // so steering it straight in is one more command, as a local session
+      // hands a follow-up to the running turn.
+      const commandId = crypto.randomUUID();
       await run({
         type: "queue",
-        commandId: crypto.randomUUID(),
+        commandId,
         sessionId: id,
         text: operator.text,
         ...(refs.length ? { attachments: refs } : {}),
@@ -977,6 +984,9 @@ function ConnectedRemoteSession({
         ...(prompt !== operator.text ? { prompt } : {}),
         ...(operator.context ? { appAccess: true } : {}),
       });
+      // /operator starts its own turn, as it does locally.
+      if (steer && !operator.context)
+        await run({ type: "queueSteer", commandId: crypto.randomUUID(), sessionId: id, messageId: commandId });
     })()
       .catch((reason) => {
         if (alive.current) setError(String(reason));
@@ -1059,6 +1069,15 @@ function ConnectedRemoteSession({
         text,
         attachments,
         options?.intent === "plan" ? "plan" : "default",
+        // As a local session: during a turn, a follow-up goes to the agent
+        // unless it is a plan, the agent cannot take one, messages already
+        // wait in line, or the setting says to queue.
+        busy &&
+          !queued &&
+          options?.intent !== "plan" &&
+          isLiveHarness(hostSession.harness) &&
+          canSteerHarness(hostSession.harness) &&
+          loadFollowUpBehavior() === "steer",
       );
     if (
       options?.resendEdited &&
