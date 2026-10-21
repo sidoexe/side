@@ -1,19 +1,20 @@
 import {
   applySessionSync,
   HOST_PROTOCOL_VERSION,
-  type HostCommand,
-  type HostSession,
-  type RemoteAttachment,
+  type HostSession as ProtocolSession,
   type SessionSync,
   type SessionSyncChunk,
   type SessionSyncResponse,
 } from "../../src/features/connections/model/protocol";
+import type { Attachment, HostDescriptor, HostSession } from "./model";
 
 export class Unauthorized extends Error {}
 
 let environmentId = "";
 
 export async function rpc<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+  // Every call names the host it expects; learn it first.
+  if (!environmentId && method !== "environment.describe") await describe();
   const response = await fetch("/web/rpc", {
     method: "POST",
     credentials: "same-origin",
@@ -26,10 +27,11 @@ export async function rpc<T>(method: string, params: Record<string, unknown> = {
   return value.result as T;
 }
 
-export async function describe<T extends { environmentId: string }>(): Promise<T> {
-  const host = await rpc<T>("environment.describe", {
+export async function describe(): Promise<HostDescriptor> {
+  const host = await rpc<HostDescriptor>("environment.describe", {
     supportedProviders: ["codex", "claude", "cursor", "grok", "opencode", "pi", "omp", "fx", "hermes", "antigravity", "devin"],
   });
+  if (host.protocolVersion !== HOST_PROTOCOL_VERSION) throw new Error("This machine is running an incompatible sIDE Host");
   environmentId = host.environmentId;
   return host;
 }
@@ -48,6 +50,7 @@ export async function login(token: string): Promise<void> {
 }
 
 export async function logout(): Promise<void> {
+  environmentId = "";
   await fetch("/web/logout", { method: "POST", credentials: "same-origin" });
 }
 
@@ -70,58 +73,59 @@ export async function syncSession(sessionId: string, known?: HostSession): Promi
     }
     return JSON.parse(pieces.join("")) as SessionSync;
   };
+  const apply = (base: HostSession | undefined, sync: SessionSync) =>
+    applySessionSync(base as unknown as ProtocolSession | undefined, sync) as unknown as HostSession;
   try {
-    return applySessionSync(known, await read(known?.revision));
+    return apply(known, await read(known?.revision));
   } catch (error) {
     if (!known || error instanceof Unauthorized) throw error;
-    return applySessionSync(undefined, await read());
+    return apply(undefined, await read());
   }
 }
 
-export type CommandInput = HostCommand extends infer C
-  ? C extends HostCommand
-    ? Omit<C, "commandId">
-    : never
-  : never;
+export type Receipt = { commandId: string; sessionId: string; revision: number };
 
-export function command(input: CommandInput) {
-  return rpc<{ commandId: string; sessionId: string; revision: number }>("commands.dispatch", {
-    ...input,
-    commandId: crypto.randomUUID(),
-  });
+export function command(input: Record<string, unknown>) {
+  return rpc<Receipt>("commands.dispatch", { ...input, commandId: crypto.randomUUID() });
 }
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
-// Keep each request well below the host's request limit.
+// Multiple of 4, so each piece is valid base64 on its own.
 const CHUNK_CHARS = 4 * Math.floor((512 * 1024) / 3);
 
-/** A file picked in the browser, uploaded to the host's attachment store
- * in chunks, as the desktop does. */
-export async function uploadAttachment(file: File): Promise<RemoteAttachment> {
-  if (file.size > MAX_ATTACHMENT_BYTES) throw new Error(`${file.name} is too large (20 MB maximum)`);
-  const data = await new Promise<string>((resolve, reject) => {
+const base64 = (blob: Blob, name: string) =>
+  new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ""));
-    reader.onerror = () => reject(reader.error ?? new Error(`Cannot read ${file.name}`));
-    reader.readAsDataURL(file);
+    reader.onerror = () => reject(reader.error ?? new Error(`Cannot read ${name}`));
+    reader.readAsDataURL(blob);
   });
+
+/** Uploads to the host's attachment store in chunks, as the desktop does. */
+export async function uploadAttachment(file: Blob, name: string, mimeType = file.type || "application/octet-stream"): Promise<Attachment> {
+  if (file.size > MAX_ATTACHMENT_BYTES) throw new Error(`${name} is too large (20 MB maximum)`);
+  const data = await base64(file, name);
   const id = crypto.randomUUID();
   let offset = 0;
   if (!data.length) await rpc("attachments.upload", { id, offset: 0, size: file.size, data: "" });
   for (let index = 0; index < data.length; index += CHUNK_CHARS)
-    offset = (await rpc<{ offset: number }>("attachments.upload", {
-      id,
-      offset,
-      size: file.size,
-      data: data.slice(index, index + CHUNK_CHARS),
-    })).offset;
-  if (offset !== file.size) throw new Error(`Could not finish uploading ${file.name}`);
-  const mimeType = file.type || "application/octet-stream";
-  return {
-    id,
-    name: file.name,
-    mimeType,
-    kind: mimeType.startsWith("image/") ? "image" : mimeType.startsWith("audio/") ? "audio" : "file",
-    size: file.size,
-  };
+    offset = (
+      await rpc<{ offset: number }>("attachments.upload", { id, offset, size: file.size, data: data.slice(index, index + CHUNK_CHARS) })
+    ).offset;
+  if (offset !== file.size) throw new Error(`Could not finish uploading ${name}`);
+  const kind = mimeType.startsWith("image/") ? "image" : mimeType.startsWith("audio/") ? "audio" : "file";
+  return { id, name, mimeType, kind, size: file.size };
+}
+
+/** An image sent in a session's messages, read in the chunks the host serves. */
+export async function readAttachment(sessionId: string, attachment: Attachment): Promise<Blob> {
+  const pieces: Uint8Array[] = [];
+  let offset = 0;
+  while (offset < attachment.size) {
+    const chunk = await rpc<{ data: string; offset: number }>("attachments.read", { sessionId, id: attachment.id, offset });
+    if (!(chunk.offset > offset)) throw new Error(`Could not read ${attachment.name}`);
+    pieces.push(Uint8Array.from(atob(chunk.data), (c) => c.charCodeAt(0)));
+    offset = chunk.offset;
+  }
+  return new Blob(pieces as BlobPart[], { type: attachment.mimeType });
 }

@@ -13,6 +13,7 @@
     "test:browser": "playwright test",
     "host:build": "tsc --noEmit -p host/tsconfig.json && tsc --noEmit -p host/webapp/tsconfig.json && node host/build.mjs",
     "host:package": "npm run host:build && node host/package.mjs",
+    "web:deploy": "npm run host:build && node host/deploy-web.mjs",
     "host": "node build/host/side-host.mjs",
     "pretest:host": "npm run host:build",
     "test:host": "vitest run --config host/vitest.config.ts",

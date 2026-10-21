@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Each release can deploy its web app to a production host: once published, the release workflow joins the tailnet and calls `/web/deploy` with a deploy key from `side-host deploy-key`. The host fetches the release's package from GitHub, checks its checksum and swaps in its `web` folder without restarting. The key opens nothing else. `npm run web:deploy` does the same by hand for the host in `~/.side-host`.
 - **To review** under the projects is the one place to clear what waits on you. A session whose turn ended on an error says **Failed** in red, after those waiting on an answer and before those done, instead of passing for done. Hovering a done or failed one offers **Checked**, so it no longer takes a trip to its project's list. A collapsed **Checked** list below keeps the last 50 sessions you closed out; one that works again, is archived or deleted leaves it. A host's sessions say Failed too.
 - The phone's **Now** splits the same way: **To review** (waiting on you, then failed, then done, each with a Checked button), **Working**, and a collapsed **Checked** list of what this phone checked. Failed needs a host updated with this release.
 - The phone's home is split into two tabs, each with its own stack. **Now** holds To review, Working and Checked, with a badge counting what waits on you. **Projects** lists the projects folded to their counts; tap one to open its sessions, and it stays open. Web apps, usage and accounts move to the **…** menu.
@@ -23,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The host's browser app at `/web` is now **the phone app in a page**: the iPhone app's Now and Projects tabs, session screen, composer, menus, long-press actions, accounts and usage, so a phone without the app, an Android phone or any browser gets the same thing. It replaces the desktop-like web app, and with it that app's Changes panel, file explorer, turn review card, automations page, `@`/`/` pickers, project backgrounds and light theme.
 - **Accounts work the same everywhere**: normal chats, Settings, a host's chats and the phone.
   - Switching a chat's account **moves the conversation** instead of opening an empty one: a Claude transcript is carried over, otherwise the new account gets a recap. The footer's Switch suggestion does the same, and a chat stopped at a limit continues at once.
   - Local chats can run **Balanced**: on the account with the most room, moving on at a usage limit. Picking an account by hand turns it off.

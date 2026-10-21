@@ -1,664 +1,210 @@
-import { StrictMode, useCallback, useEffect, useMemo, useState } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type {
-  HostAccountSummary,
-  HostDescriptor,
-  HostModelCatalog,
-  HostProject,
-  HostSessionSummary,
-  HostWorktree,
-  RemoteProvider,
-} from "../../src/features/connections/model/protocol";
-import { sessionDisplayTitle, type RuntimeMode } from "../../src/features/sessions/model/session";
-import { command, describe, login, logout, rpc, Unauthorized } from "./api";
-import { SessionView } from "./SessionView";
-import { ChangesPanel, FolderBrowser } from "./workspace";
-import { AutomationsPage, FilesPanel } from "./extras";
-import { backgroundUrl, ProjectBackground, ProjectBadge, ProjectMenu, visibleProjects, WebAppLinks, type HostRailState } from "./rail";
-import { ago, BranchIcon, Chip, Composer, go, MODES, tilde, useNotifications, usePoll, useRoute, type Route } from "./ui";
-import { HarnessIcon } from "../../src/features/sessions/ui/HarnessIcon";
-import { findModel, setHarnessModels } from "../../src/features/sessions/model/models";
+import { login } from "./api";
+import { HostAccountsSheet } from "./accounts";
+import { NowView, ProjectsView, UsageSheet } from "./home";
+import { FolderBrowserView, NewSessionView } from "./newSession";
+import { SessionView } from "./session";
+import { model, useModel, type HomeTab, type Route } from "./store";
+import { DialogHost, Icon, Sheet, Spinner, usePoll } from "./ui";
 import "./styles.css";
 
-const modelName = (session: HostSessionSummary) =>
-  (session.model && findModel(session.model)?.name) || session.model?.split(":").pop() || session.harness;
-
-/** One session as the IDE's sidebar shows it: agent and model, title, branch. */
-function SessionRow({ session, active, onClick }: { session: HostSessionSummary; active?: boolean; onClick?: () => void }) {
-  const state = session.needsInput ? "input" : session.status;
+/** The phone app (ios/SideMobile) in a browser: the host's sessions in two
+ * tabs, Now and Projects, each with its own stack of screens. */
+function Root() {
+  const app = useModel();
+  // The host, its projects and their sessions, every 5 seconds.
+  usePoll(() => (app.state.signedIn === false ? undefined : app.refresh()), () => 5000, [app.state.signedIn === false]);
+  if (app.state.signedIn === false) return <ConnectView />;
+  if (!app.state.host)
+    return (
+      <div className="screen loading">
+        <Spinner />
+      </div>
+    );
   return (
-    <a
-      className={`session${active ? " active" : ""}${session.archived ? " archived" : ""}`}
-      href={`#/s/${encodeURIComponent(session.projectId)}/${encodeURIComponent(session.id)}`}
-      onClick={onClick}
-    >
-      <span className="session-line meta">
-        <HarnessIcon harness={session.harness} className="harness" />
-        <span className="ellipsis">{modelName(session)}</span>
-        <span className="time">{ago(session.updatedAt)}</span>
-      </span>
-      <span className="session-line">
-        <span className={`session-title ellipsis${state === "running" ? " shimmer" : ""}`}>{sessionDisplayTitle(session.title, session.harness) || "New session"}</span>
-        {state === "input" ? <span className="pill">Needs you</span> : state === "interrupted" ? <span className="pill red">Interrupted</span> : null}
-      </span>
-      {session.repo || session.branch ? (
-        <span className="session-line meta">
-          <BranchIcon />
-          <span className="ellipsis">{[session.repo, session.branch].filter(Boolean).join("/")}</span>
-        </span>
-      ) : null}
-    </a>
+    <>
+      <div className="tabs">
+        <TabStack tab="now" />
+        <TabStack tab="projects" />
+      </div>
+      <TabBar />
+      <SheetHost />
+      <DialogHost />
+    </>
   );
 }
 
-function Login({ onDone }: { onDone: () => void }) {
-  const [token, setToken] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+/** One tab's own stack, so switching tabs keeps where each one was. Its
+ * root stays mounted under the screens pushed over it, with its scroll. */
+function TabStack({ tab }: { tab: HomeTab }) {
+  const app = useModel();
+  const path = app.state.paths[tab];
+  const top = path.at(-1);
   return (
-    <div className="login">
-      <form
-        onSubmit={async (event) => {
-          event.preventDefault();
-          setBusy(true);
-          setError("");
-          try {
-            await login(token.trim());
-            onDone();
-          } catch (reason) {
-            setError(reason instanceof Error ? reason.message : String(reason));
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <img src="side.png" alt="" width={56} height={56} />
-        <h1>sIDE Host</h1>
-        <p>
-          Paste a device token. Create one on the host with
-          <code>~/.side-host/bin/side-host pair --name "Web"</code>
-        </p>
-        <input
-          type="password"
-          autoComplete="off"
-          placeholder="Device token"
-          value={token}
-          onChange={(event) => setToken(event.target.value)}
-          autoFocus
-        />
-        {error ? <div className="error">{error}</div> : null}
-        <button className="btn primary" disabled={busy || !token.trim()}>
-          Sign in
-        </button>
-      </form>
-    </div>
-  );
-}
-
-function Usage({ accounts }: { accounts: HostAccountSummary[] }) {
-  const named = accounts.filter((account) => !account.pool);
-  if (!named.length) return null;
-  return (
-    <div className="usage">
-      {named.map((account) => (
-        <div key={account.id} className="usage-row" title={account.usage?.error}>
-          <span className="usage-label">{account.label}</span>
-          {(["fiveHour", "sevenDay"] as const).map((window) => {
-            const used = account.usage?.[window]?.used;
-            return (
-              <span key={window} className="bar" title={`${window === "fiveHour" ? "5h" : "7d"}: ${used ?? "?"}%`}>
-                <span style={{ width: `${Math.min(100, used ?? 0)}%` }} className={used != null && used >= 90 ? "full" : ""} />
-              </span>
-            );
-          })}
+    <div className="tab" hidden={app.state.tab !== tab}>
+      <div className="stack-root" hidden={!!top}>
+        {tab === "now" ? <NowView /> : <ProjectsView />}
+      </div>
+      {top ? (
+        <div className="stack-top" key={key(top)}>
+          <Screen route={top} />
         </div>
-      ))}
+      ) : null}
     </div>
   );
 }
 
-function Sidebar({
-  host,
-  projects,
-  sessions,
-  accounts,
-  route,
-  rail,
-  allProjects,
-  onRail,
-  onError,
-  onClose,
-  onOpenFolder,
-  onLogout,
-}: {
-  host: HostDescriptor;
-  projects: HostProject[];
-  allProjects: HostProject[];
-  rail?: HostRailState;
-  onRail: (rail: HostRailState) => void;
-  onError: (error: unknown) => void;
-  sessions: Record<string, HostSessionSummary[]>;
-  accounts: HostAccountSummary[];
-  route: Route;
-  onClose: () => void;
-  onOpenFolder: () => void;
-  onLogout: () => void;
-}) {
-  const [showArchived, setShowArchived] = useState(false);
-  const notifications = useNotifications(host.capabilities.includes("push"));
-  const [filter, setFilter] = useState("");
-  const query = filter.trim().toLowerCase();
+const key = (route: Route) =>
+  route.kind === "session" ? `s:${route.sessionId}` : route.kind === "new" ? `n:${route.projectId}` : route.kind;
+
+function Screen({ route }: { route: Route }) {
+  switch (route.kind) {
+    case "session":
+      return <SessionView projectId={route.projectId} sessionId={route.sessionId} />;
+    case "new":
+      return <NewSessionView projectId={route.projectId} />;
+    case "browse":
+      return <FolderBrowserView />;
+  }
+}
+
+function TabBar() {
+  const app = useModel();
+  const waiting = app.toReview().length;
+  const tabs: { id: HomeTab; label: string; icon: string; badge?: number }[] = [
+    { id: "now", label: "Now", icon: "tray", badge: waiting },
+    { id: "projects", label: "Projects", icon: "folder" },
+  ];
   return (
-    <nav className="sidebar">
-      <header>
-        <img src="side.png" alt="" width={18} height={18} />
-        <span className="host-name">{host.name}</span>
-        <span className="version">{host.version}</span>
-        <button className="icon" onClick={onOpenFolder} aria-label="Open folder" title="Open folder">
-          <svg className="glyph" viewBox="0 0 16 16" aria-hidden><path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" strokeWidth="1.2" /><path d="M8 7.5v3M6.5 9h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
+    <nav className="tab-bar">
+      {tabs.map((tab) => (
+        <button key={tab.id} className={`tab-button${app.state.tab === tab.id ? " on" : ""}`} onClick={() => app.selectTab(tab.id)}>
+          <span className="tab-icon">
+            <Icon name={tab.icon} size={24} />
+            {tab.badge ? <span className="badge">{tab.badge}</span> : null}
+          </span>
+          <span>{tab.label}</span>
         </button>
-        <button className="icon close" onClick={onClose} aria-label="Close menu">
-          <svg className="glyph" viewBox="0 0 16 16" aria-hidden><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-        </button>
-      </header>
-      <div className="nav-links">
-        <a className={`nav-link${route.kind === "automations" ? " active" : ""}`} href="#/automations" onClick={onClose}>
-          Automations
-        </a>
-      </div>
-      <WebAppLinks enabled={host.capabilities.includes("webApps")} />
-      <input className="search" placeholder="Filter sessions" value={filter} onChange={(e) => setFilter(e.target.value)} />
-      <div className="projects">
-        {projects.map((project) => {
-          const list = (sessions[project.id] ?? [])
-            .filter((session) => showArchived || !session.archived)
-            .filter((session) => !query || session.title.toLowerCase().includes(query) || project.name.toLowerCase().includes(query))
-            .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt - a.updatedAt);
-          if (query && !list.length) return null;
-          return (
-            <section key={project.id}>
-              <div className="project">
-                <ProjectBadge cwd={project.cwd} busy={list.some((session) => session.status === "running")} />
-                <span className="project-name ellipsis" title={project.cwd}>{project.name}</span>
-                {host.capabilities.includes("projects.rail") ? (
-                  <ProjectMenu project={project} rail={rail} projects={allProjects} onRail={onRail} onError={onError} />
-                ) : null}
-                <button
-                  className="icon"
-                  aria-label={`New session in ${project.name}`}
-                  onClick={() => {
-                    go({ kind: "new", projectId: project.id });
-                    onClose();
-                  }}
-                >
-                  <svg className="glyph" viewBox="0 0 16 16" aria-hidden><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-                </button>
-              </div>
-              {list.map((session) => (
-                <SessionRow
-                  key={session.id}
-                  session={session}
-                  active={route.kind === "session" && route.sessionId === session.id}
-                  onClick={onClose}
-                />
-              ))}
-            </section>
-          );
-        })}
-      </div>
-      <Usage accounts={accounts} />
-      <footer>
-        <label>
-          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Archived
-        </label>
-        {notifications.state !== "unsupported" ? (
-          <button
-            className={`theme-toggle${notifications.state === "on" ? " on" : ""}`}
-            onClick={() =>
-              notifications.state === "install"
-                ? alert("To get notifications on iPhone, open this page in Safari, tap Share → Add to Home Screen, then open sIDE from your Home Screen.")
-                : notifications.state === "denied"
-                  ? alert("Notifications are blocked for this site. Allow them in the browser's settings.")
-                  : void notifications.toggle()
-            }
-            title="Notify me when a session needs me or finishes"
-          >
-            {notifications.state === "on" ? "Notifications on" : notifications.state === "working" ? "…" : "Notifications"}
-          </button>
-        ) : null}
-        <button
-          className="theme-toggle"
-          onClick={() => {
-            const light = document.documentElement.classList.toggle("theme-light");
-            localStorage.setItem("side-web-theme", light ? "light" : "dark");
-          }}
-        >
-          Theme
-        </button>
-        <button className="link" onClick={onLogout}>Sign out</button>
-      </footer>
+      ))}
     </nav>
   );
 }
 
-/** The IDE's empty session: the project's name over a composer whose chips
- * pick the project, agent and model, permissions and account. */
-function NewSession({
-  host,
-  project,
-  projects,
-  accounts,
-  background,
-  onError,
-}: {
-  host: HostDescriptor;
-  project: HostProject;
-  projects?: HostProject[];
-  accounts: HostAccountSummary[];
-  background?: (cwd: string) => string | undefined;
-  onError: (error: unknown) => void;
-}) {
-  const [projectId, setProjectId] = useState(project.id);
-  const current = projects?.find((item) => item.id === projectId) ?? project;
-  const [catalog, setCatalog] = useState<HostModelCatalog>();
-  const [choice, setChoice] = useState("");
-  const [mode, setMode] = useState<RuntimeMode>("supervised");
-  const [account, setAccount] = useState("");
-  const [worktrees, setWorktrees] = useState<HostWorktree[]>([]);
-  const [worktree, setWorktree] = useState("");
-  useEffect(() => setProjectId(project.id), [project.id]);
-  useEffect(() => {
-    setWorktree("");
-    rpc<{ worktrees: HostWorktree[] }>("git.worktrees", { projectId: current.id }).then(
-      (listed) => setWorktrees(listed.worktrees.filter((tree) => !tree.isMain && !tree.missing)),
-      () => setWorktrees([]),
-    );
-  }, [current.id]);
-  const newWorktree = async () => {
-    const branch = prompt("Branch for the new worktree")?.trim();
-    if (!branch) return;
+function SheetHost() {
+  const app = useModel();
+  const sheet = app.state.sheet;
+  if (!sheet) return null;
+  const close = () => app.set({ sheet: undefined });
+  return (
+    <Sheet onClose={close}>
+      {sheet.kind === "usage" ? <UsageSheet /> : <HostAccountsSheet provider={sheet.provider} onDone={close} />}
+    </Sheet>
+  );
+}
+
+/** Pairing: paste the host's link, or a credential from
+ * `side-host pair --name <device>`. The address is this page's. */
+function ConnectView() {
+  const [token, setToken] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [failure, setFailure] = useState<string>();
+  const connect = async (input: string) => {
+    setFailure(undefined);
+    // A pairing link (`side://pair?host=…&token=…`) carries the credential.
+    let credential = input.trim();
+    if (credential.startsWith("side://")) credential = new URL(credential.replace(/^side:/, "https:")).searchParams.get("token") ?? "";
+    if (!/^[A-Za-z0-9_-]{43}$/.test(credential)) return setFailure("That is not a pairing link or a 43-character credential.");
+    setConnecting(true);
     try {
-      const created = await rpc<HostWorktree>("git.worktreeCreate", { projectId: current.id, branch });
-      setWorktrees((list) => [...list, created]);
-      setWorktree(created.path);
+      await login(credential);
+      await model.refresh();
     } catch (error) {
-      onError(error);
+      setFailure(error instanceof Error ? error.message : String(error));
+    } finally {
+      setConnecting(false);
     }
   };
-  useEffect(() => {
-    rpc<HostModelCatalog>("models.list", { projectId: current.id }).then(setCatalog, onError);
-  }, [current.id, onError]);
-  const options = host.providers.flatMap((harness) =>
-    (catalog?.models[harness] ?? []).map((model) => ({ harness, model, key: `${harness}|${model.id}` })),
-  );
-  useEffect(() => {
-    if (options.some((option) => option.key === choice)) return;
-    const preferred = options.find((option) => option.harness === "claude") ?? options[0];
-    setChoice(preferred?.key ?? "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catalog]);
-  const selected = options.find((option) => option.key === choice);
-  const harness = selected?.harness;
-  const providerAccounts = accounts.filter((item) => item.provider === harness);
-  useEffect(() => {
-    setAccount(providerAccounts.find((item) => item.pool)?.id ?? "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [harness, accounts.length]);
+  const paste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) await connect(text);
+    } catch {
+      setFailure("The browser did not share the clipboard. Paste the link in the field below.");
+    }
+  };
   return (
-    <div className="session-view">
-      <ProjectBackground url={background?.(current.cwd)} />
-      <div className="empty-session">
-        <div className="empty-title ellipsis">{current.name}</div>
-        <Composer
-          placeholder="Ask, build, @ for files, / for skills…"
-          scope={{ projectId: current.id, cwd: worktree || current.cwd, harness }}
-          disabled={!selected}
-          context={<span className="mono ellipsis">{tilde(worktree || current.cwd)}</span>}
-          tools={
-            <>
-              {projects && projects.length > 1 ? (
-                <Chip value={current.id} onChange={setProjectId} label={current.name}>
-                  {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </Chip>
-              ) : null}
-              <Chip
-                value={choice}
-                onChange={setChoice}
-                disabled={!options.length}
-                icon={harness ? <HarnessIcon harness={harness} className="harness" /> : undefined}
-                label={selected?.model.name ?? (catalog ? "No models" : "Loading…")}
-              >
-                {host.providers.map((provider) =>
-                  catalog?.models[provider]?.length ? (
-                    <optgroup key={provider} label={provider}>
-                      {catalog.models[provider]!.map((model) => (
-                        <option key={model.id} value={`${provider}|${model.id}`}>{model.name}</option>
-                      ))}
-                    </optgroup>
-                  ) : null,
-                )}
-              </Chip>
-              <Chip
-                value={worktree}
-                onChange={(value) => (value === "+new" ? void newWorktree() : setWorktree(value))}
-                icon={<BranchIcon />}
-                label={worktree ? worktrees.find((tree) => tree.path === worktree)?.branch ?? worktree.split("/").pop()! : "Local"}
-              >
-                <option value="">Local checkout</option>
-                {worktrees.map((tree) => <option key={tree.path} value={tree.path}>{tree.branch ?? tree.path.split("/").pop()}</option>)}
-                <option value="+new">New worktree…</option>
-              </Chip>
-              <Chip value={mode} onChange={setMode} label={MODES.find((item) => item.id === mode)!.label}>
-                {MODES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-              </Chip>
-              {providerAccounts.length ? (
-                <Chip value={account} onChange={setAccount} label={providerAccounts.find((item) => item.id === account)?.label ?? "Default"}>
-                  <option value="">Default</option>
-                  {providerAccounts.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-                </Chip>
-              ) : null}
-            </>
-          }
-          onSend={async ({ text, attachments, plan, prompt }) => {
-            if (!selected) return;
-            try {
-              const receipt = await command({
-                type: "create",
-                projectId: current.id,
-                ...(worktree ? { worktreeCwd: worktree } : {}),
-                harness: selected.harness,
-                model: selected.model.id,
-                runtimeMode: mode,
-                ...(account ? { providerAccountId: account } : {}),
-              });
-              await command({
-                type: "send",
-                sessionId: receipt.sessionId,
-                text,
-                ...(attachments.length ? { attachments } : {}),
-                ...(prompt ? { prompt } : {}),
-                ...(plan ? { intent: "plan" as const } : {}),
-              });
-              go({ kind: "session", projectId: current.id, sessionId: receipt.sessionId });
-            } catch (error) {
-              onError(error);
-              throw error;
-            }
+    <div className="screen connect">
+      <header className="large-title">Connect to a host</header>
+      <div className="scroll">
+        <div className="form-section">
+          <div className="form-group">
+            <button className="form-row link" onClick={() => void paste()}>
+              <Icon name="copy" size={17} />
+              Paste
+            </button>
+          </div>
+          <div className="form-footer">
+            On the host, run <code>side-host pair --name iPhone --url {location.origin}</code> and copy the link.
+          </div>
+        </div>
+        <form
+          className="form-section"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void connect(token);
           }}
-        />
-        {catalog?.errors[harness ?? "claude"] ? <div className="error">{catalog.errors[harness ?? "claude"]}</div> : null}
+        >
+          <div className="form-header">Or enter it</div>
+          <div className="form-group">
+            <input className="form-row" value={location.host} readOnly aria-label="Host address" />
+            <input
+              className="form-row"
+              type="password"
+              value={token}
+              placeholder="Device credential"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              onChange={(event) => setToken(event.target.value)}
+            />
+          </div>
+          {failure ? <div className="form-footer del">{failure}</div> : null}
+          <div className="form-group spaced">
+            <button className="form-row link between" disabled={connecting || !token}>
+              Connect
+              {connecting ? <Spinner size={16} /> : null}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
 }
 
-function App() {
-  const route = useRoute();
-  const [host, setHost] = useState<HostDescriptor | null>();
-  const [projects, setProjects] = useState<HostProject[]>([]);
-  const [sessions, setSessions] = useState<Record<string, HostSessionSummary[]>>({});
-  const [accounts, setAccounts] = useState<HostAccountSummary[]>([]);
-  const [rail, setRail] = useState<HostRailState>();
-  const [menu, setMenu] = useState(false);
-  const [changes, setChanges] = useState(false);
-  const [files, setFiles] = useState(false);
-  const [browsing, setBrowsing] = useState(false);
-  const [error, setError] = useState("");
-  const onError = useCallback((reason: unknown) => {
-    if (reason instanceof Unauthorized) setHost(null);
-    else setError(reason instanceof Error ? reason.message : String(reason));
+/** The keyboard covers the tab bar, as on iOS. */
+function useKeyboardClass() {
+  useEffect(() => {
+    const typing = () => {
+      const element = document.activeElement;
+      document.body.classList.toggle(
+        "typing",
+        element instanceof HTMLTextAreaElement || (element instanceof HTMLInputElement && !["checkbox", "radio", "button"].includes(element.type)),
+      );
+    };
+    addEventListener("focusin", typing);
+    addEventListener("focusout", () => setTimeout(typing));
+    return () => removeEventListener("focusin", typing);
   }, []);
-  const connect = useCallback(() => {
-    describe<HostDescriptor>().then(setHost, (reason) => {
-      if (reason instanceof Unauthorized) setHost(null);
-      else onError(reason);
-    });
-  }, [onError]);
-  useEffect(connect, [connect]);
-  const [, setModelsLoaded] = useState(0);
-  useEffect(() => {
-    if (!host) return;
-    // Model names, as the IDE shows them ("Claude Opus 5" rather than "opus").
-    rpc<HostModelCatalog>("models.list").then((catalog) => {
-      for (const [harness, models] of Object.entries(catalog.models))
-        if (models?.length) setHarnessModels(harness as RemoteProvider, models);
-      setModelsLoaded((n) => n + 1);
-    }, () => undefined);
-  }, [host?.environmentId]);
-  usePoll(
-    async () => {
-      if (!host) return;
-      try {
-        const list = await rpc<HostProject[]>("projects.list");
-        setProjects(list);
-        const entries = await Promise.all(
-          list.map(async (project) => [project.id, await rpc<HostSessionSummary[]>("sessions.list", { projectId: project.id })] as const),
-        );
-        setSessions(Object.fromEntries(entries));
-        setAccounts(await rpc<HostAccountSummary[]>("accounts.list"));
-        if (host.capabilities.includes("projects.rail")) setRail(await rpc<HostRailState>("projects.rail"));
-      } catch (reason) {
-        onError(reason);
-      }
-    },
-    5000,
-    [host?.environmentId],
-  );
-  const shown = useMemo(() => visibleProjects(projects, rail), [projects, rail]);
-  const summary = useMemo(() => {
-    if (route.kind !== "session") return undefined;
-    return sessions[route.projectId]?.find((session) => session.id === route.sessionId);
-  }, [route, sessions]);
-  const project = route.kind === "session" || route.kind === "new" ? projects.find((item) => item.id === route.projectId) : undefined;
-  // The working copy the Changes panel shows: the session's worktree, else the project.
-  const workCwd = summary ? summary.worktreeCwd ?? summary.cwd ?? project?.cwd : project?.cwd;
-  const attention = Object.values(sessions).flat().filter((session) => session.needsInput && !session.archived).length;
-  useEffect(() => {
-    document.title = attention ? `(${attention}) sIDE Host` : "sIDE Host";
-  }, [attention]);
-
-  if (host === undefined) return <div className="empty">Connecting…</div>;
-  if (host === null) return <Login onDone={connect} />;
-  return (
-    <div className={`app${menu ? " menu-open" : ""}`}>
-      <Sidebar
-        host={host}
-        projects={shown}
-        allProjects={projects}
-        rail={rail}
-        onRail={setRail}
-        onError={onError}
-        sessions={sessions}
-        accounts={accounts}
-        route={route}
-        onClose={() => setMenu(false)}
-        onOpenFolder={() => {
-          setMenu(false);
-          setBrowsing(true);
-        }}
-        onLogout={() => void logout().then(() => setHost(null))}
-      />
-      <div className="scrim" onClick={() => setMenu(false)} />
-      <main>
-        <div className="topbar">
-          <button className="icon menu" onClick={() => setMenu(true)} aria-label="Open menu">
-            <svg className="glyph" viewBox="0 0 16 16" aria-hidden><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
-            {attention ? <span className="badge">{attention}</span> : null}
-          </button>
-          <div className="topbar-title">
-            <span>{route.kind === "automations" ? "Automations" : route.kind === "new" ? `New session · ${project?.name ?? ""}` : (summary && sessionDisplayTitle(summary.title, summary.harness)) || (route.kind === "home" ? host.name : "")}</span>
-            {summary ? (
-              <span className="muted">
-                {project?.name} · {modelName(summary)}
-                {summary.branch ? ` · ${summary.branch}` : ""}
-                {summary.accountInUse ? ` · ${summary.accountInUse}` : ""}
-              </span>
-            ) : null}
-          </div>
-          {workCwd && project ? (
-            <>
-              <button
-                className={`topbar-button${files ? " on" : ""}`}
-                onClick={() => {
-                  setFiles(!files);
-                  setChanges(false);
-                }}
-                aria-pressed={files}
-              >
-                Files
-              </button>
-              <button
-                className={`topbar-button${changes ? " on" : ""}`}
-                onClick={() => {
-                  setChanges(!changes);
-                  setFiles(false);
-                }}
-                aria-pressed={changes}
-              >
-                Changes
-              </button>
-            </>
-          ) : null}
-          {summary ? <SessionMenu summary={summary} onError={onError} /> : null}
-        </div>
-        {error ? (
-          <div className="toast" onClick={() => setError("")}>{error}</div>
-        ) : null}
-        {route.kind === "session" ? (
-          <SessionView
-            key={route.sessionId}
-            sessionId={route.sessionId}
-            projectId={route.projectId}
-            branch={summary?.branch}
-            accounts={accounts}
-            review={host.capabilities.includes("sessions.review")}
-            background={project ? backgroundUrl(project.cwd, rail) : undefined}
-            onError={onError}
-          />
-        ) : route.kind === "automations" ? (
-          <AutomationsPage onError={onError} />
-        ) : route.kind === "new" && project ? (
-          <NewSession key={project.id} host={host} project={project} accounts={accounts} background={(cwd) => backgroundUrl(cwd, rail)} onError={onError} />
-        ) : (
-          <>
-            <Home sessions={sessions} />
-            {projects.length ? (
-              <div className="wide-only">
-                <NewSession host={host} project={recentProject(shown, sessions)} projects={shown} accounts={accounts} background={(cwd) => backgroundUrl(cwd, rail)} onError={onError} />
-              </div>
-            ) : null}
-          </>
-        )}
-      </main>
-      {files && workCwd && project ? (
-        <FilesPanel key={workCwd} projectId={project.id} cwd={workCwd} onClose={() => setFiles(false)} onError={onError} />
-      ) : null}
-      {changes && workCwd ? <ChangesPanel key={workCwd} cwd={workCwd} onClose={() => setChanges(false)} onError={onError} /> : null}
-      {browsing ? (
-        <FolderBrowser
-          onClose={() => setBrowsing(false)}
-          onError={onError}
-          onOpen={(cwd) =>
-            void rpc<HostProject>("projects.open", { cwd }).then(async (opened) => {
-              setBrowsing(false);
-              setProjects((list) => (list.some((item) => item.id === opened.id) ? list : [...list, opened]));
-              // An opened folder joins the list, as it joins the desktop's rail.
-              if (rail && !shown.some((item) => item.cwd === opened.cwd))
-                setRail(
-                  await rpc<HostRailState>("projects.setRail", {
-                    projects: [...shown.map((item) => item.cwd), opened.cwd],
-                    archived: rail.archived.filter((cwd) => cwd !== opened.cwd),
-                  }).catch(() => rail),
-                );
-              go({ kind: "new", projectId: opened.id });
-            }, onError)
-          }
-        />
-      ) : null}
-    </div>
-  );
 }
 
-/** Rename, pin, archive or delete the open session. */
-function SessionMenu({ summary, onError }: { summary: HostSessionSummary; onError: (error: unknown) => void }) {
-  const [open, setOpen] = useState(false);
-  const update = (patch: Record<string, unknown>) =>
-    rpc("sessions.update", { projectId: summary.projectId, sessionId: summary.id, ...patch }).catch(onError);
-  const actions: [string, () => unknown][] = [
-    [
-      "Rename",
-      () => {
-        const title = prompt("Session name", sessionDisplayTitle(summary.title, summary.harness));
-        if (title?.trim()) void update({ title: title.trim() });
-      },
-    ],
-    [summary.pinned ? "Unpin" : "Pin", () => void update({ pinned: !summary.pinned })],
-    [
-      summary.archived ? "Unarchive" : "Archive",
-      () => void update({ archived: !summary.archived }).then(() => !summary.archived && go({ kind: "home" })),
-    ],
-    [
-      "Delete",
-      () => {
-        if (!confirm(`Delete "${sessionDisplayTitle(summary.title, summary.harness)}"? Its transcript is removed from the host.`)) return;
-        void rpc("sessions.delete", { projectId: summary.projectId, sessionId: summary.id }).then(() => go({ kind: "home" }), onError);
-      },
-    ],
-  ];
-  return (
-    <div className="menu-anchor">
-      <button className="icon" aria-label="Session actions" onClick={() => setOpen(!open)}>
-        <svg className="glyph" viewBox="0 0 16 16" aria-hidden>
-          <circle cx="3.5" cy="8" r="1.2" fill="currentColor" /><circle cx="8" cy="8" r="1.2" fill="currentColor" /><circle cx="12.5" cy="8" r="1.2" fill="currentColor" />
-        </svg>
-      </button>
-      {open ? (
-        <>
-          <div className="menu-backdrop" onClick={() => setOpen(false)} />
-          <div className="popover">
-            {actions.map(([label, action]) => (
-              <button
-                key={label}
-                className={label === "Delete" ? "danger" : ""}
-                onClick={() => {
-                  setOpen(false);
-                  action();
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </>
-      ) : null}
-    </div>
-  );
+function App() {
+  useKeyboardClass();
+  return <Root />;
 }
 
-/** The project worked in last, which a new session starts in by default. */
-function recentProject(projects: HostProject[], sessions: Record<string, HostSessionSummary[]>): HostProject {
-  const latest = Object.values(sessions).flat().sort((a, b) => b.updatedAt - a.updatedAt)[0];
-  return projects.find((project) => project.id === latest?.projectId) ?? projects[0];
-}
-
-/** What runs or waits right now, across every project. */
-function Home({ sessions }: { sessions: Record<string, HostSessionSummary[]> }) {
-  const all = Object.values(sessions).flat().filter((session) => !session.archived);
-  const live = all
-    .filter((session) => session.needsInput || session.status === "running")
-    .sort((a, b) => Number(!!b.needsInput) - Number(!!a.needsInput) || b.updatedAt - a.updatedAt);
-  const recent = all.filter((session) => !live.includes(session)).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 12);
-  return (
-    <div className="home narrow-only">
-      <div className="section-label">Now</div>
-      {live.length ? <div className="list">{live.map((session) => <SessionRow key={session.id} session={session} />)}</div> : <p className="muted empty-line">Nothing is running.</p>}
-      <div className="section-label">Recent</div>
-      <div className="list">{recent.map((session) => <SessionRow key={session.id} session={session} />)}</div>
-    </div>
-  );
-}
-
-if (localStorage.getItem("side-web-theme") === "light") document.documentElement.classList.add("theme-light");
+// Notifications open their session; register the worker that shows them.
+if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/web/sw.js", { scope: "/web/" }).catch(() => undefined);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

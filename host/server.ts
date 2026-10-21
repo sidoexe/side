@@ -21,6 +21,7 @@ import type { LinkedWorkItem } from "../src/features/sessions/model/session";
 import { parseGithubWorkItemUrl } from "../src/features/sessions/model/sessionWorkItem";
 import { SyncTransfers } from "./sync-transfer";
 import { DEFAULT_WEB_ROOT, sameOrigin, serveWeb, webSecurityHeaders, webToken } from "./web";
+import { DEPLOY_KEY, deployWebRelease } from "./web-deploy";
 import { browseHostDirectories } from "./browse";
 import {
   createHostBranch,
@@ -292,6 +293,31 @@ export function createHostServer(
         }
         response.writeHead(200, { "Content-Type": image.type, "Cache-Control": "private, max-age=31536000, immutable" });
         createReadStream(image.path).pipe(response);
+        return;
+      }
+      // A release pipeline puts its browser app here, with the deploy key
+      // (`side-host deploy-key`), never a device credential. Browsers are
+      // refused: the key travels only in a native request's header.
+      if (request.url === "/web/deploy") {
+        response.setHeader("Content-Type", "application/json");
+        response.setHeader("Cache-Control", "no-store");
+        const key = request.headers.authorization?.match(/^Bearer (\S+)$/)?.[1];
+        if (request.method !== "POST" || request.headers.origin) {
+          response.writeHead(403).end(JSON.stringify({ error: "Unsupported request origin or route" }));
+          return;
+        }
+        if (!key || !DEPLOY_KEY.test(key) || !engine.store.deployKeyMatches(key)) {
+          response.writeHead(401).end(JSON.stringify({ error: "Deploy key is invalid or revoked" }));
+          return;
+        }
+        try {
+          const deployed = await deployWebRelease((await body(request)).version, webRoot);
+          console.log(`Deployed the browser app of ${deployed.version}`);
+          response.end(JSON.stringify(deployed));
+        } catch (error) {
+          if (!response.destroyed)
+            response.writeHead(400).end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+        }
         return;
       }
       if (!web && (request.url === "/web" || request.url?.startsWith("/web/"))) {

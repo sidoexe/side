@@ -95,14 +95,15 @@ Projects open where you choose them: **Open folder…** opens a folder of this c
 
 ## Open the host in a browser
 
-The host serves a responsive web app at `/web` for a phone or any browser. It looks like the desktop and covers what you do there with a host's sessions:
+The host serves the phone app at `/web`, for a phone's browser or any other: the same screens as the iPhone app, in a page. It covers what you do there with a host's sessions:
 
-- every project's sessions, live transcripts, sending, queuing, steering and stopping, approvals and questions, editing the last message;
-- new sessions in a project, a worktree or a folder opened from the host, with model, effort, permissions and account chips that also change an open session;
-- attachments, Plan mode and Build, `@` files and `/` skills, context usage;
-- the review card after a turn, a Changes panel to stage, commit and push, and a read-only file explorer;
-- rename, pin, archive and delete; automations, run now as a session;
-- notifications when a session needs you or finishes (**Notifications** in the sidebar; on iPhone, add the app to the Home Screen first).
+- **Now**: what waits on you across every project (To review, with a Checked button on a done session), what is working, and what this browser checked; the tab's badge counts what waits on you;
+- **Projects**: the desktop's projects, folded to their counts, with a filter, new sessions, and **Open folder** to open a folder of the host;
+- live transcripts, sending, queuing, steering and stopping, approvals and questions, editing the last message, Plan mode and Build, photo and file attachments, context usage, and a usage-limit notice that resumes at reset;
+- model, effort, permissions and account chips, in a new session and in an open one;
+- rename, pin, archive, delete and mark checked, from a session's **…** menu or a long press on its row;
+- the host's accounts and their usage, signing one in again or adding one, under **… → Usage & accounts**; the desktop's web apps, which open in a tab of their own;
+- notifications when a session needs you or finishes (**… → Notifications**; on iPhone, add the page to the Home Screen first).
 
 1. Create a credential for the browser on the host: `~/.side-host/bin/side-host pair --name "Web"`.
 2. Publish only `/web` on your tailnet (HTTPS, reachable from your devices only):
@@ -116,6 +117,16 @@ The host serves a responsive web app at `/web` for a phone or any browser. It lo
 The token is kept in an `HttpOnly`, `SameSite=Strict` cookie scoped to `/web` for 30 days. `/web/rpc` answers only requests from the page's own origin; the desktop endpoint `/rpc` still refuses every browser. **Sign out** clears the cookie; `side-host revoke DEVICE_ID` ends access everywhere. Like any device token, it controls the host as its OS user: do not publish `/web` with `tailscale funnel` or another public tunnel.
 
 On the host machine itself, `http://127.0.0.1:3775/web/` works without Tailscale.
+
+### Deploy the web app with each release
+
+A host serves the web app its package came with. A host the desktop does not update (connected by URL rather than SSH) can still get each release's web app as soon as the release is published: the `deploy-web` job of the release workflow joins the tailnet and asks the host to install it. The host downloads that release's own package from GitHub, checks it against the published checksum, and swaps in its `web` folder without restarting; the one it replaces stays as `web.previous`. The deploy key opens only this: it cannot read sessions or run anything, and it can only install the web app of an official release.
+
+1. On the host, issue the key (shown once; issuing another replaces it, `--revoke` removes it): `~/.side-host/bin/side-host deploy-key`.
+2. In Tailscale, create a tag `tag:ci`, allow it to reach only that machine on port 443, and create an OAuth client that can create auth keys for `tag:ci`.
+3. In the GitHub repository, add the secrets `SIDE_WEB_DEPLOY_KEY` (the key), `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`, and the variable `SIDE_WEB_DEPLOY_URL` (`https://<machine>.<tailnet>.ts.net`). The job is skipped while the variable is unset.
+
+The host needs a release that has `deploy-key`. By hand, `npm run web:deploy` in a checkout builds the web app and puts it on the host installed in `~/.side-host` the same way.
 
 ## Preview a machine's local web servers
 

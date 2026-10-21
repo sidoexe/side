@@ -113,6 +113,8 @@ async function main() {
     [--url <address>]   Also print a side:// link the iPhone app pairs with
   devices               List paired devices
   revoke <device-id>    Revoke a device credential
+  deploy-key            Issue the key a release pipeline deploys /web with (shown once)
+    [--revoke]          Revoke it instead
   app ACTION            The sIDE app CLI, for agents this host runs (app --help)
 Options: --data-dir <directory> --port <port> (default 3775)
 Connect another computer using an SSH forward to the loopback port.`);
@@ -243,6 +245,20 @@ Connect another computer using an SSH forward to the loopback port.`);
     store.close();
     if (!revoked) throw new Error("Device not found");
     console.log("Device revoked");
+    return;
+  }
+  if (command === "deploy-key") {
+    if (args.includes("--revoke")) {
+      const revoked = store.revokeDeployKey();
+      store.close();
+      console.log(revoked ? "Deploy key revoked" : "No deploy key was issued");
+      return;
+    }
+    const key = store.issueDeployKey();
+    store.close();
+    console.log(
+      `${key}\nIt replaces any earlier deploy key. It only lets a request to /web/deploy install the browser app of an official release.`,
+    );
     return;
   }
   if (command !== "serve") {

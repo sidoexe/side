@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
-import { randomUUID, createHash, randomBytes } from "node:crypto";
+import { randomUUID, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { dirname, join } from "node:path";
+import { deployKeyHash, newDeployKey } from "./web-deploy";
 import type {
   CommandReceipt,
   HostProject,
@@ -343,6 +344,28 @@ export class HostStore {
     return !!this.db
       .prepare("SELECT id FROM devices WHERE hash=?")
       .get(this.hash(token));
+  }
+
+  /** The key a release pipeline deploys the browser app with: it opens
+   * nothing else. Issuing one replaces the last; only its hash is kept. */
+  issueDeployKey(): string {
+    const key = newDeployKey();
+    this.db
+      .prepare("INSERT OR REPLACE INTO metadata VALUES ('webDeployKey', ?)")
+      .run(deployKeyHash(key));
+    return key;
+  }
+
+  revokeDeployKey(): boolean {
+    return Number(this.db.prepare("DELETE FROM metadata WHERE key='webDeployKey'").run().changes) > 0;
+  }
+
+  deployKeyMatches(key: string): boolean {
+    const row = this.db.prepare("SELECT value FROM metadata WHERE key='webDeployKey'").get();
+    if (!row) return false;
+    const expected = Buffer.from(String(row.value), "hex");
+    const actual = Buffer.from(deployKeyHash(key), "hex");
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
   }
 
   private hash(token: string): string {
