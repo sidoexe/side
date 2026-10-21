@@ -6,7 +6,7 @@ import {
 } from "../src/features/source-control/model/gitText";
 import type { HostProvider } from "./providers";
 
-const TEXT_ORDER: RemoteProvider[] = ["claude", "cursor", "codex", "grok", "opencode"];
+const TEXT_ORDER: RemoteProvider[] = ["claude", "cursor", "codex", "grok", "opencode", "pi", "omp", "devin"];
 const TIMEOUT_MS = 90_000;
 
 export type StagedContext = { branch: string | null; summary: string; patch: string };

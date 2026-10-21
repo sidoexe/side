@@ -24,6 +24,11 @@ import { generateCodexSessionTitle } from "../src/integrations/harness/providers
 import { generateClaudeSessionTitle } from "../src/integrations/harness/providers/claude/claudeTitle";
 import { generateCodexBranchName } from "../src/integrations/harness/providers/codex/codexGit";
 import { generateClaudeBranchName } from "../src/integrations/harness/providers/claude/claudeGit";
+import { generateCursorBranchName } from "../src/integrations/harness/providers/cursor/cursorGit";
+import { generateGrokBranchName } from "../src/integrations/harness/providers/grok/grokGit";
+import { generateOpenCodeBranchName } from "../src/integrations/harness/providers/opencode/opencodeGit";
+import { runOmpTextPrompt, runPiTextPrompt } from "../src/integrations/harness/providers/pi/piText";
+import { runDevinTextPrompt } from "../src/integrations/harness/providers/devin/devinText";
 import { generateCursorSessionTitle } from "../src/integrations/harness/providers/cursor/cursorTitle";
 import { generateGrokSessionTitle } from "../src/integrations/harness/providers/grok/grokTitle";
 import { generateOpenCodeSessionTitle } from "../src/integrations/harness/providers/opencode/opencodeTitle";
@@ -107,6 +112,7 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     approve: cursor.respondCursorApproval,
     answer: cursor.respondCursorQuestion,
     generateTitle: generateCursorSessionTitle,
+    generateBranchName: generateCursorBranchName,
   },
   grok: {
     runText: runGrokTextPrompt,
@@ -118,6 +124,7 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     approve: grok.respondGrokApproval,
     answer: grok.respondGrokQuestion,
     generateTitle: generateGrokSessionTitle,
+    generateBranchName: generateGrokBranchName,
   },
   opencode: {
     runText: runOpenCodeTextPrompt,
@@ -131,8 +138,10 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     approve: opencode.respondOpenCodeApproval,
     answer: opencode.respondOpenCodeQuestion,
     generateTitle: generateOpenCodeSessionTitle,
+    generateBranchName: generateOpenCodeBranchName,
   },
   pi: {
+    runText: runPiTextPrompt,
     steer: pi.steerPiTurn,
     rewind: pi.rewindPiLastTurn,
     send: pi.sendPiTurn,
@@ -146,6 +155,7 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     generateTitle: generatePiSessionTitle,
   },
   omp: {
+    runText: runOmpTextPrompt,
     steer: omp.steerOmpTurn,
     rewind: omp.rewindOmpLastTurn,
     send: omp.sendOmpTurn,
@@ -184,6 +194,7 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     answer: unsupportedQuestion,
   },
   devin: {
+    runText: runDevinTextPrompt,
     send: devin.sendDevinTurn,
     compact: devin.compactDevinContext,
     cancel: devin.cancelDevinTurn,

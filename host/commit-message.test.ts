@@ -70,3 +70,18 @@ it("writes the message from the host's staged diff", async () => {
     store.close();
   }
 });
+
+it("writes with Pi, omp or Devin on a host that has only those", async () => {
+  for (const id of ["pi", "omp", "devin"] as const) {
+    const provider = fake('{"subject":"From ' + id + '"}');
+    expect(await hostCommitMessage({ cwd: "/repo", context, installed: [id], providers: { [id]: provider } })).toBe(`From ${id}`);
+  }
+});
+
+it("every provider the desktop names branches with does so on a host too", async () => {
+  const { hostProviders } = await import("./providers");
+  for (const id of ["codex", "claude", "cursor", "grok", "opencode"] as const)
+    expect(hostProviders[id].generateBranchName, id).toBeTypeOf("function");
+  for (const id of ["codex", "claude", "cursor", "grok", "opencode", "pi", "omp", "devin"] as const)
+    expect(hostProviders[id].runText, id).toBeTypeOf("function");
+});
