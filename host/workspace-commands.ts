@@ -97,10 +97,11 @@ export const WORKSPACE_COMMANDS = [
 ] as const;
 export type WorkspaceCommand = (typeof WORKSPACE_COMMANDS)[number];
 
-// Remote RPC has bounded request and response bodies. Keep file operations
-// within those bounds even after JSON escaping or base64 encoding.
-const MAX_TEXT_FILE = 1024 * 1024;
-const MAX_PREVIEW_FILE = 10 * 1024 * 1024;
+// The same limits as a local project (src-tauri/src/fs.rs). Remote RPC
+// bounds request and response bodies at 64 MiB, which these fit in after
+// JSON escaping or base64 encoding.
+const MAX_TEXT_FILE = 8 * 1024 * 1024;
+const MAX_PREVIEW_FILE = 25 * 1024 * 1024;
 const MAX_STAT_FILES = 64;
 const ROOTS_TTL_MS = 5_000;
 

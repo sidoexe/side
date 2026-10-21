@@ -129,7 +129,7 @@ fn write(path: &Path, machines: &[StoredMachine]) -> Result<(), String> {
 
 /// Hosts split large session syncs into pieces below this cap
 /// (`host/sync-transfer.ts`), so it bounds memory without limiting transcripts.
-const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
 
 fn rpc(
     endpoint: &str,

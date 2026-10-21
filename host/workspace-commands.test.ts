@@ -374,3 +374,13 @@ it("refuses to delete a worktree a running session uses", async () => {
     store.close();
   }
 });
+
+it("opens text files as large as a local project allows, and no larger", async () => {
+  const { commands, repo } = fixture();
+  const a = repo("big");
+  // Over the old 1 MiB host limit, under the local 8 MiB one.
+  a.write("medium.txt", "x".repeat(2 * 1024 * 1024));
+  a.write("huge.txt", "x".repeat(8 * 1024 * 1024 + 1));
+  expect(await commands.run("read_text_file", { path: join(a.cwd, "medium.txt") })).toHaveLength(2 * 1024 * 1024);
+  await expect(commands.run("read_text_file", { path: join(a.cwd, "huge.txt") })).rejects.toThrow(/too large.*8 MB/);
+});

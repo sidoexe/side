@@ -109,9 +109,9 @@ const resolveBinary: Record<RemoteProvider, () => Promise<{ path: string }>> = {
   antigravity: () => resolveAntigravityBinary(),
   devin: () => resolveDevinBinary(),
 };
-// A 1 MiB text file can expand to 6 MiB when JSON escapes control characters.
-// Existing files.write sends both the original and replacement contents.
-const MAX_BODY = 16 * 1024 * 1024;
+// files.write sends both the original and replacement contents of a text
+// file of up to 8 MiB, which JSON escaping enlarges.
+const MAX_BODY = 64 * 1024 * 1024;
 const discoverModels: Record<RemoteProvider, (cwd: string) => Promise<AgentModel[]>> = {
   codex: discoverCodexModels,
   claude: discoverClaudeModels,
