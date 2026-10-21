@@ -1402,3 +1402,32 @@ describe("plan edits", () => {
     expect(() => engine.command({ type: "planEdit", commandId: "other", sessionId: id, blockId: "nope", text: "x" })).toThrow(/not found/);
   });
 });
+
+describe("task lists", () => {
+  it("gives a conversation bound again after its turn the task list it had", async () => {
+    const { engine, store, provider, turns, id } = setup("claude");
+    provider.restoreTaskLists = vi.fn();
+    const list = { key: "claude", providerSessionId: "provider-1", items: [{ id: "1", text: "Write tests", status: "in_progress" as const }] };
+    const current = store.session(id);
+    store.save(
+      {
+        ...current,
+        revision: current.revision + 1,
+        session: {
+          ...current.session,
+          providerSessionId: "provider-1",
+          blocks: [{ id: "tasks", role: "tasks", text: "", taskList: list }],
+        },
+      },
+      { type: "session.test" },
+    );
+    engine.command({ type: "send", commandId: "send", sessionId: id, text: "Go on" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    turns[0].finish();
+    // The list as the finished turn left it.
+    await vi.waitFor(() => expect(provider.restoreTaskLists).toHaveBeenCalled());
+    const saved = store.session(id).session.blocks.find((block) => block.role === "tasks")!.taskList!;
+    expect(provider.restoreTaskLists).toHaveBeenLastCalledWith(id, [saved]);
+    expect(saved.items.map((item) => item.text)).toEqual(["Write tests"]);
+  });
+});

@@ -19,6 +19,7 @@ import {
   canReplaceSessionTitle,
   formatSessionTitle,
   titleFromPrompt,
+  type Block,
   type Session,
 } from "../src/features/sessions/model/session";
 import { namedWorktreeBranch } from "../src/features/source-control/model/worktrees";
@@ -119,9 +120,16 @@ function bindProvider(
   providerSessionId: string,
   cwd: string,
   account: string | undefined,
+  /** The transcript, so the provider can take back its task lists. */
+  blocks?: readonly Block[],
 ): void {
   if (account) provider.bind(id, providerSessionId, cwd, account);
   else provider.bind(id, providerSessionId, cwd);
+  // As bindHarnessSession on the desktop: a conversation bound again (each
+  // turn, or after a restart) keeps the task list it had.
+  if (!blocks || !provider.restoreTaskLists) return;
+  const lists = blocks.flatMap((block) => (block.role === "tasks" && block.taskList ? [block.taskList] : []));
+  if (lists.length) provider.restoreTaskLists(id, lists);
 }
 
 /** The concrete account a session's provider conversation belongs to. */
@@ -418,6 +426,7 @@ export class HostEngine {
           value.session.providerSessionId,
           value.session.cwd,
           boundAccount(value),
+          value.session.blocks,
         );
     }
     this.resumeTimer = setInterval(() => this.resumeDue(), 30_000);
@@ -635,6 +644,7 @@ export class HostEngine {
               latest.session.providerSessionId,
               latest.session.cwd,
               boundAccount(latest),
+              latest.session.blocks,
             );
         } catch (error) {
           console.error(
@@ -1504,7 +1514,7 @@ export class HostEngine {
       // A removed account's profile is no longer known: nothing to carry.
       if (!before || this.declared("claude", before))
         carryClaudeTranscript(dir(before), dir(after), session.providerSessionId);
-      bindProvider(provider, session.id, session.providerSessionId, session.cwd, after);
+      bindProvider(provider, session.id, session.providerSessionId, session.cwd, after, session.blocks);
     }
     return { ...value, accountInUse: after ?? DEFAULT_ACCOUNT };
   }
@@ -1705,6 +1715,7 @@ export class HostEngine {
             persisted.providerSessionId,
             persisted.cwd,
             boundAccount(persistedValue),
+            persisted.blocks,
           );
       })
       .catch((error) => {

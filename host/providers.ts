@@ -1,3 +1,4 @@
+import type { TaskListMeta } from "../src/features/sessions/model/session";
 import * as codex from "../src/integrations/harness/providers/codex/codex";
 import * as claude from "../src/integrations/harness/providers/claude/claude";
 import * as cursor from "../src/integrations/harness/providers/cursor/cursor";
@@ -57,6 +58,8 @@ export interface HostProvider {
   rewind?(input: RewindLastTurnInput): Promise<RewindLastTurnResult>;
   stop(id: string): Promise<void>;
   bind(id: string, providerId: string, cwd: string, accountId?: string): void;
+  /** Takes back the task lists of a conversation bound again. */
+  restoreTaskLists?(id: string, lists: TaskListMeta[]): void;
   approve(id: string, request: number, decision: ApprovalDecision): void;
   answer(id: string, request: number, reply: UserQuestionReply): void;
   generateTitle?(input: {
@@ -97,6 +100,7 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     cancel: claude.cancelClaudeTurn,
     stop: claude.forgetClaudeSession,
     bind: claude.bindClaudeSession,
+    restoreTaskLists: claude.restoreClaudeTaskLists,
     approve: claude.respondClaudeApproval,
     answer: claude.respondClaudeQuestion,
     generateTitle: generateClaudeSessionTitle,
