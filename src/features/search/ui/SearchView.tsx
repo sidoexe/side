@@ -49,6 +49,7 @@ import {
   searchSessions,
   type SessionSummary,
 } from "../../sessions/data/sessionStore";
+import { searchRemoteSessions } from "../../connections/model/connections";
 
 const SCOPES: { id: SearchScope; label: string }[] = [
   { id: "all", label: "All" },
@@ -218,11 +219,15 @@ export function SearchView({
         activeSessionOwner.current = searchOwner;
         setLoading(true);
         jobs.push(
-          searchSessions({ query: trimmed, searchOwner })
-            .then((result) => {
+          // This computer's conversations and every connected machine's.
+          Promise.all([
+            searchSessions({ query: trimmed, searchOwner }),
+            searchRemoteSessions(trimmed),
+          ])
+            .then(([local, hosts]) => {
               if (cancelled) return;
-              setRemoteHits(hitsFromSessionSearch(result.hits));
-              setSessionTruncated(result.truncated);
+              setRemoteHits(hitsFromSessionSearch([...local.hits, ...hosts.hits]));
+              setSessionTruncated(local.truncated || hosts.truncated);
             })
             .catch(() => {
               if (cancelled) return;

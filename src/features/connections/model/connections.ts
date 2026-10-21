@@ -12,7 +12,7 @@ import {
   type SessionSyncChunk,
   type SessionSyncResponse,
 } from "./protocol";
-import { remoteProjectFor } from "./remoteProjects";
+import { remotePath, remoteProjectFor } from "./remoteProjects";
 import { withRemoteAttachmentPreviews } from "./remoteAttachmentPreviews";
 import { setRemoteWaitingCount } from "../../notifications/model/dockBadge";
 
@@ -421,6 +421,45 @@ export function parseRemoteNotificationId(id: string): { project: string; sessio
   } catch {
     return undefined;
   }
+}
+
+/** A conversation found on a host, shaped as the desktop's own search hits;
+ * its session ID opens it on that host (`parseRemoteNotificationId`). */
+export type RemoteSearchHit = {
+  kind: "conversation" | "message";
+  sessionId: string;
+  cwd: string;
+  harness: string;
+  title: string;
+  updatedAt: number;
+  blockId?: string;
+  role?: string;
+  preview: string;
+};
+
+/** Every connected machine's conversations that match, as its host finds
+ * them (`sessions.search`); a machine that cannot answer adds nothing. */
+export async function searchRemoteSessions(query: string): Promise<{ hits: RemoteSearchHit[]; truncated: boolean }> {
+  const machines = await loadRemoteMachines().catch(() => []);
+  const results = await Promise.all(
+    machines.map((machine) =>
+      remoteRequest<{ hits: (RemoteSearchHit & { cwd: string; sessionId: string })[]; truncated: boolean }>(
+        machine.id,
+        "sessions.search",
+        { query },
+      ).then(
+        (result) => ({
+          truncated: !!result?.truncated,
+          hits: (result?.hits ?? []).map((hit) => {
+            const project = remotePath(machine.environmentId, hit.cwd);
+            return { ...hit, cwd: project, sessionId: remoteNotificationId(project, hit.sessionId) };
+          }),
+        }),
+        () => ({ hits: [], truncated: false }),
+      ),
+    ),
+  );
+  return { hits: results.flatMap((result) => result.hits), truncated: results.some((result) => result.truncated) };
 }
 
 export type RemoteSessionTransition = {

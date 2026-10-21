@@ -11920,6 +11920,12 @@ function Workspace({
                   onToggleSidebar={onToggleSidebar}
                   onOpenFile={onOpenFile}
                   onOpenSession={(sessionId, blockId, query) => {
+                    // A conversation found on a host opens in its tab.
+                    const remote = parseRemoteNotificationId(sessionId);
+                    if (remote) {
+                      onSelectRemoteSession(remote.project, remote.sessionId);
+                      return;
+                    }
                     if (blockId)
                       requestTranscriptJump(sessionId, blockId, query);
                     void onSelectHistorySession(sessionId);

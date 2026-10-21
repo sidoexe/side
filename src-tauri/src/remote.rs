@@ -389,6 +389,7 @@ fn supported_remote_method(method: &str) -> bool {
             | "previews.open"
             | "models.list"
             | "sessions.list"
+            | "sessions.search"
             | "sessions.update"
             | "sessions.delete"
             | "sessions.sync"

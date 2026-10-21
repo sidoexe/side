@@ -24,3 +24,28 @@ describe("remoteSessionTransitions", () => {
     expect(remoteSessionTransitions(project, [summary({ status: "running" })], [summary({ status: "idle", archived: true })])).toEqual([]);
   });
 });
+
+describe("searchRemoteSessions", () => {
+  it("asks every machine's host and opens its hits on that host", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { searchRemoteSessions, parseRemoteNotificationId } = await import("./connections");
+    vi.mocked(invoke).mockImplementation(async (command, input) => {
+      if (command === "remote_machines")
+        return [
+          { id: "work", name: "Work", endpoint: "ssh://work", environmentId: "env-work" },
+          { id: "old", name: "Old", endpoint: "ssh://old", environmentId: "env-old" },
+        ];
+      const { machineId, method } = input as { machineId: string; method: string };
+      if (method !== "sessions.search") return undefined;
+      if (machineId === "old") throw new Error("Unknown method");
+      return {
+        truncated: false,
+        hits: [{ kind: "message", sessionId: "s1", cwd: "/home/me/repo", harness: "codex", title: "Fix", updatedAt: 2, blockId: "b", role: "assistant", preview: "login fixed" }],
+      };
+    });
+    const result = await searchRemoteSessions("login");
+    expect(result.hits).toHaveLength(1);
+    expect(result.hits[0].cwd).toBe("remote://env-work/home/me/repo");
+    expect(parseRemoteNotificationId(result.hits[0].sessionId)).toEqual({ project: "remote://env-work/home/me/repo", sessionId: "s1" });
+  });
+});
