@@ -34,6 +34,7 @@ import { MarkdownPreview } from "../../sessions/ui/AgentMarkdown";
 import { BinaryFileView } from "./BinaryFileView";
 import { ReleaseNotesSurface } from "../../../app/ui/ReleaseNotesSurface";
 import { isRemoteProjectPath } from "../../projects/model/recents";
+import { canEditRemotePlan } from "../../connections/model/remoteSessionActions";
 
 const CommitDiff = lazySurface(async () => {
   const module = await import("../../source-control/ui/CommitDiff");
@@ -381,7 +382,7 @@ function PlanSurface({
             spellCheck={false}
             value={block.text}
             disabled={
-              remote ||
+              (remote && !canEditRemotePlan(plan.sessionId)) ||
               block.plan?.status === "streaming" ||
               block.plan?.status === "building" ||
               block.plan?.status === "built"

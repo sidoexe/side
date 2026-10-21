@@ -252,6 +252,14 @@ export function parseCommand(input: unknown): HostCommand {
       text: promptText(v.text),
       ...(v.prompt !== undefined ? { prompt: providerPrompt(v.prompt) } : {}),
     };
+  if (v.type === "planEdit")
+    return {
+      type: "planEdit",
+      commandId,
+      sessionId,
+      blockId: text(v.blockId, "plan ID"),
+      text: promptText(v.text),
+    };
   if (v.type === "queueRemove" || v.type === "queueSteer")
     return {
       type: v.type,
@@ -816,6 +824,30 @@ export class HostEngine {
                       error: undefined,
                     }
                   : message,
+              ),
+            },
+          };
+        } else if (command.type === "planEdit") {
+          // As the desktop's onUpdatePlan: only a plan not yet building, and
+          // the first text it had is kept, so an edit can be told apart.
+          if (value.status === "running") throw new Error("Wait for the turn to finish before editing the plan");
+          const plan = value.session.blocks.find((block) => block.id === command.blockId && block.role === "plan");
+          if (!plan) throw new Error("Plan not found");
+          if (plan.plan?.status === "streaming" || plan.plan?.status === "building" || plan.plan?.status === "built")
+            throw new Error("This plan can no longer be edited");
+          const originalText = plan.plan?.originalText ?? plan.text;
+          value = {
+            ...value,
+            session: {
+              ...value.session,
+              blocks: value.session.blocks.map((block) =>
+                block === plan
+                  ? {
+                      ...block,
+                      text: command.text,
+                      plan: { ...(block.plan ?? { status: "ready" as const }), status: "ready" as const, originalText, edited: command.text !== originalText },
+                    }
+                  : block,
               ),
             },
           };

@@ -305,6 +305,9 @@ function ConnectedRemoteSession({
   }));
   // Changes to a started session, applied when it is idle.
   const [changes, setChanges] = useState<Configuration>();
+  /** Plans edited here, by block, until the host's copy matches. */
+  const [planEdits, setPlanEdits] = useState<Record<string, string>>({});
+  const planTimers = useRef(new Map<string, number>());
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -327,6 +330,19 @@ function ConnectedRemoteSession({
     snapshot && snapshot.session.id === sessionId
       ? snapshot.session
       : undefined;
+  // An edit the host has taken, and that is not still being typed, is its own.
+  useEffect(() => {
+    setPlanEdits((edits) => {
+      const kept = Object.fromEntries(
+        Object.entries(edits).filter(
+          ([blockId, text]) =>
+            planTimers.current.has(blockId) ||
+            hostSession?.blocks.find((block) => block.id === blockId)?.text !== text,
+        ),
+      );
+      return Object.keys(kept).length === Object.keys(edits).length ? edits : kept;
+    });
+  }, [hostSession]);
   useEffect(() => {
     if (hostSession) rememberRemotePendingWorktree(shell.id);
   }, [hostSession?.id, shell.id]);
@@ -1219,9 +1235,19 @@ function ConnectedRemoteSession({
       unseenActive ? unseenSend?.draftBlockId : undefined,
     ].filter(Boolean),
   );
-  const blocks: Block[] = (hostSession?.blocks ?? []).filter(
-    (block) => !leavingDrafts.has(block.id),
-  );
+  const blocks: Block[] = (hostSession?.blocks ?? [])
+    .filter((block) => !leavingDrafts.has(block.id))
+    .map((block) => {
+      // A plan being edited shows its edit until the host has it.
+      const edit = block.role === "plan" ? planEdits[block.id] : undefined;
+      if (edit === undefined) return block;
+      const originalText = block.plan?.originalText ?? block.text;
+      return {
+        ...block,
+        text: edit,
+        plan: { ...(block.plan ?? { status: "ready" as const }), status: "ready" as const, originalText, edited: edit !== originalText },
+      };
+    });
   const unconfirmed: Block | undefined =
     unseenActive && unseenSend
       ? {
@@ -1343,10 +1369,33 @@ function ConnectedRemoteSession({
     setSelectedCwd(parsed.hostPath);
   };
 
+  const editPlan = (blockId: string, text: string) => {
+    if (!hostSession || busy) return;
+    const id = hostSession.id;
+    setPlanEdits((edits) => ({ ...edits, [blockId]: text }));
+    // Sent once typing pauses, rather than on every key.
+    window.clearTimeout(planTimers.current.get(blockId));
+    planTimers.current.set(
+      blockId,
+      window.setTimeout(() => sendPlanEdit(id, blockId, text), 500),
+    );
+  };
+  const sendPlanEdit = (id: string, blockId: string, text: string) => {
+    planTimers.current.delete(blockId);
+    void run({ type: "planEdit", commandId: crypto.randomUUID(), sessionId: id, blockId, text });
+  };
+
   const buildPlan = (blockId: string, target?: PlanBuildTarget) => {
-    const block = hostSession?.blocks.find(
+    const hostBlock = hostSession?.blocks.find(
       (entry) => entry.id === blockId && entry.role === "plan",
     );
+    // The edit still on its way to the host goes first, then builds.
+    const edited = planEdits[blockId];
+    if (hostSession && edited !== undefined && planTimers.current.has(blockId)) {
+      window.clearTimeout(planTimers.current.get(blockId));
+      sendPlanEdit(hostSession.id, blockId, edited);
+    }
+    const block = hostBlock && edited !== undefined ? { ...hostBlock, text: edited } : hostBlock;
     if (!block || !block.text.trim() || block.streaming || busy) return;
     if (
       target &&
@@ -1413,8 +1462,9 @@ function ConnectedRemoteSession({
       compact,
       approve,
       answer,
+      ...(descriptor?.capabilities.includes("sessions.planEdit") ? { editPlan } : {}),
     }),
-    [shell.id, buildPlan, saveDraft, stopTurn, compact, approve, answer],
+    [shell.id, buildPlan, saveDraft, stopTurn, compact, approve, answer, editPlan, descriptor],
   );
 
   const hostFilePath = (path: string) => {

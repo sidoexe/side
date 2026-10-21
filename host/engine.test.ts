@@ -1366,3 +1366,39 @@ describe("host turn review", () => {
     expect(calls).toHaveLength(2);
   });
 });
+
+describe("plan edits", () => {
+  /** A finished plan turn, as the provider leaves it. */
+  function withPlan(status: "ready" | "built" = "ready") {
+    const setup_ = setup();
+    const current = setup_.store.session(setup_.id);
+    setup_.store.save(
+      {
+        ...current,
+        revision: current.revision + 1,
+        session: {
+          ...current.session,
+          blocks: [...current.session.blocks, { id: "plan", role: "plan", text: "1. Do it", plan: { status } }],
+        },
+      },
+      { type: "session.test" },
+    );
+    return setup_;
+  }
+
+  it("edits a ready plan and keeps its first text, as the desktop does", () => {
+    const { engine, store, id } = withPlan();
+    engine.command({ type: "planEdit", commandId: "edit", sessionId: id, blockId: "plan", text: "1. Do it well" });
+    const plan = store.session(id).session.blocks.find((block) => block.id === "plan")!;
+    expect(plan.text).toBe("1. Do it well");
+    expect(plan.plan).toMatchObject({ status: "ready", originalText: "1. Do it", edited: true });
+    engine.command({ type: "planEdit", commandId: "back", sessionId: id, blockId: "plan", text: "1. Do it" });
+    expect(store.session(id).session.blocks.find((block) => block.id === "plan")!.plan).toMatchObject({ edited: false });
+  });
+
+  it("refuses to edit a plan already built, or a block that is not a plan", () => {
+    const { engine, id } = withPlan("built");
+    expect(() => engine.command({ type: "planEdit", commandId: "edit", sessionId: id, blockId: "plan", text: "x" })).toThrow(/no longer/);
+    expect(() => engine.command({ type: "planEdit", commandId: "other", sessionId: id, blockId: "nope", text: "x" })).toThrow(/not found/);
+  });
+});

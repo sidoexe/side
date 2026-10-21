@@ -459,6 +459,7 @@ export function createHostServer(
                 "sessions.import",
                 "sessions.queue",
                 "sessions.editLast",
+                "sessions.planEdit",
                 ...(engine.checkpoints ? ["sessions.review"] : []),
                 ...(engine.automations ? ["automations"] : []),
                 ...(engine.app ? ["app"] : []),

@@ -14,6 +14,7 @@ import { preloadRemoteSession } from "./RemoteSession";
 import { rememberRemoteSession, remoteSessionFor } from "../model/connections";
 import "../model/remoteCommands";
 import { setRemoteAccountSlot } from "./remoteAccountSlot";
+import { buildRemotePlan, canEditRemotePlan, editRemotePlan } from "../model/remoteSessionActions";
 import { registerHarness, type HarnessAdapter } from "../../../integrations/harness/core/registry";
 import type {
   HostCommand,
@@ -1336,4 +1337,40 @@ it("gives a new host conversation the personal instructions once, as locally", a
   const prompt = (commands[1] as { prompt?: string }).prompt ?? "";
   expect(prompt).toContain("<personal_instructions>");
   expect(prompt).toContain("Answer in French.");
+});
+
+it("edits a host plan once typing pauses, and builds what was edited", async () => {
+  extraCapabilities = ["sessions.planEdit"];
+  await render();
+  dispatch({ type: "create", commandId: "planned", projectId: "project", harness: "codex", model: gpt.id, runtimeMode: "supervised" });
+  host = {
+    ...host!,
+    session: {
+      ...host!.session,
+      blocks: [
+        { id: "u", role: "user", text: "Plan it" },
+        { id: "plan", role: "plan", text: "1. Do it", plan: { status: "ready" } },
+      ],
+    },
+  };
+  commands = [];
+  await act(async () => rememberRemoteSession("shell", "host-session"));
+  await settle();
+  expect(canEditRemotePlan("shell")).toBe(true);
+  await act(async () => {
+    editRemotePlan("shell", "plan", "1. Do it");
+    editRemotePlan("shell", "plan", "1. Do it well");
+  });
+  // Nothing goes to the host while typing.
+  expect(commands).toEqual([]);
+  await vi.waitFor(() => expect(commands).toEqual([expect.objectContaining({ type: "planEdit", blockId: "plan", text: "1. Do it well" })]));
+  await act(async () => buildRemotePlan("shell", "plan"));
+  await vi.waitFor(() =>
+    expect(commands.at(-1)).toMatchObject({ type: "send", intent: "build", planBlockId: "plan", text: "Build the approved plan:\n\n1. Do it well" }),
+  );
+});
+
+it("keeps a host plan read-only when its host cannot edit plans", async () => {
+  await limitedSession(Date.now() - 60_000);
+  expect(canEditRemotePlan("shell")).toBe(false);
 });

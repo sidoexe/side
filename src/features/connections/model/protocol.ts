@@ -237,6 +237,14 @@ export type HostCommand =
       prompt?: string;
     }
   | { type: "queueRemove"; commandId: string; sessionId: string; messageId: string }
+  | {
+      /** Edit a ready plan before it is built, as on the desktop. */
+      type: "planEdit";
+      commandId: string;
+      sessionId: string;
+      blockId: string;
+      text: string;
+    }
   | { type: "queueSteer"; commandId: string; sessionId: string; messageId: string }
   | { type: "queueResume"; commandId: string; sessionId: string }
   | {

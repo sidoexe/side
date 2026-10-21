@@ -605,6 +605,7 @@ import {
 } from "../features/connections/model/connections";
 import {
   buildRemotePlan,
+  editRemotePlan,
   remoteSessionActions,
 } from "../features/connections/model/remoteSessionActions";
 import { remoteSessionState } from "../features/connections/model/remoteSessionState";
@@ -7797,6 +7798,12 @@ function Workspace({
 
   const onUpdatePlan = useCallback(
     (sessionId: string, blockId: string, text: string) => {
+      // A host session's plan is edited on its host.
+      const target = sessionsRef.current.find((entry) => entry.id === sessionId);
+      if (target && remoteProjectFor(target.cwd)) {
+        editRemotePlan(sessionId, blockId, text);
+        return;
+      }
       setSessions((prev) =>
         prev.map((session) => {
           if (remoteProjectFor(session.cwd)) return session;
