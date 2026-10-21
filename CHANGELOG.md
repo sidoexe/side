@@ -47,6 +47,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Sessions on another machine now work like local ones** in more places:
+  - The turn review card (undo or keep the turn's files) shows on host sessions; it was hidden by mistake.
+  - A message typed during a host turn goes to the running agent, as locally, instead of always waiting in line.
+  - A new host conversation gets your personal instructions.
+  - A host session's plan can be edited from its plan tab before Build.
+  - Host files open up to 8 MiB in the editor and 25 MiB in previews, as local ones.
+  - Cursor, Grok and OpenCode name a new session's branch on a host, and Pi, omp and Devin can write its commit messages.
+  - A host writes a pull request's title and body with its agent.
+  - Claude keeps its task list from one host turn to the next.
+  - A Codex question on a host stays open while you answer it, from the desktop, the phone or the web app.
+  - Images Codex generates on a host are kept and shown on the desktop, the phone and the web app.
+  - The desktop notifies when a host session finishes or needs you, even with no tab open, and the Dock badge counts it.
+  - Search finds host conversations beside local ones.
+  - A host session's `/` menu lists Pi, omp and Devin's own commands, and `/draft`.
+
 - **The default account can be removed from the list.** A signed-out default profile, such as a deleted personal account, stayed in Settings → Providers → Accounts with no way to take it out. Removing it now hides it from sIDE and keeps the CLI's own folder, shared with the other profiles; the next account is used instead.
 - **Opus shows in the model picker again.** The list of models was read from the default Claude profile alone, and a profile that is signed out reports every Opus as disabled, so the picker dropped them. It now gathers the models of all your accounts.
 - **The phone no longer raises an error for a dropped connection.** Its lists and open chats read the host every second or few; one request lost while the phone slept or changed network opened an alert each time. Such a read now waits for the next one and the header shows a crossed Wi-Fi icon until the host answers; a host that keeps refusing is reported once. One host project that fails to list no longer blocks the others, and an open chat no longer jumps back to an older state when two reads cross.
